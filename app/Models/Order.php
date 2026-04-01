@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Models\OrderItem;
+// use App\Models\OrderItem;
 use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
@@ -14,8 +14,13 @@ class Order extends Model
         'status',
     ];
 
-    public function items()
+    // public function items()
+    // {
+    //     return $this->hasMany(OrderItem::class);
+    // }
+
+    public function user()
     {
-        return $this->hasMany(OrderItem::class);
+        return $this->belongsTo(User::class);
     }
 }

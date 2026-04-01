@@ -59,16 +59,17 @@ class ProductController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(string $id)
+    public function show(Product $product)
     {
-        $product = Product::with('category')->findOrFail($id);
-        return response()->json($product);
+        return response()->json(
+            $product->load('category')
+        );
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id)
+    public function update(Request $request, Product $product)
     {
         $request->validate([
             'category_id' => 'required|exists:categories,id',
@@ -78,7 +79,6 @@ class ProductController extends Controller
             'is_active' => 'boolean'
         ]);
 
-        $product = Product::findOrFail($id);
         $product->update($request->all());
 
         return response()->json($product->load('category'));
@@ -87,9 +87,8 @@ class ProductController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(string $id)
+    public function destroy(Product $product)
     {
-        $product = Product::findOrFail($id);
         $product->delete();
 
         return response()->json([
