@@ -16,6 +16,9 @@ class ProductController extends Controller
     {
         $query = Product::with('category')->latest();
 
+        // Filter by outlet
+        $query->where('outlet_id', auth()->user()->outlet_id);
+
         // Filter category
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->category_id);
@@ -45,6 +48,12 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
+        $user = auth()->user();
+
+        if (!$user->outlet_id) {
+            return response()->json(['message' => 'User belum punya outlet'], 400);
+        }
+
         $request->validate([
             'category_id' => 'required|exists:categories,id',
             'name' => 'required|string|max:255',
@@ -77,6 +86,9 @@ class ProductController extends Controller
             $data['image'] = null;
         }
 
+        // WAJIB
+        $data['outlet_id'] = $user->outlet_id;
+
         $product = Product::create($data);
 
         return response()->json($product->load('category'), 201);
@@ -87,6 +99,10 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
+        if ($product->outlet_id !== auth()->user()->outlet_id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         return response()->json(
             $product->load('category')
         );

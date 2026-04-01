@@ -13,11 +13,13 @@ return new class extends Migration
     {
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->nullable(); // kasir
+            $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('invoice_number')->unique();
-            $table->integer('total_price');
+            $table->integer('total_price')->default(0);
             $table->enum('status', ['pending', 'paid', 'cancelled'])->default('pending');
             $table->timestamps();
+            $table->index(['outlet_id', 'invoice_number', 'status']);
         });
     }
 

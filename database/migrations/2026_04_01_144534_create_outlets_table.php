@@ -11,15 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('products', function (Blueprint $table) {
+        Schema::create('outlets', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('category_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
             $table->string('name');
-            $table->text('description')->nullable();
-            $table->integer('price');
-            $table->string('image')->nullable();
-            $table->boolean('is_active')->default(true);
+            // manager pemilik outlet
+            $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
             $table->timestamps();
         });
     }
@@ -29,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('products');
+        Schema::dropIfExists('outlets');
     }
 };
