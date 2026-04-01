@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
@@ -51,7 +53,31 @@ class ProductController extends Controller
             'is_active' => 'boolean'
         ]);
 
-        $product = Product::create($request->all());
+        $data = $request->all();
+
+        // upload image if exists
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+
+            // ambil nama product → slug
+            $name = Str::slug($request->name);
+
+            // random string
+            $random = Str::random(6);
+
+            // ambil extension asli
+            $extension = $file->getClientOriginalExtension();
+
+            // gabung jadi nama file
+            $filename = $name . '-' . $random . '.' . $extension;
+
+            // simpan
+            $data['image'] = $file->storeAs('products', $filename, 'public');
+        } else {
+            $data['image'] = null;
+        }
+
+        $product = Product::create($data);
 
         return response()->json($product->load('category'), 201);
     }
@@ -79,9 +105,31 @@ class ProductController extends Controller
             'is_active' => 'boolean'
         ]);
 
-        $product->update($request->all());
+        $data = $request->all();
 
-        return response()->json($product->load('category'));
+        // upload image if exists
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+
+            // ambil nama product → slug
+            $name = Str::slug($request->name);
+
+            // random string
+            $random = Str::random(6);
+
+            // ambil extension asli
+            $extension = $file->getClientOriginalExtension();
+
+            // gabung jadi nama file
+            $filename = $name . '-' . $random . '.' . $extension;
+
+            // simpan
+            $data['image'] = $file->storeAs('products', $filename, 'public');
+        }
+
+        $product->update($data);
+
+        return response()->json($product->load('category'), 201);
     }
 
     /**
@@ -89,10 +137,16 @@ class ProductController extends Controller
      */
     public function destroy(Product $product)
     {
+        // delete image if exists
+        if ($product->image) {
+            // delete old image
+            Storage::disk('public')->delete($product->image);
+        }
+
         $product->delete();
 
         return response()->json([
             'message' => 'Product deleted successfully'
-        ]);
+        ], 200);
     }
 }
