@@ -12,20 +12,31 @@ use App\Models\Table;
 class ProductController extends Controller
 {
     /**
-     * PUBLIC MENU (QR)
+     * PUBLIC MENU (QR) - OPTIMIZED
      */
     public function publicMenu($outletId, $tableId)
     {
-        // validasi table
-        $table = Table::where('id', $tableId)
+        $table = Table::query()
+            ->select(['id', 'name', 'outlet_id', 'status'])
+            ->where('id', $tableId)
             ->where('outlet_id', $outletId)
             ->firstOrFail();
 
-        // IMPORTANT: bypass global scope
         $products = Product::withoutGlobalScopes()
+            ->select([
+                'id',
+                'name',
+                'price',
+                'category_id',
+                'station_id',
+                'image'
+            ])
             ->where('outlet_id', $outletId)
             ->where('is_active', true)
-            ->with('category')
+            ->with([
+                'category:id,name'
+            ])
+            ->orderBy('name')
             ->get();
 
         return response()->json([
@@ -35,23 +46,36 @@ class ProductController extends Controller
     }
 
     /**
-     * Display a listing of the resource.
+     * LIST PRODUCT (NO N+1)
      */
     public function index(Request $request)
     {
-        $query = Product::with('category')->latest();
+        $user = auth()->user();
 
-        // ❌ HAPUS: sudah di-handle global scope
+        $query = Product::query()
+            ->select([
+                'id',
+                'name',
+                'price',
+                'category_id',
+                'station_id',
+                'is_active',
+                'created_at'
+            ])
+            ->with([
+                'category:id,name'
+            ])
+            ->latest();
 
-        // Filter category (AMAN: pastikan category milik outlet user)
+        // FILTER CATEGORY (AMAN)
         if ($request->filled('category_id')) {
-            $query->whereHas('category', function ($q) use ($request) {
+            $query->whereHas('category', function ($q) use ($request, $user) {
                 $q->where('id', $request->category_id)
-                  ->where('outlet_id', auth()->user()->outlet_id);
+                  ->where('outlet_id', $user->outlet_id);
             });
         }
 
-        // Search
+        // SEARCH (multi keyword)
         if ($request->filled('search')) {
             $keywords = array_filter(explode(' ', trim($request->search)));
 
@@ -68,7 +92,7 @@ class ProductController extends Controller
     }
 
     /**
-     * Store a newly created resource
+     * STORE PRODUCT
      */
     public function store(Request $request)
     {
@@ -80,6 +104,7 @@ class ProductController extends Controller
 
         $request->validate([
             'category_id' => 'required|exists:categories,id',
+            'station_id' => 'nullable|exists:stations,id',
             'name' => 'required|string|max:255',
             'price' => 'required|integer|min:0',
             'description' => 'nullable|string',
@@ -87,7 +112,7 @@ class ProductController extends Controller
             'image' => 'nullable|image|max:2048'
         ]);
 
-        // VALIDASI: category harus milik outlet user
+        // VALIDASI CATEGORY
         $category = Category::where('id', $request->category_id)
             ->where('outlet_id', $user->outlet_id)
             ->first();
@@ -96,9 +121,16 @@ class ProductController extends Controller
             return response()->json(['message' => 'Category tidak valid'], 422);
         }
 
-        $data = $request->except('image');
+        $data = $request->only([
+            'category_id',
+            'station_id',
+            'name',
+            'price',
+            'description',
+            'is_active'
+        ]);
 
-        // upload image
+        // UPLOAD IMAGE
         if ($request->hasFile('image')) {
             $data['image'] = $this->uploadImage($request->file('image'), $request->name);
         }
@@ -107,32 +139,36 @@ class ProductController extends Controller
 
         $product = Product::create($data);
 
-        return response()->json($product->load('category'), 201);
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(Product $product)
-    {
         return response()->json(
-            $product->load('category')
+            $product->load('category:id,name'),
+            201
         );
     }
 
     /**
-     * Update product
+     * SHOW PRODUCT
+     */
+    public function show(Product $product)
+    {
+        $this->authorizeProduct($product);
+
+        return response()->json(
+            $product->load('category:id,name')
+        );
+    }
+
+    /**
+     * UPDATE PRODUCT
      */
     public function update(Request $request, Product $product)
     {
         $user = auth()->user();
 
-        if ($product->outlet_id !== $user->outlet_id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $this->authorizeProduct($product);
 
         $request->validate([
             'category_id' => 'required|exists:categories,id',
+            'station_id' => 'nullable|exists:stations,id',
             'name' => 'required|string|max:255',
             'price' => 'required|integer|min:0',
             'description' => 'nullable|string',
@@ -140,7 +176,7 @@ class ProductController extends Controller
             'image' => 'nullable|image|max:2048'
         ]);
 
-        // VALIDASI category
+        // VALIDASI CATEGORY
         $category = Category::where('id', $request->category_id)
             ->where('outlet_id', $user->outlet_id)
             ->first();
@@ -149,12 +185,18 @@ class ProductController extends Controller
             return response()->json(['message' => 'Category tidak valid'], 422);
         }
 
-        $data = $request->except('image');
+        $data = $request->only([
+            'category_id',
+            'station_id',
+            'name',
+            'price',
+            'description',
+            'is_active'
+        ]);
 
-        // upload image baru
+        // UPDATE IMAGE
         if ($request->hasFile('image')) {
 
-            // HAPUS image lama
             if ($product->image) {
                 Storage::disk('public')->delete($product->image);
             }
@@ -164,19 +206,17 @@ class ProductController extends Controller
 
         $product->update($data);
 
-        return response()->json($product->load('category'), 200);
+        return response()->json(
+            $product->load('category:id,name')
+        );
     }
 
     /**
-     * Delete product
+     * DELETE PRODUCT
      */
     public function destroy(Product $product)
     {
-        $user = auth()->user();
-
-        if ($product->outlet_id !== $user->outlet_id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $this->authorizeProduct($product);
 
         if ($product->image) {
             Storage::disk('public')->delete($product->image);
@@ -186,13 +226,23 @@ class ProductController extends Controller
 
         return response()->json([
             'message' => 'Product deleted successfully'
-        ], 200);
+        ]);
     }
 
     /**
-     * Helper upload image
+     * HELPER AUTH
      */
-    private function uploadImage($file, $name)
+    private function authorizeProduct(Product $product): void
+    {
+        if ($product->outlet_id !== auth()->user()->outlet_id) {
+            abort(403, 'Forbidden');
+        }
+    }
+
+    /**
+     * HELPER UPLOAD IMAGE
+     */
+    private function uploadImage($file, $name): string
     {
         $filename = Str::slug($name) . '-' . Str::random(6) . '.' . $file->getClientOriginalExtension();
 
