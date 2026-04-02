@@ -6,6 +6,8 @@ use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Models\Category;
+use App\Models\Table;
 
 class ProductController extends Controller
 {
@@ -15,11 +17,13 @@ class ProductController extends Controller
     public function publicMenu($outletId, $tableId)
     {
         // validasi table
-        $table = \App\Models\Table::where('id', $tableId)
+        $table = Table::where('id', $tableId)
             ->where('outlet_id', $outletId)
             ->firstOrFail();
 
-        $products = Product::where('outlet_id', $outletId)
+        // IMPORTANT: bypass global scope
+        $products = Product::withoutGlobalScopes()
+            ->where('outlet_id', $outletId)
             ->where('is_active', true)
             ->with('category')
             ->get();
@@ -37,15 +41,17 @@ class ProductController extends Controller
     {
         $query = Product::with('category')->latest();
 
-        // Filter by outlet
-        $query->where('outlet_id', auth()->user()->outlet_id);
+        // ❌ HAPUS: sudah di-handle global scope
 
-        // Filter category
+        // Filter category (AMAN: pastikan category milik outlet user)
         if ($request->filled('category_id')) {
-            $query->where('category_id', $request->category_id);
+            $query->whereHas('category', function ($q) use ($request) {
+                $q->where('id', $request->category_id)
+                  ->where('outlet_id', auth()->user()->outlet_id);
+            });
         }
 
-        // Search by name (clean keyword)
+        // Search
         if ($request->filled('search')) {
             $keywords = array_filter(explode(' ', trim($request->search)));
 
@@ -56,16 +62,13 @@ class ProductController extends Controller
             });
         }
 
-        // Only active product
-        $query->where('is_active', true);
-
         return response()->json(
             $query->paginate($request->limit ?? 10)
         );
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Store a newly created resource
      */
     public function store(Request $request)
     {
@@ -78,36 +81,28 @@ class ProductController extends Controller
         $request->validate([
             'category_id' => 'required|exists:categories,id',
             'name' => 'required|string|max:255',
-            'price' => 'required|integer',
+            'price' => 'required|integer|min:0',
             'description' => 'nullable|string',
-            'is_active' => 'boolean'
+            'is_active' => 'boolean',
+            'image' => 'nullable|image|max:2048'
         ]);
 
-        $data = $request->all();
+        // VALIDASI: category harus milik outlet user
+        $category = Category::where('id', $request->category_id)
+            ->where('outlet_id', $user->outlet_id)
+            ->first();
 
-        // upload image if exists
-        if ($request->hasFile('image')) {
-            $file = $request->file('image');
-
-            // ambil nama product → slug
-            $name = Str::slug($request->name);
-
-            // random string
-            $random = Str::random(6);
-
-            // ambil extension asli
-            $extension = $file->getClientOriginalExtension();
-
-            // gabung jadi nama file
-            $filename = $name . '-' . $random . '.' . $extension;
-
-            // simpan
-            $data['image'] = $file->storeAs('products', $filename, 'public');
-        } else {
-            $data['image'] = null;
+        if (!$category) {
+            return response()->json(['message' => 'Category tidak valid'], 422);
         }
 
-        // WAJIB
+        $data = $request->except('image');
+
+        // upload image
+        if ($request->hasFile('image')) {
+            $data['image'] = $this->uploadImage($request->file('image'), $request->name);
+        }
+
         $data['outlet_id'] = $user->outlet_id;
 
         $product = Product::create($data);
@@ -120,63 +115,70 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
-        if ($product->outlet_id !== auth()->user()->outlet_id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
         return response()->json(
             $product->load('category')
         );
     }
 
     /**
-     * Update the specified resource in storage.
+     * Update product
      */
     public function update(Request $request, Product $product)
     {
+        $user = auth()->user();
+
+        if ($product->outlet_id !== $user->outlet_id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         $request->validate([
             'category_id' => 'required|exists:categories,id',
             'name' => 'required|string|max:255',
-            'price' => 'required|integer',
+            'price' => 'required|integer|min:0',
             'description' => 'nullable|string',
-            'is_active' => 'boolean'
+            'is_active' => 'boolean',
+            'image' => 'nullable|image|max:2048'
         ]);
 
-        $data = $request->all();
+        // VALIDASI category
+        $category = Category::where('id', $request->category_id)
+            ->where('outlet_id', $user->outlet_id)
+            ->first();
 
-        // upload image if exists
+        if (!$category) {
+            return response()->json(['message' => 'Category tidak valid'], 422);
+        }
+
+        $data = $request->except('image');
+
+        // upload image baru
         if ($request->hasFile('image')) {
-            $file = $request->file('image');
 
-            // ambil nama product → slug
-            $name = Str::slug($request->name);
+            // HAPUS image lama
+            if ($product->image) {
+                Storage::disk('public')->delete($product->image);
+            }
 
-            // random string
-            $random = Str::random(6);
-
-            // ambil extension asli
-            $extension = $file->getClientOriginalExtension();
-
-            // gabung jadi nama file
-            $filename = $name . '-' . $random . '.' . $extension;
-
-            // simpan
-            $data['image'] = $file->storeAs('products', $filename, 'public');
+            $data['image'] = $this->uploadImage($request->file('image'), $request->name);
         }
 
         $product->update($data);
 
-        return response()->json($product->load('category'), 201);
+        return response()->json($product->load('category'), 200);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Delete product
      */
     public function destroy(Product $product)
     {
-        // delete image if exists
+        $user = auth()->user();
+
+        if ($product->outlet_id !== $user->outlet_id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         if ($product->image) {
-            // delete old image
             Storage::disk('public')->delete($product->image);
         }
 
@@ -185,5 +187,15 @@ class ProductController extends Controller
         return response()->json([
             'message' => 'Product deleted successfully'
         ], 200);
+    }
+
+    /**
+     * Helper upload image
+     */
+    private function uploadImage($file, $name)
+    {
+        $filename = Str::slug($name) . '-' . Str::random(6) . '.' . $file->getClientOriginalExtension();
+
+        return $file->storeAs('products', $filename, 'public');
     }
 }

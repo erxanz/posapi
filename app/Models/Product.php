@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use App\Models\Category;
 
 class Product extends Model
@@ -15,28 +17,56 @@ class Product extends Model
         'price',
         'stock',
         'category_id',
+        'description',
+        'outlet_id',
+        'cost_price',
+        'image',
+        'is_active',
     ];
 
     /**
-     * Global scope untuk filter berdasarkan outlet_id
-     * Metode ini dipanggil otomatis saat model diinisialisasi
+     * Casting biar aman
+     */
+    protected $casts = [
+        'price' => 'integer',
+        'cost_price' => 'integer',
+        'stock' => 'integer',
+        'is_active' => 'boolean',
+    ];
+
+    /**
+     * Global scope outlet
      */
     protected static function booted()
     {
-        // Menambahkan global scope bernama 'outlet' yang berlaku pada semua query
-        static::addGlobalScope('outlet', function ($query) {
-            // Cek apakah user sudah login dan role-nya bukan developer
-            if (auth()->check() && auth()->user()->role !== 'developer') {
-                // Filter data produk hanya untuk outlet yang dimiliki user tersebut
-                // Ini memastikan setiap user hanya melihat produk dari outlet mereka
-                $query->where('outlet_id', auth()->user()->outlet_id);
+        static::addGlobalScope('outlet', function (Builder $query) {
+
+            // AMAN: cek auth dulu
+            if (Auth::check()) {
+                $user = Auth::user();
+
+                // developer bebas
+                if ($user->role !== 'developer') {
+                    $query->where('outlet_id', $user->outlet_id);
+                }
             }
-            // Developer tidak difilter dan bisa melihat semua produk dari semua outlet
+
         });
     }
 
+    /**
+     * Relasi ke category
+     */
     public function category()
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /**
+     * (Optional) relasi ke outlet
+     */
+    public function outlet()
+    {
+        return $this->belongsTo(Outlet::class);
     }
 }

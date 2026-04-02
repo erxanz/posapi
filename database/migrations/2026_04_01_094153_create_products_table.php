@@ -17,7 +17,9 @@ return new class extends Migration
             $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->text('description')->nullable();
-            $table->integer('price');
+            $table->integer('price')->unsigned();
+            $table->integer('cost_price')->default(0)->unsigned();
+            $table->integer('stock')->default(0)->unsigned();
             $table->string('image')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();

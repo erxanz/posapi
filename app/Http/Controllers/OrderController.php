@@ -5,97 +5,87 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\Table;
 use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * List order
      */
     public function index()
     {
         return response()->json(
             Order::where('outlet_id', auth()->user()->outlet_id)
-                ->with('items.product')
+                ->with('items.product', 'table')
                 ->latest()
                 ->paginate(10)
         );
     }
 
     /**
-     * Store a newly created resource in storage.
+     * DISABLE STORE (order harus dari meja)
      */
     public function store(Request $request)
     {
-        $user = auth()->user();
+        return response()->json([
+            'message' => 'Gunakan endpoint openTable untuk membuat order'
+        ], 400);
+    }
 
-        if (!$user->outlet_id) {
-            return response()->json(['message' => 'User belum punya outlet'], 400);
-        }
-
-        if (!$request->has('items')) {
-            // Create draft order
-            $order = Order::create([
-                'outlet_id' => $user->outlet_id,
-                'user_id' => $user->id,
-                'status' => 'draft'
-            ]);
-
-            return response()->json($order);
-        }
-
-        // Checkout with items
+    /**
+     * Tambah Item (CART)
+     */
+    public function addItem(Request $request, $orderId)
+    {
         $request->validate([
-            'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|exists:products,id',
-            'items.*.qty' => 'required|integer|min:1'
+            'product_id' => 'required|exists:products,id',
+            'qty' => 'required|integer|min:1'
         ]);
+
+        $order = Order::where('id', $orderId)
+            ->where('outlet_id', auth()->user()->outlet_id)
+            ->firstOrFail();
+
+        // hanya order OPEN yang bisa diubah
+        if ($order->status !== 'open') {
+            return response()->json(['message' => 'Order sudah ditutup'], 400);
+        }
+
+        // ambil product sesuai outlet (SECURITY FIX)
+        $product = Product::where('id', $request->product_id)
+            ->where('outlet_id', auth()->user()->outlet_id)
+            ->firstOrFail();
+
+        if (!$product->is_active) {
+            return response()->json([
+                'message' => "Produk {$product->name} tidak tersedia"
+            ], 400);
+        }
 
         DB::beginTransaction();
 
         try {
-            $total = 0;
-            $orderItems = [];
+            $item = $order->items()->where('product_id', $product->id)->first();
 
-            foreach ($request->items as $item) {
-                $product = Product::where('id', $item['product_id'])
-                    ->where('outlet_id', $user->outlet_id)
-                    ->firstOrFail();
-
-                // pastikan hanya produk aktif
-                if (!$product->is_active) {
-                    throw new \Exception("Produk {$product->name} tidak tersedia");
-                }
-
-                $subtotal = $product->price * $item['qty'];
-                $total += $subtotal;
-
-                $orderItems[] = [
+            if ($item) {
+                $item->qty += $request->qty;
+                $item->total_price = $item->qty * $item->price;
+                $item->save();
+            } else {
+                $order->items()->create([
                     'product_id' => $product->id,
-                    'qty' => $item['qty'],
+                    'qty' => $request->qty,
                     'price' => $product->price,
-                    'total_price' => $subtotal
-                ];
+                    'total_price' => $product->price * $request->qty
+                ]);
             }
 
-            $order = Order::create([
-                'outlet_id' => $user->outlet_id,
-                'user_id' => $user->id,
-                'invoice_number' => 'INV-' . strtoupper(uniqid()),
-                'total_price' => $total,
-                'status' => 'paid'
-            ]);
-
-            foreach ($orderItems as $item) {
-                $order->items()->create($item);
-            }
+            $this->updateTotal($order);
 
             DB::commit();
 
-            return response()->json([
-                'message' => 'Checkout berhasil',
-                'order' => $order->load('items.product')
-            ], 201);
+            return response()->json($order->load('items.product'), 201);
 
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -107,67 +97,7 @@ class OrderController extends Controller
     }
 
     /**
-     * Tambah Item (CART)
-     */
-    public function addItem(Request $request, $orderId)
-    {
-        // Validasi input
-        $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'qty' => 'required|integer|min:1'
-        ]);
-
-        // Cari order, pastikan status masih draft dan milik outlet yang sama
-        $order = Order::where('id', $orderId)
-            ->where('outlet_id', auth()->user()->outlet_id)
-            ->firstOrFail();
-
-        if ($order->status !== 'draft') {
-            return response()->json(['message' => 'Hanya order draft yang bisa ditambah produknya'], 400);
-        }
-
-        // Pastikan order milik outlet yang sama (security check)
-        if ($order->outlet_id !== auth()->user()->outlet_id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
-        // Cari product
-        $product = Product::findOrFail($request->product_id);
-
-        // Pastikan hanya produk aktif
-        if (!$product->is_active) {
-            return response()->json([
-                'message' => "Produk {$product->name} tidak tersedia"
-            ], 400);
-        }
-
-        // Cek apakah product sudah ada di cart
-        $item = $order->items()->where('product_id', $product->id)->first();
-
-        if ($item) {
-            // Update qty jika sudah ada
-            $item->qty += $request->qty;
-            $item->total_price = $item->qty * $item->price;
-            $item->save();
-        } else {
-            // Create item baru jika belum ada
-            $order->items()->create([
-                'product_id' => $product->id,
-                'qty' => $request->qty,
-                'price' => $product->price,
-                'total_price' => $product->price * $request->qty
-            ]);
-        }
-
-        // Update total harga order
-        $this->updateTotal($order);
-
-        return response()->json($order->load('items.product'), 201);
-    }
-
-    /**
-     * Helper method: Update total price order
-     * Menggunakan sum subtotal dari items untuk kalkulasi total yang lebih akurat
+     * Update total order
      */
     private function updateTotal($order)
     {
@@ -179,7 +109,7 @@ class OrderController extends Controller
     }
 
     /**
-     * Display the specified resource.
+     * Detail order
      */
     public function show(Order $order)
     {
@@ -188,23 +118,12 @@ class OrderController extends Controller
         }
 
         return response()->json(
-            $order->load('items.product')
+            $order->load('items.product', 'table')
         );
     }
 
     /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        // belum ada fitur update order, karena biasanya order sudah final saat checkout
-        return response()->json([
-            'message' => 'Fitur update order belum tersedia'
-        ], 400);
-    }
-
-    /**
-     * Hapus Item
+     * Hapus item dari order
      */
     public function removeItem($orderId, $itemId)
     {
@@ -212,13 +131,8 @@ class OrderController extends Controller
             ->where('outlet_id', auth()->user()->outlet_id)
             ->firstOrFail();
 
-        if ($order->status !== 'draft') {
-            return response()->json(['message' => 'Hanya order draft yang bisa diubah'], 400);
-        }
-
-        // Pastikan order milik outlet yang sama (security check)
-        if ($order->outlet_id !== auth()->user()->outlet_id) {
-            return response()->json(['message' => 'Forbidden'], 403);
+        if ($order->status !== 'open') {
+            return response()->json(['message' => 'Order sudah ditutup'], 400);
         }
 
         $item = $order->items()->findOrFail($itemId);
@@ -230,13 +144,14 @@ class OrderController extends Controller
     }
 
     /**
-     * PUBLIC ORDER (QR CUSTOMER - TANPA LOGIN)
+     * PUBLIC ORDER (QR CUSTOMER)
      */
     public function publicOrder(Request $request)
     {
         $request->validate([
             'outlet_id' => 'required|exists:outlets,id',
             'table_id' => 'required|exists:tables,id',
+            'customer_name' => 'nullable|string|max:100',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1'
@@ -247,15 +162,15 @@ class OrderController extends Controller
         try {
             $total = 0;
 
-            // validasi table milik outlet
-            $table = \App\Models\Table::where('id', $request->table_id)
+            $table = Table::where('id', $request->table_id)
                 ->where('outlet_id', $request->outlet_id)
                 ->firstOrFail();
 
             $order = Order::create([
                 'outlet_id' => $request->outlet_id,
                 'table_id' => $table->id,
-                'status' => 'pending'
+                'customer_name' => $request->customer_name,
+                'status' => 'open'
             ]);
 
             foreach ($request->items as $item) {
@@ -300,7 +215,7 @@ class OrderController extends Controller
     }
 
     /**
-     * Checkout Order
+     * Checkout (bayar)
      */
     public function checkout(Request $request, $orderId)
     {
@@ -312,16 +227,12 @@ class OrderController extends Controller
             ->where('outlet_id', auth()->user()->outlet_id)
             ->firstOrFail();
 
-        if ($order->outlet_id !== auth()->user()->outlet_id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
-        if ($order->status !== 'draft') {
-            return response()->json(['message' => 'Sudah dibayar'], 400);
+        if ($order->status !== 'open') {
+            return response()->json(['message' => 'Order sudah dibayar'], 400);
         }
 
         if ($order->items()->count() === 0) {
-            return response()->json(['message' => 'Keranjang masih kosong'], 400);
+            return response()->json(['message' => 'Keranjang kosong'], 400);
         }
 
         $paid = $request->paid_amount;
@@ -332,27 +243,46 @@ class OrderController extends Controller
 
         $change = $paid - $order->total_price;
 
-        $order->update([
-            'status' => 'paid',
-            'invoice_number' => $order->invoice_number ?? 'INV-' . strtoupper(uniqid())
-        ]);
+        DB::beginTransaction();
 
-        return response()->json([
-            'message' => 'Transaksi berhasil',
-            'order' => $order->load('items.product'),
-            'paid' => $paid,
-            'change' => $change
-        ]);
+        try {
+            $order->update([
+                'status' => 'paid',
+                'invoice_number' => $order->invoice_number ?? 'INV-' . strtoupper(uniqid())
+            ]);
+
+            // UPDATE STATUS MEJA
+            if ($order->table_id) {
+                $order->table->update([
+                    'status' => 'available'
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Transaksi berhasil',
+                'order' => $order->load('items.product'),
+                'paid' => $paid,
+                'change' => $change
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Delete (tidak digunakan)
      */
     public function destroy(string $id)
     {
-        // belum ada fitur delete order, karena biasanya order sudah final saat checkout
         return response()->json([
-            'message' => 'Fitur delete order belum tersedia'
+            'message' => 'Fitur delete order tidak tersedia'
         ], 400);
     }
 }

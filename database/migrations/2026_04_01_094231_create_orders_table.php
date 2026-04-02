@@ -14,7 +14,11 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            // ubah user_id jadi nullable karena bisa buat order tanpa login
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+            // tambahan untuk QR customer
+            $table->string('customer_name')->nullable();
+            $table->string('notes')->nullable();
             $table->foreignId('table_id')->constrained()->cascadeOnDelete();
             $table->string('invoice_number')->unique();
             $table->integer('total_price')->default(0);
