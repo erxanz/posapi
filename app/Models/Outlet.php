@@ -2,159 +2,32 @@
 
 namespace App\Models;
 
-// use Illuminate\Database\Eloquent\Factories\HasFactory;
-// use Illuminate\Database\Eloquent\Model;
-// use App\Models\User;
-// use App\Models\Order;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use App\Models\User;
+use App\Models\Order;
 
-// class Outlet extends Model
-// {
-//     use HasFactory;
-
-//     protected $fillable = [
-//         'name',
-//         'owner_id',
-//     ];
-
-//     public function owner()
-//     {
-//         return $this->belongsTo(User::class, 'owner_id');
-//     }
-
-//     public function karyawans()
-//     {
-//         return $this->hasMany(User::class, 'outlet_id');
-//     }
-
-//     public function orders()
-//     {
-//         return $this->hasMany(Order::class);
-//     }
-// }
-
-use Illuminate\Http\Request;
-use App\Models\Outlet;
-use Illuminate\Support\Facades\DB;
-use App\Http\Controllers\Controller;
-
-class OutletController extends Controller
+class Outlet extends Model
 {
-    /**
-     * List outlet (hanya milik user)
-     */
-    public function index()
+    use HasFactory;
+
+    protected $fillable = [
+        'name',
+        'owner_id',
+    ];
+
+    public function owner()
     {
-        $user = auth()->user();
-
-        $outlets = Outlet::where('owner_id', $user->id)
-            ->latest()
-            ->get();
-
-        return response()->json($outlets);
+        return $this->belongsTo(User::class, 'owner_id');
     }
 
-    /**
-     * Create outlet (manager only)
-     */
-    public function store(Request $request)
+    public function karyawans()
     {
-        $user = auth()->user();
-
-        if ($user->role !== 'manager') {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
-        $request->validate([
-            'name' => 'required|string|max:255'
-        ]);
-
-        // optional: 1 manager = 1 outlet
-        if ($user->outlet_id) {
-            return response()->json([
-                'message' => 'Manager sudah memiliki outlet'
-            ], 422);
-        }
-
-        $outlet = DB::transaction(function () use ($request, $user) {
-
-            $outlet = Outlet::create([
-                'name' => $request->name,
-                'owner_id' => $user->id
-            ]);
-
-            $user->update([
-                'outlet_id' => $outlet->id
-            ]);
-
-            return $outlet;
-        });
-
-        return response()->json([
-            'message' => 'Outlet berhasil dibuat',
-            'data' => $outlet
-        ], 201);
+        return $this->hasMany(User::class, 'outlet_id');
     }
 
-    /**
-     * Show detail outlet
-     */
-    public function show(Outlet $outlet)
+    public function orders()
     {
-        $this->authorizeOutlet($outlet);
-
-        return response()->json($outlet);
-    }
-
-    /**
-     * Update outlet
-     */
-    public function update(Request $request, Outlet $outlet)
-    {
-        $this->authorizeOutlet($outlet);
-
-        $request->validate([
-            'name' => 'required|string|max:255'
-        ]);
-
-        $outlet->update([
-            'name' => $request->name
-        ]);
-
-        return response()->json([
-            'message' => 'Outlet berhasil diupdate',
-            'data' => $outlet
-        ]);
-    }
-
-    /**
-     * Delete outlet
-     */
-    public function destroy(Outlet $outlet)
-    {
-        $this->authorizeOutlet($outlet);
-
-        DB::transaction(function () use ($outlet) {
-
-            // optional: kosongkan outlet_id user
-            $outlet->karyawans()->update([
-                'outlet_id' => null
-            ]);
-
-            $outlet->delete();
-        });
-
-        return response()->json([
-            'message' => 'Outlet berhasil dihapus'
-        ]);
-    }
-
-    /**
-     * Helper authorization (owner only)
-     */
-    private function authorizeOutlet(Outlet $outlet)
-    {
-        if ($outlet->owner_id !== auth()->id()) {
-            abort(403, 'Forbidden');
-        }
+        return $this->hasMany(Order::class);
     }
 }
