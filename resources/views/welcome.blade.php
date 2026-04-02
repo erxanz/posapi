@@ -31,15 +31,15 @@
                     <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-lock" style="margin-right: 0.5rem; color: #6366f1;"></i> Authentication</h2>
                     <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/login</code><br>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/login</code><br>
                             <small style="opacity: 0.7;">Body: email, password</small>
                         </li>
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/logout</code><br>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/logout</code><br>
                             <small style="opacity: 0.7;">Headers: Authorization Bearer {token}</small>
                         </li>
                         <li>
-                            <strong style="color: #10b981;">GET</strong> <code>/api/user</code><br>
+                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/user</code><br>
                             <small style="opacity: 0.7;">Headers: Authorization Bearer {token}</small>
                         </li>
                     </ul>
@@ -50,14 +50,14 @@
                     <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-store" style="margin-right: 0.5rem; color: #10b981;"></i> Outlets</h2>
                     <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/outlets</code>
+                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/outlets</code>
                         </li>
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/outlets</code><br>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/outlets</code><br>
                             <small style="opacity: 0.7;">Body: name, owner_id</small>
                         </li>
                         <li>
-                            <strong style="color: #10b981;">GET</strong> <code>/api/outlets/{id}</code>
+                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/outlets/{id}</code>
                         </li>
                     </ul>
                 </div>
@@ -67,13 +67,13 @@
                     <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-box-open" style="margin-right: 0.5rem; color: #f59e0b;"></i> Products & Categories</h2>
                     <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/categories</code>
+                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/categories</code>
                         </li>
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/products</code>
+                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/products</code>
                         </li>
                         <li>
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/products</code><br>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/products</code><br>
                             <small style="opacity: 0.7;">Body: name, price, stock, category_id, outlet_id</small>
                         </li>
                     </ul>
@@ -84,10 +84,10 @@
                     <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-cart-shopping" style="margin-right: 0.5rem; color: #ec4899;"></i> Orders</h2>
                     <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/orders</code>
+                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/orders</code>
                         </li>
                         <li>
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/orders</code><br>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/orders</code><br>
                             <small style="opacity: 0.7;">Body: outlet_id, total_price, payment_method, items (product_id, quantity, subtotal)</small>
                         </li>
                     </ul>
