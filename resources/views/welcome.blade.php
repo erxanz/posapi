@@ -151,6 +151,11 @@
                         <span class="note">Manager</span>
                     </div>
                     <div class="endpoint-row">
+                        <span class="badge badge-put">PUT</span>
+                        <code class="api-path">/api/v1/users/karyawan/{id}</code>
+                        <span class="note">Manager</span>
+                    </div>
+                    <div class="endpoint-row">
                         <span class="badge badge-post">POST</span>
                         <code class="api-path">/api/v1/users</code>
                         <span class="note">Developer</span>
@@ -167,6 +172,11 @@
                     </div>
                     <div class="endpoint-row">
                         <span class="badge badge-delete">DELETE</span>
+                        <code class="api-path">/api/v1/users/{id}</code>
+                        <span class="note">Developer</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-put">PUT</span>
                         <code class="api-path">/api/v1/users/{id}</code>
                         <span class="note">Developer</span>
                     </div>
