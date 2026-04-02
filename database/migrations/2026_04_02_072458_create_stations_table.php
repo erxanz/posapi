@@ -16,6 +16,8 @@ return new class extends Migration
             $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
             $table->string('name'); // nama stasiun (misal: kichen, bar, kasir)
             $table->timestamps();
+
+            $table->index(['outlet_id', 'name']);
         });
     }
 

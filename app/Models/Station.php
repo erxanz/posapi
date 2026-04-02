@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\OrderItem;
+use App\Models\Order;
 
 class Station extends Model
 {
@@ -13,8 +15,6 @@ class Station extends Model
     protected $fillable = [
         'outlet_id',
         'name',
-        'code',
-        'is_active',
     ];
 
     public function outlet()
@@ -30,8 +30,8 @@ class Station extends Model
     public function orders()
     {
         return $this->hasManyThrough(
-            \App\Models\Order::class,
-            \App\Models\OrderItem::class,
+            Order::class,
+            OrderItem::class,
             'station_id', // FK di order_items
             'id',         // PK di orders
             'id',         // PK di stations
@@ -39,9 +39,22 @@ class Station extends Model
         );
     }
 
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    public function scopeUsed($query)
+    {
+        return $query->where(function ($q) {
+            $q->whereHas('products')
+            ->orWhereHas('orderItems');
+        });
+    }
+
     public function isUsed()
     {
         return $this->products()->exists()
-            || \App\Models\OrderItem::where('station_id', $this->id)->exists();
+            || $this->orderItems()->exists();
     }
 }

@@ -4,39 +4,36 @@ namespace App\Http\Controllers;
 
 use App\Models\Station;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class StationController extends Controller
 {
     /**
-     * List stations (OPTIMIZED)
+     * List stations
      */
     public function index(Request $request)
     {
         $user = auth()->user();
 
+        $limit = min($request->limit ?? 10, 100);
+
         $query = Station::query()
-            ->select(['id', 'outlet_id', 'name', 'code', 'is_active', 'created_at'])
+            ->select(['id', 'outlet_id', 'name', 'created_at'])
             ->where('outlet_id', $user->outlet_id)
             ->withCount([
-                'products as products_count' => function ($q) {
-                    $q->where('is_active', true);
-                },
-                'orders'
+                'products',
+                'orders as orders_count' => function ($q) {
+                    $q->distinct(); // hindari duplicate count
+                }
             ])
             ->latest();
 
-        if ($request->filled('is_active')) {
-            $query->where('is_active', $request->boolean('is_active'));
-        }
-
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%' . trim($request->search) . '%');
+            $query->where('name', 'like', trim($request->search) . '%');
         }
 
-        return response()->json(
-            $query->paginate($request->limit ?? 10)
-        );
+        return response()->json([
+            'data' => $query->paginate($limit)
+        ]);
     }
 
     /**
@@ -52,39 +49,33 @@ class StationController extends Controller
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'code' => 'nullable|string|max:50',
-            'is_active' => 'boolean',
         ]);
 
-        $data = $request->only(['name', 'code', 'is_active']);
+        $station = Station::create([
+            'name' => $request->name,
+            'outlet_id' => $user->outlet_id,
+        ]);
 
-        // auto code
-        if (empty($data['code'])) {
-            $data['code'] = strtoupper(Str::slug($request->name));
-        }
-
-        $data['outlet_id'] = $user->outlet_id;
-
-        $station = Station::create($data);
-
-        return response()->json($station, 201);
+        return response()->json([
+            'data' => $station
+        ], 201);
     }
 
     /**
-     * Show station (NO N+1)
+     * Show station
      */
     public function show(Station $station)
     {
         $this->authorizeStation($station);
 
         $station->loadCount([
-            'products as products_count' => function ($q) {
-                $q->where('is_active', true);
-            },
+            'products',
             'orders'
         ]);
 
-        return response()->json($station);
+        return response()->json([
+            'data' => $station
+        ]);
     }
 
     /**
@@ -96,19 +87,15 @@ class StationController extends Controller
 
         $request->validate([
             'name' => 'required|string|max:255',
-            'code' => 'nullable|string|max:50',
-            'is_active' => 'boolean',
         ]);
 
-        $data = $request->only(['name', 'code', 'is_active']);
+        $station->update([
+            'name' => $request->name
+        ]);
 
-        if (empty($data['code'])) {
-            $data['code'] = strtoupper(Str::slug($request->name));
-        }
-
-        $station->update($data);
-
-        return response()->json($station);
+        return response()->json([
+            'data' => $station
+        ]);
     }
 
     /**
@@ -118,10 +105,9 @@ class StationController extends Controller
     {
         $this->authorizeStation($station);
 
-        // SUPER EFISIEN (tidak load data)
-        if ($station->products()->exists()) {
+        if ($station->products()->exists() || $station->orderItems()->exists()) {
             return response()->json([
-                'message' => 'Station masih digunakan oleh produk'
+                'message' => 'Station masih digunakan oleh produk atau item pesanan'
             ], 422);
         }
 
@@ -133,7 +119,7 @@ class StationController extends Controller
     }
 
     /**
-     * Get products by station (ANTI N+1 TOTAL)
+     * Get products by station
      */
     public function products($id)
     {
@@ -154,17 +140,19 @@ class StationController extends Controller
                     ])
                     ->where('is_active', true)
                     ->with([
-                        'category:id,name' // no N+1 category
+                        'category:id,name'
                     ]);
                 }
             ])
             ->firstOrFail();
 
-        return response()->json($station);
+        return response()->json([
+            'data' => $station
+        ]);
     }
 
     /**
-     * Helper authorization (REUSABLE)
+     * Authorization helper
      */
     private function authorizeStation(Station $station): void
     {
