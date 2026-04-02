@@ -8,6 +8,8 @@ use App\Models\Outlet;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Table;
+use App\Models\Order;
+use App\Models\OrderItem;
 use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
@@ -64,9 +66,15 @@ class DatabaseSeeder extends Seeder
         foreach (Outlet::all() as $outlet) {
 
             // buat 8 meja per outlet
-            Table::factory()->count(8)->create([
-                'outlet_id' => $outlet->id,
-            ]);
+            for ($tableNo = 1; $tableNo <= 8; $tableNo++) {
+                Table::factory()->create([
+                    'outlet_id' => $outlet->id,
+                    'name' => 'Meja ' . str_pad((string) $tableNo, 2, '0', STR_PAD_LEFT),
+                    'code' => 'T' . str_pad((string) $tableNo, 2, '0', STR_PAD_LEFT),
+                    'status' => 'available',
+                    'is_active' => true,
+                ]);
+            }
 
             // buat 3 kategori per outlet
             $categories = collect([
@@ -87,6 +95,57 @@ class DatabaseSeeder extends Seeder
                 Product::factory()->count(5)->create([
                     'category_id' => $category->id,
                     'outlet_id' => $outlet->id,
+                ]);
+            }
+
+            // ================= SAMPLE ORDER =================
+            $tables = Table::where('outlet_id', $outlet->id)->get();
+            $products = Product::where('outlet_id', $outlet->id)->get();
+            $users = User::where('outlet_id', $outlet->id)
+                ->whereIn('role', ['manager', 'karyawan'])
+                ->get();
+
+            // 4 order per outlet
+            for ($o = 0; $o < 4; $o++) {
+                $status = fake()->randomElement(['pending', 'paid']);
+
+                $order = Order::factory()->create([
+                    'outlet_id' => $outlet->id,
+                    'user_id' => $users->random()->id,
+                    'table_id' => $tables->random()->id,
+                    'customer_name' => fake()->name(),
+                    'invoice_number' => 'INV-' . strtoupper(uniqid()),
+                    'status' => $status,
+                    'total_price' => 0,
+                ]);
+
+                $pickedProducts = $products->random(fake()->numberBetween(1, 3));
+                $pickedProducts = $pickedProducts instanceof \Illuminate\Support\Collection
+                    ? $pickedProducts
+                    : collect([$pickedProducts]);
+
+                $total = 0;
+
+                foreach ($pickedProducts as $product) {
+                    $qty = fake()->numberBetween(1, 3);
+                    $subtotal = $product->price * $qty;
+
+                    OrderItem::create([
+                        'order_id' => $order->id,
+                        'product_id' => $product->id,
+                        'qty' => $qty,
+                        'price' => $product->price,
+                        'total_price' => $subtotal,
+                    ]);
+
+                    $total += $subtotal;
+                }
+
+                $order->update(['total_price' => $total]);
+
+                // order pending -> meja occupied, order paid -> meja available
+                $order->table->update([
+                    'status' => $status === 'pending' ? 'occupied' : 'available',
                 ]);
             }
         }

@@ -17,13 +17,17 @@ class ProductFactory extends Factory
      */
     public function definition(): array
     {
+        $costPrice = fake()->numberBetween(3000, 35000);
+
         return [
             'category_id' => null,
             'outlet_id' => null,
 
             'name' => fake()->words(2, true),
             'description' => fake()->sentence(),
-            'price' => fake()->numberBetween(5000, 50000),
+            'price' => fake()->numberBetween($costPrice, 75000),
+            'cost_price' => $costPrice,
+            'stock' => fake()->numberBetween(0, 100),
             'image' => null,
             'is_active' => true,
         ];
