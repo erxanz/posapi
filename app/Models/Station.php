@@ -29,6 +29,19 @@ class Station extends Model
 
     public function orders()
     {
-        return $this->hasMany(Order::class);
+        return $this->hasManyThrough(
+            \App\Models\Order::class,
+            \App\Models\OrderItem::class,
+            'station_id', // FK di order_items
+            'id',         // PK di orders
+            'id',         // PK di stations
+            'order_id'    // FK di order_items ke orders
+        );
+    }
+
+    public function isUsed()
+    {
+        return $this->products()->exists()
+            || \App\Models\OrderItem::where('station_id', $this->id)->exists();
     }
 }

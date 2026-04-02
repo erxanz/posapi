@@ -39,28 +39,27 @@ Route::prefix('v1')->group(function () {
         Route::get('/me', [AuthController::class, 'me'])->name('me');
 
         // ================= OUTLET =================
-        Route::post('/outlets', [OutletController::class, 'createOutlet'])
-            ->name('outlets.create');
+        Route::post('/outlets', [OutletController::class, 'createOutlet'])->name('outlets.create');
 
         // ================= TABLE =================
         Route::apiResource('tables', TableController::class);
 
         // ================= USER (KARYAWAN) =================
         Route::prefix('users/karyawan')->group(function () {
-            Route::post('/', [UserController::class, 'createKaryawan']);
-            Route::get('/', [UserController::class, 'listKaryawan']);
-            Route::get('/{id}', [UserController::class, 'showKaryawan']);
-            Route::put('/{id}', [UserController::class, 'updateKaryawan']);
-            Route::delete('/{id}', [UserController::class, 'deleteKaryawan']);
+            Route::post('/', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
+            Route::get('/', [UserController::class, 'listKaryawan'])->name('users.karyawan.list');
+            Route::get('/{id}', [UserController::class, 'showKaryawan'])->name('users.karyawan.show');
+            Route::put('/{id}', [UserController::class, 'updateKaryawan'])->name('users.karyawan.update');
+            Route::delete('/{id}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
         });
 
         // ================= USER (DEVELOPER) =================
         Route::prefix('users')->group(function () {
-            Route::post('/', [UserController::class, 'createUser']);
-            Route::get('/', [UserController::class, 'listUsers']);
-            Route::get('/{id}', [UserController::class, 'showUser']);
-            Route::put('/{id}', [UserController::class, 'updateUser']);
-            Route::delete('/{id}', [UserController::class, 'deleteUser']);
+            Route::post('/', [UserController::class, 'createUser'])->name('users.create');
+            Route::get('/', [UserController::class, 'listUsers'])->name('users.list');
+            Route::get('/{id}', [UserController::class, 'showUser'])->name('users.show');
+            Route::put('/{id}', [UserController::class, 'updateUser'])->name('users.update');
+            Route::delete('/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
         });
 
         // ================= CATEGORY =================
@@ -72,16 +71,6 @@ Route::prefix('v1')->group(function () {
         // ================= STATION =================
         Route::apiResource('stations', StationController::class);
 
-        // ================= STATION EXTRA =================
-        Route::prefix('stations')->group(function () {
-
-            // produk per station (kitchen/bar menu)
-            Route::get('/{id}/products', [StationController::class, 'products']);
-
-            // 🔥 order per station (KITCHEN DISPLAY)
-            Route::get('/{stationId}/orders', [OrderController::class, 'stationOrders']);
-
-        });
 
         // ================= ORDER =================
         Route::prefix('orders')->group(function () {
