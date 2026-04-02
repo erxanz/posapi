@@ -160,6 +160,88 @@ class UserController extends Controller
         return response()->json(['data' => $targetUser]);
     }
 
+    public function updateUser(Request $request, $id)
+    {
+        $user = auth()->user();
+
+        if ($user->role !== 'developer') {
+            return response()->json(['message' => 'Akses ditolak'], 403);
+        }
+
+        $targetUser = \App\Models\User::findOrFail($id);
+
+        $request->validate([
+            'name' => 'required',
+            'email' => 'required|email|unique:users,email,' . $id,
+            'password' => 'nullable|min:6',
+            'pin' => 'nullable|min:4|max:6',
+            'role' => 'required|in:developer,manager,karyawan',
+            'outlet_id' => 'nullable|exists:outlets,id'
+        ]);
+
+        $targetUser->name = $request->name;
+        $targetUser->email = $request->email;
+        $targetUser->role = $request->role;
+        $targetUser->outlet_id = $request->outlet_id;
+
+        if ($request->password) {
+            $targetUser->password = bcrypt($request->password);
+        }
+
+        if ($request->pin) {
+            $targetUser->pin = bcrypt($request->pin);
+        }
+
+        $targetUser->save();
+
+        return response()->json([
+            'message' => 'User berhasil diupdate',
+            'data' => $targetUser
+        ]);
+    }
+
+    public function updateKaryawan(Request $request, $id)
+    {
+        $user = auth()->user();
+
+        if ($user->role !== 'manager') {
+            return response()->json(['message' => 'Akses ditolak'], 403);
+        }
+
+        $karyawan = \App\Models\User::where('outlet_id', $user->outlet_id)
+            ->where('role', 'karyawan')
+            ->findOrFail($id);
+
+        // Validasi
+        $request->validate([
+            'name' => 'required',
+            'email' => 'required|email|unique:users,email,' . $id,
+            'password' => 'nullable|min:6',
+            'pin' => 'nullable|min:4|max:6'
+        ]);
+
+        // Update data
+        $karyawan->name = $request->name;
+        $karyawan->email = $request->email;
+
+        // Kalau password diisi → update
+        if ($request->password) {
+            $karyawan->password = bcrypt($request->password);
+        }
+
+        // Kalau pin diisi → update
+        if ($request->pin) {
+            $karyawan->pin = bcrypt($request->pin);
+        }
+
+        $karyawan->save();
+
+        return response()->json([
+            'message' => 'Karyawan berhasil diupdate',
+            'data' => $karyawan
+        ]);
+    }
+
     public function deleteUser($id)
     {
         $user = auth()->user();

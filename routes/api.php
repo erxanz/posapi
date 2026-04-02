@@ -50,6 +50,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
             Route::get('/', [UserController::class, 'listKaryawan'])->name('users.karyawan.list');
             Route::get('/{id}', [UserController::class, 'showKaryawan'])->name('users.karyawan.show');
+            Route::put('/{id}', [UserController::class, 'updateKaryawan'])->name('users.karyawan.update');
             Route::delete('/{id}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
         });
 
@@ -58,6 +59,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/', [UserController::class, 'createUser'])->name('users.create');
             Route::get('/', [UserController::class, 'listUsers'])->name('users.list');
             Route::get('/{id}', [UserController::class, 'showUser'])->name('users.show');
+            Route::put('/{id}', [UserController::class, 'updateUser'])->name('users.update');
             Route::delete('/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
         });
 
