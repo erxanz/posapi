@@ -196,8 +196,9 @@
                 </div>
                 <div>
                     <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
+                        <span class="badge badge-resource">API RES</span>
                         <code class="api-path">/api/v1/outlets</code>
+                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
@@ -230,16 +231,6 @@
                         <span class="badge badge-resource">API RES</span>
                         <code class="api-path">/api/v1/stations</code>
                         <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-get">GET</span>
-                        <code class="api-path">/api/v1/stations/{id}/products</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-get">GET</span>
-                        <code class="api-path">/api/v1/stations/{stationId}/orders</code>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>

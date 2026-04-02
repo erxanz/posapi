@@ -6,65 +6,60 @@ use Illuminate\Http\Request;
 use App\Models\Outlet;
 use Illuminate\Support\Facades\DB;
 
-// class OutletController extends Controller
-// {
-//     /**
-//      * Create outlet (manager only)
-//      */
-//     public function createOutlet(Request $request)
-//     {
-//         $user = auth()->user();
-
-//         // role check
-//         if ($user->role !== 'manager') {
-//             return response()->json(['message' => 'Forbidden'], 403);
-//         }
-
-//         // validasi
-//         $request->validate([
-//             'name' => 'required|string|max:255'
-//         ]);
-
-//         // optional: cegah manager punya banyak outlet
-//         if ($user->outlet_id) {
-//             return response()->json([
-//                 'message' => 'Manager sudah memiliki outlet'
-//             ], 422);
-//         }
-
-//         // pakai transaction biar aman
-//         $outlet = DB::transaction(function () use ($request, $user) {
-
-//             $outlet = Outlet::create([
-//                 'name' => $request->name,
-//                 'owner_id' => $user->id
-//             ]);
-
-//             // assign outlet ke user
-//             $user->update([
-//                 'outlet_id' => $outlet->id
-//             ]);
-
-//             return $outlet;
-//         });
-
-//         return response()->json([
-//             'message' => 'Outlet berhasil dibuat',
-//             'data' => $outlet
-//         ], 201);
-//     }
-// }
-
 class OutletController extends Controller
 {
     /**
-     * List outlet (hanya milik user)
+     * Create outlet (manager only)
      */
-    public function index()
+    public function createOutlet(Request $request)
     {
         $user = auth()->user();
 
-        $outlets = Outlet::where('owner_id', $user->id)
+        // role check
+        if ($user->role !== 'manager') {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        // validasi
+        $request->validate([
+            'name' => 'required|string|max:255'
+        ]);
+
+        // optional: cegah manager punya banyak outlet
+        if ($user->outlet_id) {
+            return response()->json([
+                'message' => 'Manager sudah memiliki outlet'
+            ], 422);
+        }
+
+        // pakai transaction biar aman
+        $outlet = DB::transaction(function () use ($request, $user) {
+
+            $outlet = Outlet::create([
+                'name' => $request->name,
+                'owner_id' => $user->id
+            ]);
+
+            // assign outlet ke user
+            $user->update([
+                'outlet_id' => $outlet->id
+            ]);
+
+            return $outlet;
+        });
+
+        return response()->json([
+            'message' => 'Outlet berhasil dibuat',
+            'data' => $outlet
+        ], 201);
+    }
+
+    /**
+     * List outlet (milik user)
+     */
+    public function index()
+    {
+        $outlets = Outlet::where('owner_id', auth()->id())
             ->latest()
             ->get();
 
@@ -78,25 +73,27 @@ class OutletController extends Controller
     {
         $user = auth()->user();
 
+        // role check
         if ($user->role !== 'manager') {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $request->validate([
+        // validasi
+        $validated = $request->validate([
             'name' => 'required|string|max:255'
         ]);
 
-        // optional: 1 manager = 1 outlet
+        // 1 manager = 1 outlet
         if ($user->outlet_id) {
             return response()->json([
                 'message' => 'Manager sudah memiliki outlet'
             ], 422);
         }
 
-        $outlet = DB::transaction(function () use ($request, $user) {
+        $outlet = DB::transaction(function () use ($validated, $user) {
 
             $outlet = Outlet::create([
-                'name' => $request->name,
+                'name' => $validated['name'],
                 'owner_id' => $user->id
             ]);
 
@@ -130,13 +127,11 @@ class OutletController extends Controller
     {
         $this->authorizeOutlet($outlet);
 
-        $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string|max:255'
         ]);
 
-        $outlet->update([
-            'name' => $request->name
-        ]);
+        $outlet->update($validated);
 
         return response()->json([
             'message' => 'Outlet berhasil diupdate',
@@ -153,7 +148,7 @@ class OutletController extends Controller
 
         DB::transaction(function () use ($outlet) {
 
-            // optional: kosongkan outlet_id user
+            // kosongkan outlet_id semua karyawan
             $outlet->karyawans()->update([
                 'outlet_id' => null
             ]);
@@ -167,9 +162,9 @@ class OutletController extends Controller
     }
 
     /**
-     * Helper authorization (owner only)
+     * Authorization helper
      */
-    private function authorizeOutlet(Outlet $outlet)
+    private function authorizeOutlet(Outlet $outlet): void
     {
         if ($outlet->owner_id !== auth()->id()) {
             abort(403, 'Forbidden');
