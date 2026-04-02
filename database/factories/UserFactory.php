@@ -5,7 +5,6 @@ namespace Database\Factories;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use App\Models\Outlet;
 
 class UserFactory extends Factory
 {
@@ -24,7 +23,7 @@ class UserFactory extends Factory
             'remember_token' => Str::random(10),
 
             'pin' => fake()->numerify('######'),
-            'outlet_id' => Outlet::factory(),
+            'outlet_id' => null,
 
             'role' => fake()->randomElement([
                 'developer',
