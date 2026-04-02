@@ -20,7 +20,7 @@
             </style>
         @endif
     </head>
-    <body class="bg-[#FDFDFC] dark:bg-[#0a0a0a] text-[#1b1b18] dark:text-[#EDEDEC] flex p-6 lg:p-8 items-center lg:justify-center min-h-screen flex-col" style="font-family: 'Instrument Sans', sans-serif;">
+    <body style="font-family: 'Inter', sans-serif; background: #f9fafb; color: #111827; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem;">
         <div style="max-width: 800px; width: 100%; padding: 2rem; border-radius: 12px; background: rgba(128, 128, 128, 0.05); border: 1px solid rgba(128, 128, 128, 0.1);">
             <h1 style="font-size: 2rem; font-weight: bold; margin-bottom: 0.5rem;">POS API Documentation</h1>
             <p style="margin-bottom: 2rem; opacity: 0.8;">Dokumentasi sederhana endpoint API untuk aplikasi POS berdasarkan struktur database saat ini.</p>
