@@ -25,11 +25,15 @@ class ProductController extends Controller
         $products = Product::withoutGlobalScopes()
             ->select([
                 'id',
-                'name',
-                'price',
                 'category_id',
                 'station_id',
-                'image'
+                'name',
+                'price',
+                'description',
+                'cost_price',
+                'stock',
+                'image',
+                'is_active',
             ])
             ->where('outlet_id', $outletId)
             ->where('is_active', true)
@@ -55,12 +59,15 @@ class ProductController extends Controller
         $query = Product::query()
             ->select([
                 'id',
-                'name',
-                'price',
                 'category_id',
                 'station_id',
+                'name',
+                'price',
+                'description',
+                'cost_price',
+                'stock',
+                'image',
                 'is_active',
-                'created_at'
             ])
             ->with([
                 'category:id,name'
@@ -107,6 +114,8 @@ class ProductController extends Controller
             'station_id' => 'nullable|exists:stations,id',
             'name' => 'required|string|max:255',
             'price' => 'required|integer|min:0',
+            'cost_price' => 'required|integer|min:0',
+            'stock' => 'required|integer|min:0',
             'description' => 'nullable|string',
             'is_active' => 'boolean',
             'image' => 'nullable|image|max:2048'
@@ -127,6 +136,9 @@ class ProductController extends Controller
             'name',
             'price',
             'description',
+            'cost_price',
+            'stock',
+            'image',
             'is_active'
         ]);
 
@@ -171,6 +183,8 @@ class ProductController extends Controller
             'station_id' => 'nullable|exists:stations,id',
             'name' => 'required|string|max:255',
             'price' => 'required|integer|min:0',
+            'cost_price' => 'required|integer|min:0',
+            'stock' => 'required|integer|min:0',
             'description' => 'nullable|string',
             'is_active' => 'boolean',
             'image' => 'nullable|image|max:2048'
@@ -191,7 +205,10 @@ class ProductController extends Controller
             'name',
             'price',
             'description',
-            'is_active'
+            'cost_price',
+            'stock',
+            'image',
+            'is_active',
         ]);
 
         // UPDATE IMAGE
