@@ -230,6 +230,76 @@ class OrderController extends Controller
     }
 
     /**
+     * PUBLIC ORDER (QR CUSTOMER - TANPA LOGIN)
+     */
+    public function publicOrder(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|exists:outlets,id',
+            'table_id' => 'required|exists:tables,id',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.qty' => 'required|integer|min:1'
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $total = 0;
+
+            // validasi table milik outlet
+            $table = \App\Models\Table::where('id', $request->table_id)
+                ->where('outlet_id', $request->outlet_id)
+                ->firstOrFail();
+
+            $order = Order::create([
+                'outlet_id' => $request->outlet_id,
+                'table_id' => $table->id,
+                'status' => 'pending'
+            ]);
+
+            foreach ($request->items as $item) {
+                $product = Product::where('id', $item['product_id'])
+                    ->where('outlet_id', $request->outlet_id)
+                    ->firstOrFail();
+
+                if (!$product->is_active) {
+                    throw new \Exception("Produk {$product->name} tidak tersedia");
+                }
+
+                $subtotal = $product->price * $item['qty'];
+                $total += $subtotal;
+
+                $order->items()->create([
+                    'product_id' => $product->id,
+                    'qty' => $item['qty'],
+                    'price' => $product->price,
+                    'total_price' => $subtotal
+                ]);
+            }
+
+            $order->update([
+                'total_price' => $total,
+                'invoice_number' => 'INV-' . strtoupper(uniqid())
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Pesanan berhasil dibuat',
+                'order' => $order->load('items.product')
+            ], 201);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Checkout Order
      */
     public function checkout(Request $request, $orderId)

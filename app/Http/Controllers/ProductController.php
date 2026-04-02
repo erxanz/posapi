@@ -10,6 +10,27 @@ use Illuminate\Support\Str;
 class ProductController extends Controller
 {
     /**
+     * PUBLIC MENU (QR)
+     */
+    public function publicMenu($outletId, $tableId)
+    {
+        // validasi table
+        $table = \App\Models\Table::where('id', $tableId)
+            ->where('outlet_id', $outletId)
+            ->firstOrFail();
+
+        $products = Product::where('outlet_id', $outletId)
+            ->where('is_active', true)
+            ->with('category')
+            ->get();
+
+        return response()->json([
+            'table' => $table,
+            'products' => $products
+        ]);
+    }
+
+    /**
      * Display a listing of the resource.
      */
     public function index(Request $request)

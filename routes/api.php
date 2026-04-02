@@ -21,11 +21,11 @@ Route::prefix('v1')->group(function () {
     // ================= PUBLIC API (QR) =================
     Route::prefix('public')->group(function () {
 
-        // 🔥 ambil menu dari QR (outlet + meja)
+        // ambil menu dari QR (outlet + meja)
         Route::get('/menu/{outletId}/{tableId}', [ProductController::class, 'publicMenu'])
             ->name('public.menu');
 
-        // 🔥 customer buat order tanpa login
+        // customer buat order tanpa login
         Route::post('/order', [OrderController::class, 'publicOrder'])
             ->name('public.order');
 
