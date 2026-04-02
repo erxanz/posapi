@@ -26,17 +26,17 @@ Route::prefix('v1')->group(function () {
         // OUTLET
         Route::post('/outlets', [OutletController::class, 'createOutlet'])->name('outlets.create');
 
-        // USER (DEVELOPER)
-        Route::post('/users', [UserController::class, 'createUser'])->name('users.create');
-        Route::get('/users', [UserController::class, 'listUsers'])->name('users.list');
-        Route::get('/users/{id}', [UserController::class, 'showUser'])->name('users.show');
-        Route::delete('/users/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
-
         // USER (MANAGER) - KARYAWAN
         Route::post('/users/karyawan', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
         Route::get('/users/karyawan', [UserController::class, 'listKaryawan'])->name('users.karyawan.list');
         Route::get('/users/karyawan/{id}', [UserController::class, 'showKaryawan'])->name('users.karyawan.show');
         Route::delete('/users/karyawan/{id}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
+
+        // USER (DEVELOPER)
+        Route::post('/users', [UserController::class, 'createUser'])->name('users.create');
+        Route::get('/users', [UserController::class, 'listUsers'])->name('users.list');
+        Route::get('/users/{id}', [UserController::class, 'showUser'])->name('users.show');
+        Route::delete('/users/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
 
         // CATEGORY & PRODUCT (WAJIB LOGIN)
         Route::apiResource('categories', CategoryController::class);
