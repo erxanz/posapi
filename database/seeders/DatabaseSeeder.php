@@ -8,9 +8,10 @@ use App\Models\Outlet;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Table;
+use App\Models\Station;
 use App\Models\Order;
-use App\Models\OrderItem;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
@@ -88,6 +89,18 @@ class DatabaseSeeder extends Seeder
                 ]);
             });
 
+            // station per outlet
+            $stations = collect([
+                'Kitchen',
+                'Bar',
+                'Kasir',
+            ])->map(function ($name) use ($outlet) {
+                return Station::create([
+                    'name' => $name,
+                    'outlet_id' => $outlet->id,
+                ]);
+            });
+
             // produk per kategori
             foreach ($categories as $category) {
 
@@ -95,6 +108,7 @@ class DatabaseSeeder extends Seeder
                 Product::factory()->count(5)->create([
                     'category_id' => $category->id,
                     'outlet_id' => $outlet->id,
+                    'station_id' => $stations->random()->id,
                 ]);
             }
 
@@ -130,12 +144,15 @@ class DatabaseSeeder extends Seeder
                     $qty = fake()->numberBetween(1, 3);
                     $subtotal = $product->price * $qty;
 
-                    OrderItem::create([
+                    DB::table('order_items')->insert([
                         'order_id' => $order->id,
                         'product_id' => $product->id,
+                        'station_id' => $product->station_id,
                         'qty' => $qty,
                         'price' => $product->price,
                         'total_price' => $subtotal,
+                        'created_at' => now(),
+                        'updated_at' => now(),
                     ]);
 
                     $total += $subtotal;
