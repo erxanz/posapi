@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use App\Models\Category;
 use App\Models\Table;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
 {
@@ -22,7 +24,10 @@ class ProductController extends Controller
             ->where('outlet_id', $outletId)
             ->firstOrFail();
 
-        $products = Product::withoutGlobalScopes()
+        $products = Cache::remember(
+            "menu_outlet_{$outletId}",
+            60,
+            fn () => Product::query()
             ->select([
                 'id',
                 'category_id',
@@ -30,10 +35,7 @@ class ProductController extends Controller
                 'name',
                 'price',
                 'description',
-                'cost_price',
-                'stock',
                 'image',
-                'is_active',
             ])
             ->where('outlet_id', $outletId)
             ->where('is_active', true)
@@ -41,12 +43,13 @@ class ProductController extends Controller
                 'category:id,name'
             ])
             ->orderBy('name')
-            ->get();
+            ->get()
+        );
 
         return response()->json([
             'table' => $table,
             'products' => $products
-        ]);
+        ], 200);
     }
 
     /**
@@ -57,6 +60,7 @@ class ProductController extends Controller
         $user = auth()->user();
 
         $query = Product::query()
+            ->where('outlet_id', $user->outlet_id)
             ->select([
                 'id',
                 'category_id',
@@ -64,10 +68,7 @@ class ProductController extends Controller
                 'name',
                 'price',
                 'description',
-                'cost_price',
-                'stock',
                 'image',
-                'is_active',
             ])
             ->with([
                 'category:id,name'
@@ -78,7 +79,7 @@ class ProductController extends Controller
         if ($request->filled('category_id')) {
             $query->whereHas('category', function ($q) use ($request, $user) {
                 $q->where('id', $request->category_id)
-                  ->where('outlet_id', $user->outlet_id);
+                    ->where('outlet_id', $user->outlet_id);
             });
         }
 
@@ -88,14 +89,15 @@ class ProductController extends Controller
 
             $query->where(function ($q) use ($keywords) {
                 foreach ($keywords as $word) {
-                    $q->where('name', 'like', "%{$word}%");
+                    $q->where('name', 'like', "{$word}%");
                 }
             });
         }
 
-        return response()->json(
-            $query->paginate($request->limit ?? 10)
-        );
+        $limit = min($request->limit ?? 10, 100);
+        return response()->json([
+            'data' => $query->paginate($limit)
+        ]);
     }
 
     /**
@@ -103,6 +105,8 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
+        Cache::forget("menu_outlet_{$user->outlet_id}");
+
         $user = auth()->user();
 
         if (!$user->outlet_id) {
@@ -111,7 +115,12 @@ class ProductController extends Controller
 
         $request->validate([
             'category_id' => 'required|exists:categories,id',
-            'station_id' => 'nullable|exists:stations,id',
+            'station_id' => [
+                'nullable',
+                Rule::exists('stations', 'id')->where(function ($q) use ($user) {
+                    $q->where('outlet_id', $user->outlet_id);
+                })
+            ],
             'name' => 'required|string|max:255',
             'price' => 'required|integer|min:0',
             'cost_price' => 'required|integer|min:0',
@@ -124,7 +133,7 @@ class ProductController extends Controller
         // VALIDASI CATEGORY
         $category = Category::where('id', $request->category_id)
             ->where('outlet_id', $user->outlet_id)
-            ->first();
+            ->firstOrFail();
 
         if (!$category) {
             return response()->json(['message' => 'Category tidak valid'], 422);
@@ -151,10 +160,9 @@ class ProductController extends Controller
 
         $product = Product::create($data);
 
-        return response()->json(
-            $product->load('category:id,name'),
-            201
-        );
+        return response()->json([
+            'data' => $product->load('category:id,name')
+        ], 201);
     }
 
     /**
@@ -164,9 +172,9 @@ class ProductController extends Controller
     {
         $this->authorizeProduct($product);
 
-        return response()->json(
-            $product->load('category:id,name')
-        );
+        return response()->json([
+            'data' => $product->load('category:id,name')
+        ], 200);
     }
 
     /**
@@ -174,13 +182,20 @@ class ProductController extends Controller
      */
     public function update(Request $request, Product $product)
     {
+        Cache::forget("menu_outlet_{$user->outlet_id}");
+
         $user = auth()->user();
 
         $this->authorizeProduct($product);
 
         $request->validate([
             'category_id' => 'required|exists:categories,id',
-            'station_id' => 'nullable|exists:stations,id',
+            'station_id' => [
+                'nullable',
+                Rule::exists('stations', 'id')->where(function ($q) use ($user) {
+                    $q->where('outlet_id', $user->outlet_id);
+                })
+            ],
             'name' => 'required|string|max:255',
             'price' => 'required|integer|min:0',
             'cost_price' => 'required|integer|min:0',
@@ -193,7 +208,7 @@ class ProductController extends Controller
         // VALIDASI CATEGORY
         $category = Category::where('id', $request->category_id)
             ->where('outlet_id', $user->outlet_id)
-            ->first();
+            ->firstOrFail();
 
         if (!$category) {
             return response()->json(['message' => 'Category tidak valid'], 422);
@@ -214,7 +229,7 @@ class ProductController extends Controller
         // UPDATE IMAGE
         if ($request->hasFile('image')) {
 
-            if ($product->image) {
+            if ($product->image && Storage::disk('public')->exists($product->image)) {
                 Storage::disk('public')->delete($product->image);
             }
 
@@ -223,9 +238,9 @@ class ProductController extends Controller
 
         $product->update($data);
 
-        return response()->json(
-            $product->load('category:id,name')
-        );
+        return response()->json([
+            'data' => $product->load('category:id,name')
+        ], 200);
     }
 
     /**
@@ -233,9 +248,11 @@ class ProductController extends Controller
      */
     public function destroy(Product $product)
     {
+        Cache::forget("menu_outlet_{$user->outlet_id}");
+
         $this->authorizeProduct($product);
 
-        if ($product->image) {
+        if ($product->image && Storage::disk('public')->exists($product->image)) {
             Storage::disk('public')->delete($product->image);
         }
 
@@ -243,7 +260,7 @@ class ProductController extends Controller
 
         return response()->json([
             'message' => 'Product deleted successfully'
-        ]);
+        ], 200);
     }
 
     /**

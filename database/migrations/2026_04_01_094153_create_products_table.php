@@ -24,6 +24,8 @@ return new class extends Migration
             $table->string('image')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
+
+            $table->index(['outlet_id', 'category_id']);
         });
     }
 
