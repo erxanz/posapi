@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('order_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('station_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('station_id')->constrained()->cascadeOnDelete()->nullOnDelete();
             $table->integer('qty'); // jumlah produk yang dibeli
             $table->integer('price'); // harga saat transaksi
             $table->integer('total_price')->default(0); // price * qty

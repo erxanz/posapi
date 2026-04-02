@@ -14,8 +14,8 @@ use App\Http\Controllers\StationController;
 Route::prefix('v1')->group(function () {
 
     // ================= AUTH (PUBLIC) =================
-    Route::post('/register', [AuthController::class, 'register'])->name('register')->name('register');
-    Route::post('/login', [AuthController::class, 'login'])->name('login');
+    Route::post('/register', [AuthController::class, 'register'])->name('register');
+    Route::post('/login', [AuthController::class, 'login'])->name('login')->middleware('throttle:5,1'); // Limit login attempts
     Route::post('/login-pin', [AuthController::class, 'loginPin'])->name('login.pin');
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.email');
     Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');

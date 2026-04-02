@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use App\Models\Outlet;
 use App\Models\User;
 
 class AuthController extends Controller
@@ -13,25 +15,53 @@ class AuthController extends Controller
      */
     public function register(Request $request)
     {
-        // validasi input
+        // 1. VALIDASI
         $request->validate([
-            'name' => 'required',
+            'name' => 'required|string|max:100',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|min:6'
+            'password' => 'required|min:6',
+            'outlet_name' => 'required|string|max:100'
         ]);
 
-        // buat user baru
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'role' => 'manager' // default role manager
-        ]);
+        // 2. TRANSACTION (WAJIB BEST PRACTICE)
+        DB::beginTransaction();
 
-        return response()->json([
-            'message' => 'Registrasi berhasil',
-            'user' => $user
-        ], 201);
+        try {
+            // 3. BUAT USER (MANAGER)
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'role' => 'manager'
+            ]);
+
+            // 4. BUAT OUTLET
+            $outlet = Outlet::create([
+                'name' => $request->outlet_name,
+                'owner_id' => $user->id
+            ]);
+
+            // 5. HUBUNGKAN USER KE OUTLET
+            $user->update([
+                'outlet_id' => $outlet->id
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Registrasi berhasil',
+                'user' => $user,
+                'outlet' => $outlet
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Registrasi gagal',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -61,7 +91,7 @@ class AuthController extends Controller
             'message' => 'Login berhasil',
             'token' => $token,
             'user' => $user
-        ]);
+        ], 200);
     }
 
     /**
@@ -90,7 +120,7 @@ class AuthController extends Controller
             'message' => 'Login berhasil',
             'token' => $token,
             'user' => $user
-        ]);
+        ], 200);
     }
 
     /**
@@ -100,7 +130,7 @@ class AuthController extends Controller
     {
         return response()->json([
             'user' => $request->user()->load('outlet') // load outlet relationship
-        ]);
+        ], 200);
     }
 
     /**
@@ -112,6 +142,6 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Logout berhasil'
-        ]);
+        ], 200);
     }
 }
