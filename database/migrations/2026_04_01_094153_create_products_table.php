@@ -18,9 +18,9 @@ return new class extends Migration
             $table->foreignId('station_id')->nullable()->constrained()->nullOnDelete();
             $table->string('name');
             $table->text('description')->nullable();
-            $table->integer('price')->unsigned();
-            $table->integer('cost_price')->default(0)->unsigned();
-            $table->integer('stock')->default(0)->unsigned();
+            $table->integer('price')->default(0);
+            $table->integer('cost_price')->default(0);
+            $table->integer('stock')->default(0);
             $table->string('image')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
