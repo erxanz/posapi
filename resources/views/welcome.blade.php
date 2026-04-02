@@ -313,111 +313,67 @@
                 </div>
             </div>
 
-            <!-- Database Content Reference Section -->
+            <!-- Database Schema Section -->
             <div class="section-card">
                 <div class="section-header">
-                    <i class="fa-solid fa-database" style="color: #059669; font-size: 1.125rem;"></i>
-                    <h2 class="section-title">Database Content Reference</h2>
+                    <i class="fa-solid fa-database" style="color: #3b82f6; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Database Schema</h2>
                 </div>
                 <div style="padding: 1.5rem;">
-                    <!-- Users -->
-                    <div style="margin-bottom: 2rem;">
-                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.75rem; border-bottom: 2px solid #f3f4f6; padding-bottom: 0.5rem;">
-                            <i class="fa-solid fa-users" style="color: #8b5cf6; margin-right: 0.5rem;"></i>Users (10 Total)
-                        </h3>
-                        <table style="width: 100%; font-size: 0.85rem; border-collapse: collapse;">
-                            <tr style="background: #f9fafb;">
-                                <th style="padding: 0.75rem; text-align: left; border: 1px solid #e5e7eb; font-weight: 600;">ID</th>
-                                <th style="padding: 0.75rem; text-align: left; border: 1px solid #e5e7eb; font-weight: 600;">Name</th>
-                                <th style="padding: 0.75rem; text-align: left; border: 1px solid #e5e7eb; font-weight: 600;">Email</th>
-                                <th style="padding: 0.75rem; text-align: left; border: 1px solid #e5e7eb; font-weight: 600;">Role</th>
-                                <th style="padding: 0.75rem; text-align: left; border: 1px solid #e5e7eb; font-weight: 600;">PIN</th>
-                                <th style="padding: 0.75rem; text-align: left; border: 1px solid #e5e7eb; font-weight: 600;">Outlet</th>
-                            </tr>
-                            <tr><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">1</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Developer</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb; font-family: monospace; font-size: 0.78rem;">developer@example.com</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><span style="background: #eef2ff; color: #4f46e5; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">Developer</span></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">111111</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">—</td></tr>
-                            <tr style="background: #f9fafb;"><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">2</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Manager 1</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb; font-family: monospace; font-size: 0.78rem;">manager1@example.com</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><span style="background: #fef3c7; color: #d97706; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">Manager</span></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">222221</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Outlet 1</td></tr>
-                            <tr><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">3-4</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Karyawan 1-2</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="font-family: monospace; font-size: 0.75rem;">karyawan@example.com</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><span style="background: #dcfce7; color: #059669; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">Karyawan</span></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">000001-2</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Outlet 1</td></tr>
-                            <tr style="background: #f9fafb;"><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">5</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Manager 2</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb; font-family: monospace; font-size: 0.78rem;">manager2@example.com</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><span style="background: #fef3c7; color: #d97706; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">Manager</span></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">222222</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Outlet 2</td></tr>
-                            <tr><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">6-7</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Karyawan 3-4</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="font-family: monospace; font-size: 0.75rem;">karyawan@example.com</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><span style="background: #dcfce7; color: #059669; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">Karyawan</span></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">000003-4</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Outlet 2</td></tr>
-                            <tr style="background: #f9fafb;"><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">8</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Manager 3</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb; font-family: monospace; font-size: 0.78rem;">manager3@example.com</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><span style="background: #fef3c7; color: #d97706; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">Manager</span></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">222223</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Outlet 3</td></tr>
-                            <tr><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">9-10</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Karyawan 5-6</td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="font-family: monospace; font-size: 0.75rem;">karyawan@example.com</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><span style="background: #dcfce7; color: #059669; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">Karyawan</span></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;"><code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.25rem;">000005-6</code></td><td style="padding: 0.75rem; border: 1px solid #e5e7eb;">Outlet 3</td></tr>
-                        </table>
-                        <p style="margin-top: 0.75rem; font-size: 0.8rem; color: #6b7280;"><i class="fa-solid fa-info-circle"></i> All passwords are hashed. Use PIN for login-pin endpoint.</p>
-                    </div>
-
-                    <!-- Outlets & Structure -->
-                    <div style="margin-bottom: 2rem;">
-                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.75rem; border-bottom: 2px solid #f3f4f6; padding-bottom: 0.5rem;">
-                            <i class="fa-solid fa-store" style="color: #10b981; margin-right: 0.5rem;"></i>Outlets & Structure (3 Total)
-                        </h3>
-                        <div style="display: grid; gap: 1rem;">
-                            <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 1rem; border-radius: 0.375rem;">
-                                <div style="font-weight: 600; color: #111827; margin-bottom: 0.5rem;">📍 Outlet 1 (Managed by Manager 1)</div>
-                                <div style="font-size: 0.85rem; color: #6b7280;">
-                                    <div>• <strong>Tables:</strong> 8 (Meja 01-08)</div>
-                                    <div>• <strong>Categories:</strong> Makanan, Minuman, Snack</div>
-                                    <div>• <strong>Products:</strong> 15 items (5 per category)</div>
-                                    <div>• <strong>Stations:</strong> Kitchen, Bar, Kasir</div>
-                                    <div>• <strong>Karyawan:</strong> 2 employees</div>
-                                </div>
-                            </div>
-                            <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 1rem; border-radius: 0.375rem;">
-                                <div style="font-weight: 600; color: #111827; margin-bottom: 0.5rem;">📍 Outlet 2 (Managed by Manager 2)</div>
-                                <div style="font-size: 0.85rem; color: #6b7280;">
-                                    <div>• <strong>Tables:</strong> 8 (Meja 01-08)</div>
-                                    <div>• <strong>Categories:</strong> Makanan, Minuman, Snack</div>
-                                    <div>• <strong>Products:</strong> 15 items (5 per category)</div>
-                                    <div>• <strong>Stations:</strong> Kitchen, Bar, Kasir</div>
-                                    <div>• <strong>Karyawan:</strong> 2 employees</div>
-                                </div>
-                            </div>
-                            <div style="background: #f0fdf4; border-left: 4px solid #10b981; padding: 1rem; border-radius: 0.375rem;">
-                                <div style="font-weight: 600; color: #111827; margin-bottom: 0.5rem;">📍 Outlet 3 (Managed by Manager 3)</div>
-                                <div style="font-size: 0.85rem; color: #6b7280;">
-                                    <div>• <strong>Tables:</strong> 8 (Meja 01-08)</div>
-                                    <div>• <strong>Categories:</strong> Makanan, Minuman, Snack</div>
-                                    <div>• <strong>Products:</strong> 15 items (5 per category)</div>
-                                    <div>• <strong>Stations:</strong> Kitchen, Bar, Kasir</div>
-                                    <div>• <strong>Karyawan:</strong> 2 employees</div>
-                                </div>
-                            </div>
+                    <div style="margin-bottom: 1.5rem;">
+                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem;">👤 Users</h3>
+                        <div style="font-size: 0.85rem; color: #4b5563; font-family: monospace; line-height: 1.6; background: #f9fafb; padding: 0.75rem; border-radius: 0.375rem;">
+                            id, name, email, email_verified_at, password, remember_token, pin, outlet_id, role (developer|manager|karyawan), created_at, updated_at
                         </div>
                     </div>
 
-                    <!-- Sample Data Overview -->
+                    <div style="margin-bottom: 1.5rem;">
+                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem;">🏪 Outlets</h3>
+                        <div style="font-size: 0.85rem; color: #4b5563; font-family: monospace; line-height: 1.6; background: #f9fafb; padding: 0.75rem; border-radius: 0.375rem;">
+                            id, name, owner_id (FK: users), created_at, updated_at
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 1.5rem;">
+                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem;">🎫 Tables (Meja)</h3>
+                        <div style="font-size: 0.85rem; color: #4b5563; font-family: monospace; line-height: 1.6; background: #f9fafb; padding: 0.75rem; border-radius: 0.375rem;">
+                            id, outlet_id (FK: outlets), name, code, capacity, qr_code, qr_token (UUID), status (available|occupied|reserved|maintenance), is_active, created_at, updated_at, deleted_at
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 1.5rem;">
+                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem;">🔧 Stations (Stasiun Kerja)</h3>
+                        <div style="font-size: 0.85rem; color: #4b5563; font-family: monospace; line-height: 1.6; background: #f9fafb; padding: 0.75rem; border-radius: 0.375rem;">
+                            id, outlet_id (FK: outlets), name (Kitchen|Bar|Kasir|Dessert), created_at, updated_at
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 1.5rem;">
+                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem;">📂 Categories</h3>
+                        <div style="font-size: 0.85rem; color: #4b5563; font-family: monospace; line-height: 1.6; background: #f9fafb; padding: 0.75rem; border-radius: 0.375rem;">
+                            id, name, outlet_id (FK: outlets), created_at, updated_at
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 1.5rem;">
+                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem;">🍽️ Products</h3>
+                        <div style="font-size: 0.85rem; color: #4b5563; font-family: monospace; line-height: 1.6; background: #f9fafb; padding: 0.75rem; border-radius: 0.375rem;">
+                            id, category_id (FK: categories), outlet_id (FK: outlets), station_id (FK: stations), name, description, price, cost_price, stock, image, is_active, created_at, updated_at
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 1.5rem;">
+                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem;">🛒 Orders</h3>
+                        <div style="font-size: 0.85rem; color: #4b5563; font-family: monospace; line-height: 1.6; background: #f9fafb; padding: 0.75rem; border-radius: 0.375rem;">
+                            id, outlet_id (FK: outlets), user_id (FK: users), customer_name, notes, table_id (FK: tables), invoice_number (unique), total_price, status (pending|paid|cancelled), created_at, updated_at
+                        </div>
+                    </div>
+
                     <div>
-                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.75rem; border-bottom: 2px solid #f3f4f6; padding-bottom: 0.5rem;">
-                            <i class="fa-solid fa-chart-bar" style="color: #f59e0b; margin-right: 0.5rem;"></i>Data Summary
-                        </h3>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
-                            <div style="background: #fef3c7; padding: 1rem; border-radius: 0.375rem; border: 1px solid #fde68a;">
-                                <div style="font-size: 2rem; font-weight: 700; color: #d97706;">45</div>
-                                <div style="font-size: 0.85rem; color: #6b7280;">Products</div>
-                            </div>
-                            <div style="background: #e0f2fe; padding: 1rem; border-radius: 0.375rem; border: 1px solid #bae6fd;">
-                                <div style="font-size: 2rem; font-weight: 700; color: #0284c7;">24</div>
-                                <div style="font-size: 0.85rem; color: #6b7280;">Tables</div>
-                            </div>
-                            <div style="background: #f0fdf4; padding: 1rem; border-radius: 0.375rem; border: 1px solid #bbf7d0;">
-                                <div style="font-size: 2rem; font-weight: 700; color: #10b981;">9</div>
-                                <div style="font-size: 0.85rem; color: #6b7280;">Stations</div>
-                            </div>
-                            <div style="background: #fce7f3; padding: 1rem; border-radius: 0.375rem; border: 1px solid #fbcfe8;">
-                                <div style="font-size: 2rem; font-weight: 700; color: #ec4899;">12</div>
-                                <div style="font-size: 0.85rem; color: #6b7280;">Orders</div>
-                            </div>
-                            <div style="background: #f3e8ff; padding: 1rem; border-radius: 0.375rem; border: 1px solid #ddd6fe;">
-                                <div style="font-size: 2rem; font-weight: 700; color: #7c3aed;">9</div>
-                                <div style="font-size: 0.85rem; color: #6b7280;">Categories</div>
-                            </div>
-                            <div style="background: #fee2e2; padding: 1rem; border-radius: 0.375rem; border: 1px solid #fecaca;">
-                                <div style="font-size: 2rem; font-weight: 700; color: #dc2626;">23</div>
-                                <div style="font-size: 0.85rem; color: #6b7280;">Order Items</div>
-                            </div>
+                        <h3 style="font-size: 0.95rem; font-weight: 600; color: #111827; margin-bottom: 0.5rem;">📋 Order Items</h3>
+                        <div style="font-size: 0.85rem; color: #4b5563; font-family: monospace; line-height: 1.6; background: #f9fafb; padding: 0.75rem; border-radius: 0.375rem;">
+                            id, order_id (FK: orders), product_id (FK: products), station_id (FK: stations), qty, price, total_price, created_at, updated_at
                         </div>
-                        <p style="margin-top: 1rem; font-size: 0.8rem; color: #6b7280; padding: 0.75rem; background: #f9fafb; border-left: 3px solid #e5e7eb; border-radius: 0.25rem;">
-                            <i class="fa-solid fa-lightbulb"></i> <strong>Tip:</strong> Each outlet is isolated with its own tables, products, and employees. All data is seeded using factories for realistic testing.
-                        </p>
                     </div>
                 </div>
             </div>
