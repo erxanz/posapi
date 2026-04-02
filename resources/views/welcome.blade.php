@@ -103,6 +103,26 @@
                 </div>
             </div>
 
+            <!-- Public API (QR) Section -->
+            <div class="section-card">
+                <div class="section-header">
+                    <i class="fa-solid fa-qrcode" style="color: #f43f5e; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Public API <span style="font-weight: 400; color: #6b7280; font-size: 0.875rem;">(QR Menu)</span></h2>
+                </div>
+                <div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/public/menu/{outletId}/{tableId}</code>
+                        <span class="note">Public</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/public/order</code>
+                        <span class="note">Public</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Users Section -->
             <div class="section-card">
                 <div class="section-header">
@@ -168,6 +188,22 @@
                 </div>
             </div>
 
+            <!-- Tables Section -->
+            <div class="section-card">
+                <div class="section-header">
+                    <i class="fa-solid fa-chair" style="color: #64748b; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Tables (Meja)</h2>
+                </div>
+                <div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/tables</code>
+                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Products & Categories Section -->
             <div class="section-card">
                 <div class="section-header">
@@ -184,7 +220,7 @@
                     <div class="endpoint-row">
                         <span class="badge badge-resource">API RES</span>
                         <code class="api-path">/api/v1/products</code>
-                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
+                        <span class="api-method-list">GET, POST, GET {id}</span>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>

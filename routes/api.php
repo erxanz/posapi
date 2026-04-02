@@ -1,12 +1,14 @@
 <?php
 
+use Illuminate\Support\Facades\Route;
+
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\OutletController;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\API\TableController;
 
 Route::prefix('v1')->group(function () {
 
@@ -16,36 +18,70 @@ Route::prefix('v1')->group(function () {
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.email');
     Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');
 
-    // ================= PROTECTED =================
+    // ================= PUBLIC API (QR) =================
+    Route::prefix('public')->group(function () {
+
+        // 🔥 ambil menu dari QR (outlet + meja)
+        Route::get('/menu/{outletId}/{tableId}', [ProductController::class, 'publicMenu'])
+            ->name('public.menu');
+
+        // 🔥 customer buat order tanpa login
+        Route::post('/order', [OrderController::class, 'publicOrder'])
+            ->name('public.order');
+
+    });
+
+    // ================= PROTECTED (SANCTUM) =============
     Route::middleware('auth:sanctum')->group(function () {
 
-        // AUTH
+        // ================= AUTH =================
         Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
         Route::get('/me', [AuthController::class, 'me'])->name('me');
 
-        // OUTLET
-        Route::post('/outlets', [OutletController::class, 'createOutlet'])->name('outlets.create');
+        // ================= OUTLET =================
+        Route::post('/outlets', [OutletController::class, 'createOutlet'])
+            ->name('outlets.create');
 
-        // USER (MANAGER) - KARYAWAN
-        Route::post('/users/karyawan', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
-        Route::get('/users/karyawan', [UserController::class, 'listKaryawan'])->name('users.karyawan.list');
-        Route::get('/users/karyawan/{id}', [UserController::class, 'showKaryawan'])->name('users.karyawan.show');
-        Route::delete('/users/karyawan/{id}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
+        // ================= TABLE (MEJA) =================
+        Route::apiResource('tables', TableController::class);
 
-        // USER (DEVELOPER)
-        Route::post('/users', [UserController::class, 'createUser'])->name('users.create');
-        Route::get('/users', [UserController::class, 'listUsers'])->name('users.list');
-        Route::get('/users/{id}', [UserController::class, 'showUser'])->name('users.show');
-        Route::delete('/users/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
+        // ================= USER (KARYAWAN) =================
+        Route::prefix('users/karyawan')->group(function () {
+            Route::post('/', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
+            Route::get('/', [UserController::class, 'listKaryawan'])->name('users.karyawan.list');
+            Route::get('/{id}', [UserController::class, 'showKaryawan'])->name('users.karyawan.show');
+            Route::delete('/{id}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
+        });
 
-        // CATEGORY & PRODUCT (WAJIB LOGIN)
+        // ================= USER (DEVELOPER) =================
+        Route::prefix('users')->group(function () {
+            Route::post('/', [UserController::class, 'createUser'])->name('users.create');
+            Route::get('/', [UserController::class, 'listUsers'])->name('users.list');
+            Route::get('/{id}', [UserController::class, 'showUser'])->name('users.show');
+            Route::delete('/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
+        });
+
+        // ================= CATEGORY =================
         Route::apiResource('categories', CategoryController::class);
+
+        // ================= PRODUCT =================
         Route::apiResource('products', ProductController::class);
 
-        // ORDER (POS)
-        Route::apiResource('orders', OrderController::class);
-        Route::post('/orders/{id}/items', [OrderController::class, 'addItem'])->name('orders.addItem');
-        Route::delete('/orders/{id}/items/{itemId}', [OrderController::class, 'removeItem'])->name('orders.removeItem');
-        Route::post('/orders/{id}/checkout', [OrderController::class, 'checkout'])->name('orders.checkout');
+        // ================= ORDER (POS INTERNAL) =================
+        Route::prefix('orders')->group(function () {
+
+            Route::get('/', [OrderController::class, 'index'])->name('orders.index');
+            Route::post('/', [OrderController::class, 'store'])->name('orders.store');
+            Route::get('/{id}', [OrderController::class, 'show'])->name('orders.show');
+
+            // cart
+            Route::post('/{id}/items', [OrderController::class, 'addItem'])->name('orders.addItem');
+            Route::delete('/{id}/items/{itemId}', [OrderController::class, 'removeItem'])->name('orders.removeItem');
+
+            // checkout kasir
+            Route::post('/{id}/checkout', [OrderController::class, 'checkout'])->name('orders.checkout');
+
+        });
+
     });
 });

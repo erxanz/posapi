@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('table_id')->constrained()->cascadeOnDelete();
             $table->string('invoice_number')->unique();
             $table->integer('total_price')->default(0);
             $table->enum('status', ['pending', 'paid', 'cancelled'])->default('pending');
