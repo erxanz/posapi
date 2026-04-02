@@ -8,5 +8,24 @@ use Illuminate\Database\Eloquent\Model;
 class Outlet extends Model
 {
     use HasFactory;
-    //
+
+    protected $fillable = [
+        'name',
+        'owner_id',
+    ];
+
+    public function owner()
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    public function karyawans()
+    {
+        return $this->hasMany(User::class, 'outlet_id');
+    }
+
+    public function orders()
+    {
+        return $this->hasMany(Order::class);
+    }
 }
