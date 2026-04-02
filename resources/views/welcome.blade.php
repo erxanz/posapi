@@ -6,9 +6,10 @@
 
         <title>Laravel</title>
 
-        <!-- Fonts -->
+        <!-- Fonts & Icons -->
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" />
 
         <!-- Styles / Scripts -->
         @if (file_exists(public_path('build/manifest.json')) || file_exists(public_path('hot')))
@@ -19,7 +20,79 @@
             </style>
         @endif
     </head>
-    <body class="bg-[#FDFDFC] dark:bg-[#0a0a0a] text-[#1b1b18] flex p-6 lg:p-8 items-center lg:justify-center min-h-screen flex-col">
-        <p>success</p>
+    <body class="bg-[#FDFDFC] dark:bg-[#0a0a0a] text-[#1b1b18] dark:text-[#EDEDEC] flex p-6 lg:p-8 items-center lg:justify-center min-h-screen flex-col" style="font-family: 'Instrument Sans', sans-serif;">
+        <div style="max-width: 800px; width: 100%; padding: 2rem; border-radius: 12px; background: rgba(128, 128, 128, 0.05); border: 1px solid rgba(128, 128, 128, 0.1);">
+            <h1 style="font-size: 2rem; font-weight: bold; margin-bottom: 0.5rem;">POS API Documentation</h1>
+            <p style="margin-bottom: 2rem; opacity: 0.8;">Dokumentasi sederhana endpoint API untuk aplikasi POS berdasarkan struktur database saat ini.</p>
+
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <!-- Auth Endpoints -->
+                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
+                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-lock" style="margin-right: 0.5rem; color: #6366f1;"></i> Authentication</h2>
+                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/login</code><br>
+                            <small style="opacity: 0.7;">Body: email, password</small>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/logout</code><br>
+                            <small style="opacity: 0.7;">Headers: Authorization Bearer {token}</small>
+                        </li>
+                        <li>
+                            <strong style="color: #10b981;">GET</strong> <code>/api/user</code><br>
+                            <small style="opacity: 0.7;">Headers: Authorization Bearer {token}</small>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Outlets Endpoints -->
+                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
+                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-store" style="margin-right: 0.5rem; color: #10b981;"></i> Outlets</h2>
+                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #10b981;">GET</strong> <code>/api/outlets</code>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/outlets</code><br>
+                            <small style="opacity: 0.7;">Body: name, owner_id</small>
+                        </li>
+                        <li>
+                            <strong style="color: #10b981;">GET</strong> <code>/api/outlets/{id}</code>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Products & Categories Endpoints -->
+                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
+                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-box-open" style="margin-right: 0.5rem; color: #f59e0b;"></i> Products & Categories</h2>
+                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #10b981;">GET</strong> <code>/api/categories</code>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #10b981;">GET</strong> <code>/api/products</code>
+                        </li>
+                        <li>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/products</code><br>
+                            <small style="opacity: 0.7;">Body: name, price, stock, category_id, outlet_id</small>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Orders Endpoints -->
+                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
+                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-cart-shopping" style="margin-right: 0.5rem; color: #ec4899;"></i> Orders</h2>
+                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #10b981;">GET</strong> <code>/api/orders</code>
+                        </li>
+                        <li>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/orders</code><br>
+                            <small style="opacity: 0.7;">Body: outlet_id, total_price, payment_method, items (product_id, quantity, subtotal)</small>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
     </body>
 </html>
