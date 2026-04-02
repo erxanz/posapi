@@ -8,7 +8,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\OutletController;
-use App\Http\Controllers\API\TableController;
+use App\Http\Controllers\TableController;
 use App\Http\Controllers\StationController;
 
 Route::prefix('v1')->group(function () {
