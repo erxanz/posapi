@@ -26,10 +26,15 @@ Route::prefix('v1')->group(function () {
         // OUTLET
         Route::post('/outlets', [OutletController::class, 'createOutlet'])->name('outlets.create');
 
-        // USER / KARYAWAN
-        Route::post('/karyawan', [UserController::class, 'createKaryawan'])->name('karyawan.create');
-        Route::get('/karyawan', [UserController::class, 'listKaryawan'])->name('karyawan.list');
-        Route::delete('/karyawan/{id}', [UserController::class, 'deleteKaryawan'])->name('karyawan.delete');
+        // USER (DEVELOPER)
+        Route::post('/users', [UserController::class, 'createUser'])->name('users.create');
+        Route::get('/users', [UserController::class, 'listUsers'])->name('users.list');
+        Route::delete('/users/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
+
+        // USER (MANAGER) - KARYAWAN
+        Route::post('/users/karyawan', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
+        Route::get('/users/karyawan', [UserController::class, 'listKaryawan'])->name('users.karyawan.list');
+        Route::delete('/users/karyawan/{id}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
 
         // CATEGORY & PRODUCT (WAJIB LOGIN)
         Route::apiResource('categories', CategoryController::class);

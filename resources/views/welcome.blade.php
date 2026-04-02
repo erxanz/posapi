@@ -31,64 +31,89 @@
                     <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-lock" style="margin-right: 0.5rem; color: #6366f1;"></i> Authentication</h2>
                     <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/login</code><br>
-                            <small style="opacity: 0.7;">Body: email, password</small>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/login</code>
                         </li>
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/logout</code><br>
-                            <small style="opacity: 0.7;">Headers: Authorization Bearer {token}</small>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/login-pin</code>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/forgot-password</code>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/reset-password</code>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/logout</code> <small style="opacity: 0.7;">(Auth)</small>
                         </li>
                         <li>
-                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/user</code><br>
-                            <small style="opacity: 0.7;">Headers: Authorization Bearer {token}</small>
+                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/me</code> <small style="opacity: 0.7;">(Auth)</small>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Users Endpoints -->
+                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
+                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-users" style="margin-right: 0.5rem; color: #8b5cf6;"></i> Users (Auth)</h2>
+                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/users</code> <small style="opacity: 0.7;">(Developer)</small>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/users</code> <small style="opacity: 0.7;">(Developer)</small>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #ef4444;">DELETE</strong> <code>/api/v1/users/{id}</code> <small style="opacity: 0.7;">(Developer)</small>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/users/karyawan</code> <small style="opacity: 0.7;">(Manager)</small>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/users/karyawan</code> <small style="opacity: 0.7;">(Manager)</small>
+                        </li>
+                        <li>
+                            <strong style="color: #ef4444;">DELETE</strong> <code>/api/v1/users/karyawan/{id}</code> <small style="opacity: 0.7;">(Manager)</small>
                         </li>
                     </ul>
                 </div>
 
                 <!-- Outlets Endpoints -->
                 <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
-                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-store" style="margin-right: 0.5rem; color: #10b981;"></i> Outlets</h2>
+                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-store" style="margin-right: 0.5rem; color: #10b981;"></i> Outlets (Auth)</h2>
                     <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/outlets</code>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/outlets</code><br>
-                            <small style="opacity: 0.7;">Body: name, owner_id</small>
-                        </li>
                         <li>
-                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/outlets/{id}</code>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/outlets</code>
                         </li>
                     </ul>
                 </div>
 
                 <!-- Products & Categories Endpoints -->
                 <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
-                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-box-open" style="margin-right: 0.5rem; color: #f59e0b;"></i> Products & Categories</h2>
+                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-box-open" style="margin-right: 0.5rem; color: #f59e0b;"></i> Products & Categories (Auth)</h2>
                     <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/categories</code>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/products</code>
+                            <strong>API Resource</strong> <code>/api/v1/categories</code> <small style="opacity: 0.7;">(GET, POST, GET {id}, PUT, DELETE)</small>
                         </li>
                         <li>
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/products</code><br>
-                            <small style="opacity: 0.7;">Body: name, price, stock, category_id, outlet_id</small>
+                            <strong>API Resource</strong> <code>/api/v1/products</code> <small style="opacity: 0.7;">(GET, POST, GET {id}, PUT, DELETE)</small>
                         </li>
                     </ul>
                 </div>
 
                 <!-- Orders Endpoints -->
                 <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
-                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-cart-shopping" style="margin-right: 0.5rem; color: #ec4899;"></i> Orders</h2>
+                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-cart-shopping" style="margin-right: 0.5rem; color: #ec4899;"></i> Orders (Auth)</h2>
                     <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
                         <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/orders</code>
+                            <strong>API Resource</strong> <code>/api/v1/orders</code> <small style="opacity: 0.7;">(GET, POST, GET {id}, PUT, DELETE)</small>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/orders/{id}/items</code>
+                        </li>
+                        <li style="margin-bottom: 0.75rem;">
+                            <strong style="color: #ef4444;">DELETE</strong> <code>/api/v1/orders/{id}/items/{itemId}</code>
                         </li>
                         <li>
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/orders</code><br>
-                            <small style="opacity: 0.7;">Body: outlet_id, total_price, payment_method, items (product_id, quantity, subtotal)</small>
+                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/orders/{id}/checkout</code>
                         </li>
                     </ul>
                 </div>
