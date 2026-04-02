@@ -7,6 +7,9 @@ use App\Models\Table;
 
 class TableController extends Controller
 {
+    /**
+     * Helper ambil user + validasi outlet
+     */
     private function getUser()
     {
         $user = auth()->user();
@@ -18,25 +21,45 @@ class TableController extends Controller
         return $user;
     }
 
+    /**
+     * Helper find table by outlet (ANTI DATA BOCOR)
+     */
     private function findTable($id)
     {
-        return Table::where('id', $id)
+        return Table::query()
+            ->where('id', $id)
             ->where('outlet_id', auth()->user()->outlet_id)
-            ->where('is_active', true)
             ->firstOrFail();
     }
 
     /**
      * List meja
      */
-    public function index()
+    public function index(Request $request)
     {
         $user = $this->getUser();
 
+        $query = Table::query()
+            ->where('outlet_id', $user->outlet_id)
+            ->latest();
+
+        // filter status
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // filter active
+        if ($request->filled('is_active')) {
+            $query->where('is_active', $request->is_active);
+        }
+
+        // search
+        if ($request->filled('search')) {
+            $query->where('name', 'like', '%' . $request->search . '%');
+        }
+
         return response()->json(
-            Table::where('outlet_id', $user->outlet_id)
-                ->latest()
-                ->get()
+            $query->paginate($request->limit ?? 10)
         );
     }
 
@@ -57,6 +80,8 @@ class TableController extends Controller
             'name' => $request->name,
             'code' => $request->code,
             'capacity' => $request->capacity ?? 1,
+            'status' => 'available',
+            'is_active' => true,
             'outlet_id' => $user->outlet_id,
         ]);
 
@@ -68,7 +93,9 @@ class TableController extends Controller
      */
     public function show($id)
     {
-        return response()->json($this->findTable($id));
+        $table = $this->findTable($id);
+
+        return response()->json($table);
     }
 
     /**
@@ -84,6 +111,7 @@ class TableController extends Controller
             'code' => 'nullable|string|max:50',
             'capacity' => 'nullable|integer|min:1',
             'status' => 'nullable|in:available,occupied,reserved,maintenance',
+            'is_active' => 'nullable|boolean',
         ]);
 
         $table->update([
@@ -91,17 +119,25 @@ class TableController extends Controller
             'code' => $request->code,
             'capacity' => $request->capacity ?? $table->capacity,
             'status' => $request->status ?? $table->status,
+            'is_active' => $request->is_active ?? $table->is_active,
         ]);
 
         return response()->json($table);
     }
 
     /**
-     * Nonaktifkan meja (soft delete versi bisnis)
+     * Nonaktifkan meja (soft delete bisnis)
      */
     public function destroy($id)
     {
         $table = $this->findTable($id);
+
+        // best practice: kalau masih occupied, jangan boleh disable
+        if ($table->status === 'occupied') {
+            return response()->json([
+                'message' => 'Meja sedang digunakan'
+            ], 422);
+        }
 
         $table->update([
             'is_active' => false
@@ -113,7 +149,7 @@ class TableController extends Controller
     }
 
     /**
-     * Update status meja (POS realtime)
+     * Update status meja (realtime POS)
      */
     public function updateStatus(Request $request, $id)
     {
