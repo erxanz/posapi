@@ -22,6 +22,7 @@ class Product extends Model
         'cost_price',
         'image',
         'is_active',
+        'station_id',
     ];
 
     /**
@@ -68,5 +69,13 @@ class Product extends Model
     public function outlet()
     {
         return $this->belongsTo(Outlet::class);
+    }
+
+    /**
+    * (Optional) relasi ke station
+    */
+    public function station()
+    {
+        return $this->belongsTo(Station::class);
     }
 }
