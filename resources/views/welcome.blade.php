@@ -72,6 +72,11 @@
                 <div>
                     <div class="endpoint-row">
                         <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/register</code>
+                        <span class="note">Public</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
                         <code class="api-path">/api/v1/login</code>
                         <span class="note">Public</span>
                     </div>
@@ -214,6 +219,32 @@
                 </div>
             </div>
 
+            <!-- Stations Section -->
+            <div class="section-card">
+                <div class="section-header">
+                    <i class="fa-solid fa-layer-group" style="color: #8b5cf6; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Stations (Stasiun Kerja)</h2>
+                </div>
+                <div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/stations</code>
+                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/stations/{id}/products</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/stations/{stationId}/orders</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Products & Categories Section -->
             <div class="section-card">
                 <div class="section-header">
@@ -262,6 +293,21 @@
                     <div class="endpoint-row">
                         <span class="badge badge-post">POST</span>
                         <code class="api-path">/api/v1/orders/{id}/checkout</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Order Items Section -->
+            <div class="section-card">
+                <div class="section-header">
+                    <i class="fa-solid fa-list" style="color: #f59e0b; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Order Items (Kitchen Action)</h2>
+                </div>
+                <div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-put">PATCH</span>
+                        <code class="api-path">/api/v1/order-items/{id}/status</code>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
