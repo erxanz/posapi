@@ -99,7 +99,7 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         return response()->json([
-            'user' => $request->user()
+            'user' => $request->user()->load('outlet') // load outlet relationship
         ]);
     }
 
