@@ -17,7 +17,7 @@ return [
 
     'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
         '%s%s',
-        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1',
+        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1,api.etres.my.id',
         Sanctum::currentApplicationUrlWithPort(),
         // Sanctum::currentRequestHost(),
     ))),
@@ -47,7 +47,8 @@ return [
     |
     */
 
-    'expiration' => null,
+    // 'expiration' => null,
+    'expiration' => 1440, // 24 hours
 
     /*
     |--------------------------------------------------------------------------

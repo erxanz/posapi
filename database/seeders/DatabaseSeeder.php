@@ -11,9 +11,6 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // ================= OUTLET =================
-        $outlets = Outlet::factory()->count(3)->create();
-
         // ================= DEVELOPER =================
         User::factory()->developer()->create([
             'name' => 'Developer',
@@ -22,22 +19,33 @@ class DatabaseSeeder extends Seeder
             'pin' => '111111',
         ]);
 
-        // ================= MANAGER =================
-        foreach ($outlets as $i => $outlet) {
-            User::factory()->manager()->create([
-                'name' => 'Manager ' . ($i + 1),
-                'email' => 'manager' . ($i + 1) . '@example.com',
-                'password' => Hash::make('123456'),
-                'pin' => '22222' . $i,
-                'outlet_id' => $outlet->id,
-            ]);
-        }
-
-        // ================= KARYAWAN =================
         $counter = 1;
 
-        foreach ($outlets as $outlet) {
-            for ($i = 0; $i < 2; $i++) {
+        // ================= LOOP =================
+        for ($i = 1; $i <= 3; $i++) {
+
+            // 1. buat manager dulu
+            $manager = User::factory()->manager()->create([
+                'name' => 'Manager ' . $i,
+                'email' => 'manager' . $i . '@example.com',
+                'password' => Hash::make('123456'),
+                'pin' => '22222' . $i,
+                'outlet_id' => null, // nanti diisi
+            ]);
+
+            // 2. buat outlet dengan owner_id
+            $outlet = Outlet::factory()->create([
+                'name' => 'Outlet ' . $i,
+                'owner_id' => $manager->id,
+            ]);
+
+            // 3. update manager → masuk ke outlet
+            $manager->update([
+                'outlet_id' => $outlet->id
+            ]);
+
+            // 4. buat karyawan
+            for ($j = 0; $j < 2; $j++) {
                 User::factory()->karyawan()->create([
                     'name' => 'Karyawan ' . $counter,
                     'email' => 'karyawan' . $counter . '@example.com',

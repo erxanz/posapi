@@ -10,16 +10,21 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class OutletFactory extends Factory
 {
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
         return [
             'name' => fake()->company(),
-            'owner_id' => \App\Models\User::factory(),
+
+            // JANGAN buat user di sini
+            'owner_id' => null,
         ];
+    }
+
+    // optional: kalau mau set owner
+    public function withOwner($userId): static
+    {
+        return $this->state(fn () => [
+            'owner_id' => $userId,
+        ]);
     }
 }
