@@ -52,9 +52,9 @@ Route::prefix('v1')->group(function () {
         Route::prefix('users/karyawan')->group(function () {
             Route::post('/', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
             Route::get('/', [UserController::class, 'listKaryawan'])->name('users.karyawan.list');
-            Route::get('/{id}', [UserController::class, 'showKaryawan'])->name('users.karyawan.show');
-            Route::put('/{id}', [UserController::class, 'updateKaryawan'])->name('users.karyawan.update');
-            Route::delete('/{id}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
+            Route::get('/{karyawan}', [UserController::class, 'showKaryawan'])->name('users.karyawan.show');
+            Route::put('/{karyawan}', [UserController::class, 'updateKaryawan'])->name('users.karyawan.update');
+            Route::delete('/{karyawan}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
         });
 
         // ================= USER (DEVELOPER) =================

@@ -22,6 +22,8 @@ return new class extends Migration
             $table->foreignId('outlet_id')->nullable()->constrained()->nullOnDelete();
             $table->timestamps();
             $table->enum('role', ['developer', 'manager', 'karyawan'])->default('manager');
+
+            $table->index(['outlet_id', 'email' ,'role']);
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

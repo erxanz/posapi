@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\User;
 
 class UserController extends Controller
 {
@@ -30,7 +31,7 @@ class UserController extends Controller
         }
 
         // 3. Buat karyawan
-        $karyawan = \App\Models\User::create([
+        $karyawan = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => bcrypt($request->password),
@@ -59,9 +60,10 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $karyawan = \App\Models\User::where('outlet_id', $user->outlet_id)
+        $karyawan = User::where('outlet_id', $user->outlet_id)
             ->where('role', 'karyawan')
-            ->get();
+            ->select('id', 'name', 'email', 'outlet_id')
+            ->paginate(10);
 
         return response()->json(['data' => $karyawan]);
     }
@@ -74,7 +76,8 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $karyawan = \App\Models\User::where('outlet_id', $user->outlet_id)
+        $karyawan = User::with('outlet:id,name')
+            ->where('outlet_id', $user->outlet_id)
             ->where('role', 'karyawan')
             ->findOrFail($id);
 
@@ -89,7 +92,8 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $karyawan = \App\Models\User::where('outlet_id', $user->outlet_id)
+        $karyawan = User::with('outlet:id,name')
+            ->where('outlet_id', $user->outlet_id)
             ->where('role', 'karyawan')
             ->findOrFail($id);
 
@@ -119,7 +123,7 @@ class UserController extends Controller
             'outlet_id' => 'nullable|exists:outlets,id'
         ]);
 
-        $newUser = \App\Models\User::create([
+        $newUser = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => bcrypt($request->password),
@@ -142,7 +146,9 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $users = \App\Models\User::all();
+        $users = User::with('outlet:id,name')
+            ->select('id', 'name', 'email', 'outlet_id')
+            ->paginate(10);
 
         return response()->json(['data' => $users]);
     }
@@ -155,7 +161,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $targetUser = \App\Models\User::findOrFail($id);
+        $targetUser = User::with('outlet:id,name')->findOrFail($id);
 
         return response()->json(['data' => $targetUser]);
     }
@@ -168,7 +174,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $targetUser = \App\Models\User::findOrFail($id);
+        $targetUser = User::with('outlet:id,name')->findOrFail($id);
 
         $request->validate([
             'name' => 'required',
@@ -208,14 +214,15 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $karyawan = \App\Models\User::where('outlet_id', $user->outlet_id)
+        $karyawan = User::where('id', $id)
+            ->where('outlet_id', $user->outlet_id)
             ->where('role', 'karyawan')
-            ->findOrFail($id);
+            ->firstOrFail();
 
         // Validasi
         $request->validate([
             'name' => 'required',
-            'email' => 'required|email|unique:users,email,' . $id,
+            'email' => 'required|email|unique:users,email,' . $karyawan->id,
             'password' => 'nullable|min:6',
             'pin' => 'nullable|min:4|max:6'
         ]);
@@ -250,7 +257,7 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $targetUser = \App\Models\User::findOrFail($id);
+        $targetUser = User::findOrFail($id);
         $targetUser->delete();
 
         return response()->json(['message' => 'User berhasil dihapus']);
