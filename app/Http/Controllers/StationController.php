@@ -9,22 +9,29 @@ use Illuminate\Support\Str;
 class StationController extends Controller
 {
     /**
-     * List stations
+     * List stations (OPTIMIZED)
      */
     public function index(Request $request)
     {
+        $user = auth()->user();
+
         $query = Station::query()
-            ->withCount('products') // lebih ringan dari with()
+            ->select(['id', 'outlet_id', 'name', 'code', 'is_active', 'created_at'])
+            ->where('outlet_id', $user->outlet_id)
+            ->withCount([
+                'products as products_count' => function ($q) {
+                    $q->where('is_active', true);
+                },
+                'orders'
+            ])
             ->latest();
 
-        $query->where('outlet_id', auth()->user()->outlet_id);
-
         if ($request->filled('is_active')) {
-            $query->where('is_active', $request->is_active);
+            $query->where('is_active', $request->boolean('is_active'));
         }
 
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
+            $query->where('name', 'like', '%' . trim($request->search) . '%');
         }
 
         return response()->json(
@@ -51,6 +58,7 @@ class StationController extends Controller
 
         $data = $request->only(['name', 'code', 'is_active']);
 
+        // auto code
         if (empty($data['code'])) {
             $data['code'] = strtoupper(Str::slug($request->name));
         }
@@ -63,14 +71,18 @@ class StationController extends Controller
     }
 
     /**
-     * Show station
+     * Show station (NO N+1)
      */
     public function show(Station $station)
     {
         $this->authorizeStation($station);
 
-        // eager load + count
-        $station->loadCount('products');
+        $station->loadCount([
+            'products as products_count' => function ($q) {
+                $q->where('is_active', true);
+            },
+            'orders'
+        ]);
 
         return response()->json($station);
     }
@@ -96,7 +108,7 @@ class StationController extends Controller
 
         $station->update($data);
 
-        return response()->json($station, 200);
+        return response()->json($station);
     }
 
     /**
@@ -106,7 +118,7 @@ class StationController extends Controller
     {
         $this->authorizeStation($station);
 
-        // tanpa load semua products (hemat)
+        // SUPER EFISIEN (tidak load data)
         if ($station->products()->exists()) {
             return response()->json([
                 'message' => 'Station masih digunakan oleh produk'
@@ -117,43 +129,44 @@ class StationController extends Controller
 
         return response()->json([
             'message' => 'Station deleted successfully'
-        ], 200);
-    }
-
-    /**
-     * Get products by station
-     */
-    public function products($id)
-    {
-        $station = Station::query()
-            ->where('id', $id)
-            ->where('outlet_id', auth()->user()->outlet_id)
-            ->firstOrFail();
-
-        // eager loading nested (ANTI N+1)
-        $products = $station->products()
-            ->with([
-                'category:id,name' // select field saja
-            ])
-            ->where('is_active', true)
-            ->get([
-                'id',
-                'name',
-                'price',
-                'category_id',
-                'station_id'
-            ]);
-
-        return response()->json([
-            'station' => $station,
-            'products' => $products
         ]);
     }
 
     /**
-     * Helper authorization
+     * Get products by station (ANTI N+1 TOTAL)
      */
-    private function authorizeStation($station)
+    public function products($id)
+    {
+        $user = auth()->user();
+
+        $station = Station::query()
+            ->select(['id', 'name', 'outlet_id'])
+            ->where('id', $id)
+            ->where('outlet_id', $user->outlet_id)
+            ->with([
+                'products' => function ($q) {
+                    $q->select([
+                        'id',
+                        'name',
+                        'price',
+                        'category_id',
+                        'station_id'
+                    ])
+                    ->where('is_active', true)
+                    ->with([
+                        'category:id,name' // no N+1 category
+                    ]);
+                }
+            ])
+            ->firstOrFail();
+
+        return response()->json($station);
+    }
+
+    /**
+     * Helper authorization (REUSABLE)
+     */
+    private function authorizeStation(Station $station): void
     {
         if ($station->outlet_id !== auth()->user()->outlet_id) {
             abort(403, 'Forbidden');
