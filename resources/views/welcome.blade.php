@@ -20,104 +20,206 @@
             </style>
         @endif
     </head>
-    <body style="font-family: 'Inter', sans-serif; background: #f9fafb; color: #111827; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem;">
-        <div style="max-width: 800px; width: 100%; padding: 2rem; border-radius: 12px; background: rgba(128, 128, 128, 0.05); border: 1px solid rgba(128, 128, 128, 0.1);">
-            <h1 style="font-size: 2rem; font-weight: bold; margin-bottom: 0.5rem;">POS API Documentation</h1>
-            <p style="margin-bottom: 2rem; opacity: 0.8;">Dokumentasi sederhana endpoint API untuk aplikasi POS berdasarkan struktur database saat ini.</p>
-
-            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-                <!-- Auth Endpoints -->
-                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
-                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-lock" style="margin-right: 0.5rem; color: #6366f1;"></i> Authentication</h2>
-                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/login</code>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/login-pin</code>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/forgot-password</code>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/reset-password</code>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/logout</code> <small style="opacity: 0.7;">(Auth)</small>
-                        </li>
-                        <li>
-                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/me</code> <small style="opacity: 0.7;">(Auth)</small>
-                        </li>
-                    </ul>
+    <style>
+        body { font-family: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif; background-color: #f3f4f6; color: #1f2937; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+        .navbar { background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 1.25rem 0; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .nav-container { max-width: 900px; margin: 0 auto; padding: 0 1.5rem; display: flex; align-items: center; justify-content: space-between; }
+        .nav-brand { display: flex; align-items: center; gap: 0.875rem; }
+        .nav-icon { background: #6366f1; color: white; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 0.5rem; }
+        .nav-title { font-size: 1.25rem; font-weight: 700; margin: 0; line-height: 1.2; color: #111827; }
+        .nav-subtitle { font-size: 0.875rem; color: #6b7280; margin: 0; }
+        .version-badge { background: #eef2ff; color: #4f46e5; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid #c7d2fe; }
+        .main-container { max-width: 900px; margin: 2rem auto; padding: 0 1.5rem 4rem; display: flex; flex-direction: column; gap: 1.5rem; }
+        .section-card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 0.75rem; overflow: hidden; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px -1px rgba(0,0,0,0.05); }
+        .section-header { padding: 1.25rem 1.5rem; background: #f9fafb; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.75rem; }
+        .section-title { font-size: 1.125rem; font-weight: 600; margin: 0; color: #111827; }
+        .endpoint-row { padding: 1rem 1.5rem; border-bottom: 1px solid #f3f4f6; display: flex; align-items: center; gap: 1rem; transition: background 0.2s; flex-wrap: wrap; }
+        .endpoint-row:hover { background: #f9fafb; }
+        .endpoint-row:last-child { border-bottom: none; }
+        .badge { font-weight: 600; font-size: 0.75rem; padding: 0.35rem 0; border-radius: 0.375rem; width: 80px; text-align: center; letter-spacing: 0.05em; display: inline-block; flex-shrink: 0; }
+        .badge-post { background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; }
+        .badge-get { background: #dcfce7; color: #059669; border: 1px solid #bbf7d0; }
+        .badge-delete { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+        .badge-put { background: #fef3c7; color: #d97706; border: 1px solid #fde68a; }
+        .badge-resource { background: #f3e8ff; color: #7c3aed; border: 1px solid #ddd6fe; }
+        .api-path { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.875rem; color: #374151; font-weight: 600; background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 0.375rem; border: 1px solid #e5e7eb;}
+        .api-method-list { font-size: 0.75rem; color: #6b7280; font-weight: 500; }
+        .note { margin-left: auto; font-size: 0.75rem; color: #4b5563; font-weight: 600; background: #ffffff; padding: 0.25rem 0.6rem; border-radius: 0.375rem; border: 1px solid #d1d5db; }
+    </style>
+    <body>
+        <nav class="navbar">
+            <div class="nav-container">
+                <div class="nav-brand">
+                    <div class="nav-icon">
+                        <i class="fa-solid fa-server fa-lg"></i>
+                    </div>
+                    <div>
+                        <h1 class="nav-title">POS API</h1>
+                        <p class="nav-subtitle">Documentation Reference</p>
+                    </div>
                 </div>
+                <span class="version-badge">v1.0</span>
+            </div>
+        </nav>
 
-                <!-- Users Endpoints -->
-                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
-                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-users" style="margin-right: 0.5rem; color: #8b5cf6;"></i> Users (Auth)</h2>
-                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/users</code> <small style="opacity: 0.7;">(Developer)</small>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/users</code> <small style="opacity: 0.7;">(Developer)</small>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #ef4444;">DELETE</strong> <code>/api/v1/users/{id}</code> <small style="opacity: 0.7;">(Developer)</small>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/users/karyawan</code> <small style="opacity: 0.7;">(Manager)</small>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #10b981;">GET</strong> <code>/api/v1/users/karyawan</code> <small style="opacity: 0.7;">(Manager)</small>
-                        </li>
-                        <li>
-                            <strong style="color: #ef4444;">DELETE</strong> <code>/api/v1/users/karyawan/{id}</code> <small style="opacity: 0.7;">(Manager)</small>
-                        </li>
-                    </ul>
+        <main class="main-container">
+            <!-- Auth Section -->
+            <div class="section-card">
+                <div class="section-header">
+                    <i class="fa-solid fa-lock" style="color: #6366f1; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Authentication</h2>
                 </div>
-
-                <!-- Outlets Endpoints -->
-                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
-                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-store" style="margin-right: 0.5rem; color: #10b981;"></i> Outlets (Auth)</h2>
-                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
-                        <li>
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/outlets</code>
-                        </li>
-                    </ul>
-                </div>
-
-                <!-- Products & Categories Endpoints -->
-                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
-                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-box-open" style="margin-right: 0.5rem; color: #f59e0b;"></i> Products & Categories (Auth)</h2>
-                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong>API Resource</strong> <code>/api/v1/categories</code> <small style="opacity: 0.7;">(GET, POST, GET {id}, PUT, DELETE)</small>
-                        </li>
-                        <li>
-                            <strong>API Resource</strong> <code>/api/v1/products</code> <small style="opacity: 0.7;">(GET, POST, GET {id}, PUT, DELETE)</small>
-                        </li>
-                    </ul>
-                </div>
-
-                <!-- Orders Endpoints -->
-                <div style="background: rgba(128, 128, 128, 0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(128, 128, 128, 0.1);">
-                    <h2 style="font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem;"><i class="fa-solid fa-cart-shopping" style="margin-right: 0.5rem; color: #ec4899;"></i> Orders (Auth)</h2>
-                    <ul style="list-style: none; padding: 0; margin: 0; line-height: 1.6;">
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong>API Resource</strong> <code>/api/v1/orders</code> <small style="opacity: 0.7;">(GET, POST, GET {id}, PUT, DELETE)</small>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/orders/{id}/items</code>
-                        </li>
-                        <li style="margin-bottom: 0.75rem;">
-                            <strong style="color: #ef4444;">DELETE</strong> <code>/api/v1/orders/{id}/items/{itemId}</code>
-                        </li>
-                        <li>
-                            <strong style="color: #0ea5e9;">POST</strong> <code>/api/v1/orders/{id}/checkout</code>
-                        </li>
-                    </ul>
+                <div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/login</code>
+                        <span class="note">Public</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/login-pin</code>
+                        <span class="note">Public</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/forgot-password</code>
+                        <span class="note">Public</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/reset-password</code>
+                        <span class="note">Public</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/logout</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/me</code>
+                        <span class="note">Auth Required</span>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            <!-- Users Section -->
+            <div class="section-card">
+                <div class="section-header">
+                    <i class="fa-solid fa-users" style="color: #8b5cf6; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Users <span style="font-weight: 400; color: #6b7280; font-size: 0.875rem;">(Role Based)</span></h2>
+                </div>
+                <div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/users/karyawan</code>
+                        <span class="note">Manager</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/users/karyawan</code>
+                        <span class="note">Manager</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/users/karyawan/{id}</code>
+                        <span class="note">Manager</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-delete">DELETE</span>
+                        <code class="api-path">/api/v1/users/karyawan/{id}</code>
+                        <span class="note">Manager</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/users</code>
+                        <span class="note">Developer</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/users</code>
+                        <span class="note">Developer</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/users/{id}</code>
+                        <span class="note">Developer</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-delete">DELETE</span>
+                        <code class="api-path">/api/v1/users/{id}</code>
+                        <span class="note">Developer</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Outlets Section -->
+            <div class="section-card">
+                <div class="section-header">
+                    <i class="fa-solid fa-store" style="color: #10b981; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Outlets</h2>
+                </div>
+                <div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/outlets</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Products & Categories Section -->
+            <div class="section-card">
+                <div class="section-header">
+                    <i class="fa-solid fa-box-open" style="color: #f59e0b; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Products & Categories</h2>
+                </div>
+                <div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/categories</code>
+                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/products</code>
+                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Orders Section -->
+            <div class="section-card">
+                <div class="section-header">
+                    <i class="fa-solid fa-cart-shopping" style="color: #ec4899; font-size: 1.125rem;"></i>
+                    <h2 class="section-title">Orders (POS)</h2>
+                </div>
+                <div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/orders</code>
+                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/{id}/items</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-delete">DELETE</span>
+                        <code class="api-path">/api/v1/orders/{id}/items/{itemId}</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/{id}/checkout</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </div>
+        </main>
     </body>
 </html>
