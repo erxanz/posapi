@@ -16,6 +16,10 @@ return new class extends Migration
             $table->string('name');
             $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
             $table->timestamps();
+
+            $table->unique(['name', 'outlet_id']); // nama category unik per outlet
+            $table->index('name'); // untuk search by name cepat
+            $table->index('outlet_id'); // untuk filter by outlet cepat
         });
     }
 

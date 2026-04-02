@@ -12,21 +12,23 @@ class CategoryController extends Controller
      */
     public function index(Request $request)
     {
+        $user = auth()->user();
+
+        $limit = min($request->limit ?? 10, 100);
+
         $query = Category::query()
-            ->withCount('products') // anti N+1 (count saja)
-            ->latest();
+            ->select(['id', 'name', 'outlet_id', 'created_at']) // hemat column
+            ->where('outlet_id', $user->outlet_id)
+            ->withCount('products')
+            ->latest('id'); // default sort by latest id
 
-        // WAJIB: filter outlet (multi tenant)
-        $query->where('outlet_id', auth()->user()->outlet_id);
-
-        // optional search
         if ($request->filled('search')) {
-            $query->where('name', 'like', '%' . $request->search . '%');
+            $query->where('name', 'like', trim($request->search) . '%'); // pakai index
         }
 
-        return response()->json(
-            $query->paginate($request->limit ?? 10)
-        );
+        return response()->json([
+            'data' => $query->paginate($limit)
+        ]);
     }
 
     /**
@@ -41,15 +43,17 @@ class CategoryController extends Controller
         }
 
         $request->validate([
-            'name' => 'required|string|max:50'
+            'name' => 'required|string|max:50|unique:categories,name,NULL,id,outlet_id,' . $user->outlet_id
         ]);
 
         $category = Category::create([
-            'name' => $request->name,
+            'name' => strtolower(trim($request->name)),
             'outlet_id' => $user->outlet_id
         ]);
 
-        return response()->json($category, 201);
+        return response()->json([
+            'data' => $category
+        ], 201);
     }
 
     /**
@@ -62,7 +66,9 @@ class CategoryController extends Controller
         // load count saja (hemat)
         $category->loadCount('products');
 
-        return response()->json($category);
+        return response()->json([
+            'data' => $category
+        ]);
     }
 
     /**
@@ -73,14 +79,16 @@ class CategoryController extends Controller
         $this->authorizeCategory($category);
 
         $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'required|string|max:50|unique:categories,name,' . $category->id . ',id,outlet_id,' . auth()->user()->outlet_id
         ]);
 
         $category->update([
-            'name' => $request->name
+            'name' => strtolower(trim($request->name))
         ]);
 
-        return response()->json($category);
+        return response()->json([
+            'data' => $category
+        ]);
     }
 
     /**
@@ -107,7 +115,7 @@ class CategoryController extends Controller
     /**
      * Helper authorization (multi-outlet security)
      */
-    private function authorizeCategory($category)
+    private function authorizeCategory(Category $category): void
     {
         if ($category->outlet_id !== auth()->user()->outlet_id) {
             abort(403, 'Forbidden');
