@@ -2,22 +2,51 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use App\Models\User;
+use App\Models\Outlet;
+use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
-    /**
-     * Seed the application's database.
-     */
     public function run(): void
     {
-        // User::factory(10)->create();
+        // ================= OUTLET =================
+        $outlets = Outlet::factory()->count(3)->create();
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        // ================= DEVELOPER =================
+        User::factory()->developer()->create([
+            'name' => 'Developer',
+            'email' => 'developer@example.com',
+            'password' => Hash::make('123456'),
+            'pin' => '111111',
         ]);
+
+        // ================= MANAGER =================
+        foreach ($outlets as $i => $outlet) {
+            User::factory()->manager()->create([
+                'name' => 'Manager ' . ($i + 1),
+                'email' => 'manager' . ($i + 1) . '@example.com',
+                'password' => Hash::make('123456'),
+                'pin' => '22222' . $i,
+                'outlet_id' => $outlet->id,
+            ]);
+        }
+
+        // ================= KARYAWAN =================
+        $counter = 1;
+
+        foreach ($outlets as $outlet) {
+            for ($i = 0; $i < 2; $i++) {
+                User::factory()->karyawan()->create([
+                    'name' => 'Karyawan ' . $counter,
+                    'email' => 'karyawan' . $counter . '@example.com',
+                    'password' => Hash::make('123456'),
+                    'pin' => str_pad($counter, 6, '0', STR_PAD_LEFT),
+                    'outlet_id' => $outlet->id,
+                ]);
+                $counter++;
+            }
+        }
     }
 }
