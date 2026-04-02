@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Outlet;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Table;
 use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
@@ -61,6 +62,11 @@ class DatabaseSeeder extends Seeder
 
         // ================= CATEGORY & PRODUCT =================
         foreach (Outlet::all() as $outlet) {
+
+            // buat 8 meja per outlet
+            Table::factory()->count(8)->create([
+                'outlet_id' => $outlet->id,
+            ]);
 
             // buat 3 kategori per outlet
             $categories = collect([
