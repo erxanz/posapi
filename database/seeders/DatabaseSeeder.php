@@ -17,7 +17,7 @@ class DatabaseSeeder extends Seeder
         User::factory()->developer()->create([
             'name' => 'Developer',
             'email' => 'developer@example.com',
-            'password' => Hash::make('123456'),
+            'password' => Hash::make('password'),
             'pin' => '111111',
         ]);
 
@@ -30,7 +30,7 @@ class DatabaseSeeder extends Seeder
             $manager = User::factory()->manager()->create([
                 'name' => 'Manager ' . $i,
                 'email' => 'manager' . $i . '@example.com',
-                'password' => Hash::make('123456'),
+                'password' => Hash::make('password'),
                 'pin' => '22222' . $i,
                 'outlet_id' => null, // nanti diisi
             ]);
@@ -51,7 +51,7 @@ class DatabaseSeeder extends Seeder
                 User::factory()->karyawan()->create([
                     'name' => 'Karyawan ' . $counter,
                     'email' => 'karyawan' . $counter . '@example.com',
-                    'password' => Hash::make('123456'),
+                    'password' => Hash::make('password'),
                     'pin' => str_pad($counter, 6, '0', STR_PAD_LEFT),
                     'outlet_id' => $outlet->id,
                 ]);
