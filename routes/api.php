@@ -23,6 +23,13 @@ Route::prefix('v1')->group(function () {
     Route::delete('/orders/{id}/items/{itemId}', [OrderController::class, 'removeItem'])->name('orders.removeItem');
     Route::post('/orders/{id}/checkout', [OrderController::class, 'checkout'])->name('orders.checkout');
 
+    // CATEGORY
+    Route::apiResource('categories', CategoryController::class);
+    // PRODUCT (MENU)
+    Route::apiResource('products', ProductController::class);
+    // ORDER (POS)
+    Route::apiResource('orders', OrderController::class);
+
     Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/me', [AuthController::class, 'me'])->name('me');
@@ -35,15 +42,6 @@ Route::prefix('v1')->group(function () {
         // Karyawan
         Route::get('/karyawan', [UserController::class, 'listKaryawan'])->name('karyawan.list');
         Route::delete('/karyawan/{id}', [UserController::class, 'deleteKaryawan'])->name('karyawan.delete');
-
-        // CATEGORY
-        Route::apiResource('categories', CategoryController::class);
-
-        // PRODUCT (MENU)
-        Route::apiResource('products', ProductController::class);
-
-        // ORDER (POS)
-        Route::apiResource('orders', OrderController::class);
 
     });
 });
