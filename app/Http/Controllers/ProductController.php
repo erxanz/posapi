@@ -40,7 +40,7 @@ class ProductController extends Controller
                 ])
                 ->where('outlet_id', $outletId)
                 ->where('is_active', true)
-                ->where('stock', '>', 0) // ✅ hanya tampilkan yang ada stok
+                ->where('stock', '>', 0) // hanya tampilkan yang ada stok
                 ->with([
                     'category:id,name'
                 ])
