@@ -19,7 +19,7 @@ class ProductController extends Controller
     public function publicMenu($outletId, $tableId)
     {
         $table = Table::query()
-            ->select(['id', 'name', 'outlet_id', 'status'])
+            ->select(['id', 'name', 'outlet_id', 'is_active'])
             ->where('id', $tableId)
             ->where('outlet_id', $outletId)
             ->firstOrFail();
@@ -33,9 +33,11 @@ class ProductController extends Controller
                 'category_id',
                 'station_id',
                 'name',
-                'price',
                 'description',
+                'price',
+                'stock',
                 'image',
+                'is_active',
             ])
             ->where('outlet_id', $outletId)
             ->where('is_active', true)
@@ -66,9 +68,12 @@ class ProductController extends Controller
                 'category_id',
                 'station_id',
                 'name',
-                'price',
                 'description',
+                'price',
+                'cost_price',
+                'stock',
                 'image',
+                'is_active',
             ])
             ->with([
                 'category:id,name'
@@ -122,12 +127,12 @@ class ProductController extends Controller
                 })
             ],
             'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
             'price' => 'required|integer|min:0',
             'cost_price' => 'required|integer|min:0',
             'stock' => 'required|integer|min:0',
-            'description' => 'nullable|string',
-            'is_active' => 'boolean',
-            'image' => 'nullable|image|max:2048'
+            'image' => 'nullable|image|max:2048',
+            'is_active' => 'boolean'
         ]);
 
         // VALIDASI CATEGORY
@@ -143,8 +148,8 @@ class ProductController extends Controller
             'category_id',
             'station_id',
             'name',
-            'price',
             'description',
+            'price',
             'cost_price',
             'stock',
             'image',
@@ -197,12 +202,12 @@ class ProductController extends Controller
                 })
             ],
             'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
             'price' => 'required|integer|min:0',
             'cost_price' => 'required|integer|min:0',
             'stock' => 'required|integer|min:0',
-            'description' => 'nullable|string',
-            'is_active' => 'boolean',
-            'image' => 'nullable|image|max:2048'
+            'image' => 'nullable|image|max:2048',
+            'is_active' => 'boolean'
         ]);
 
         // VALIDASI CATEGORY
