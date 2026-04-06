@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Support\Carbon;
 
 class AuthController extends Controller
 {
@@ -112,6 +115,96 @@ class AuthController extends Controller
     {
         return response()->json([
             'user' => $request->user()->load('outlet')
+        ]);
+    }
+
+    /**
+     * FORGOT PASSWORD
+     */
+    public function forgotPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email'
+        ]);
+
+        $user = User::where('email', strtolower($request->email))->first();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Email tidak ditemukan'
+            ], 404);
+        }
+
+        // hanya manager & developer
+        if (!in_array($user->role, ['manager', 'developer'])) {
+            return response()->json([
+                'message' => 'Hanya untuk manager/developer'
+            ], 403);
+        }
+
+        $token = Str::random(60);
+
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $user->email],
+            [
+                'token' => $token,
+                'created_at' => Carbon::now()
+            ]
+        );
+
+        return response()->json([
+            'message' => 'Token reset password berhasil dibuat',
+            'token' => $token // nanti bisa kirim via email
+        ]);
+    }
+
+    /**
+     * RESET PASSWORD
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'token' => 'required',
+            'password' => 'required|min:6|confirmed'
+        ]);
+
+        $record = DB::table('password_reset_tokens')
+            ->where('email', $request->email)
+            ->first();
+
+        if (!$record) {
+            return response()->json([
+                'message' => 'Token tidak ditemukan'
+            ], 400);
+        }
+
+        if ($record->token !== $request->token) {
+            return response()->json([
+                'message' => 'Token tidak valid'
+            ], 400);
+        }
+
+        // cek expired (15 menit)
+        if (Carbon::parse($record->created_at)->addMinutes(15)->isPast()) {
+            return response()->json([
+                'message' => 'Token sudah kadaluarsa'
+            ], 400);
+        }
+
+        $user = User::where('email', $request->email)->first();
+
+        $user->update([
+            'password' => Hash::make($request->password)
+        ]);
+
+        // hapus token setelah dipakai
+        DB::table('password_reset_tokens')
+            ->where('email', $request->email)
+            ->delete();
+
+        return response()->json([
+            'message' => 'Password berhasil direset'
         ]);
     }
 
