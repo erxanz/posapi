@@ -153,7 +153,7 @@ class AuthController extends Controller
         );
 
         // LINK RESET (ganti dengan URL frontend kamu)
-        $resetLink = "http://localhost:8000/reset-password?token=$token&email=" . urlencode($user->email);
+        $resetLink = "http://127.0.0.1:8000/reset-password?token=$token&email=" . urlencode($user->email);
 
         Mail::raw("Klik link berikut untuk reset password:\n$resetLink", function ($message) use ($user) {
             $message->to($user->email)
