@@ -54,6 +54,9 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // URL FE dipakai untuk generate link reset password.
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:8000'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone
