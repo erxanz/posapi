@@ -13,17 +13,33 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
+
             $table->string('name');
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
+
             $table->string('password');
             $table->rememberToken();
-            $table->string('pin')->nullable();
+
+            // PIN untuk kasir
+            $table->string('pin', 6)->nullable();
+
+            // relasi ke outlet
             $table->foreignId('outlet_id')->nullable()->constrained()->nullOnDelete();
-            $table->timestamps();
+
+            // role user
             $table->enum('role', ['developer', 'manager', 'karyawan'])->default('manager');
 
-            $table->index(['outlet_id', 'email' ,'role']);
+            // status user (penting untuk disable akun)
+            $table->boolean('is_active')->default(true);
+
+            $table->timestamps();
+
+            // index untuk performa
+            $table->index(['outlet_id', 'role']);
+
+            // UNIQUE PIN per outlet (SUPER PENTING)
+            $table->unique(['pin', 'outlet_id']);
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

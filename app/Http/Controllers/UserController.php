@@ -3,40 +3,48 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+use App\Models\User;
 
 class UserController extends Controller
 {
+    /**
+     * CREATE KARYAWAN (MANAGER)
+     */
     public function createKaryawan(Request $request)
     {
-        $user = auth()->user(); // yang login (manager)
+        $user = auth()->user();
+
+        if ($user->role !== 'manager') {
+            return response()->json(['message' => 'Akses ditolak'], 403);
+        }
 
         if (!$user->outlet_id) {
             return response()->json(['message' => 'User belum punya outlet'], 400);
         }
 
-        // 1. Validasi input
         $request->validate([
-            'name' => 'required',
-            'email' => 'required|email|unique:users',
+            'name' => 'required|string|max:100',
+            'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6',
-            'pin' => 'required|min:4|max:6'
+            'pin' => [
+                'required',
+                'digits:6',
+                Rule::unique('users')->where(function ($q) use ($user) {
+                    return $q->where('outlet_id', $user->outlet_id);
+                })
+            ]
         ]);
 
-        // 2. Pastikan hanya manager yang bisa buat karyawan
-        if ($user->role !== 'manager') {
-            return response()->json([
-                'message' => 'Hanya manager yang boleh tambah karyawan'
-            ], 403);
-        }
-
-        // 3. Buat karyawan
-        $karyawan = \App\Models\User::create([
+        $karyawan = User::create([
             'name' => $request->name,
-            'email' => $request->email,
-            'password' => bcrypt($request->password),
-            'pin' => bcrypt($request->pin),
+            'email' => strtolower($request->email),
+            'password' => Hash::make($request->password),
 
-            // INI PALING PENTING
+            // TANPA HASH
+            'pin' => $request->pin,
+
             'role' => 'karyawan',
             'outlet_id' => $user->outlet_id
         ]);
@@ -44,13 +52,12 @@ class UserController extends Controller
         return response()->json([
             'message' => 'Karyawan berhasil dibuat',
             'data' => $karyawan
-        ]);
+        ], 201);
     }
 
-    // ========================================================
-    // MANAGER ENDPOINTS (KARYAWAN)
-    // ========================================================
-
+    /**
+     * LIST KARYAWAN
+     */
     public function listKaryawan()
     {
         $user = auth()->user();
@@ -59,13 +66,18 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $karyawan = \App\Models\User::where('outlet_id', $user->outlet_id)
+        $karyawan = User::where('outlet_id', $user->outlet_id)
             ->where('role', 'karyawan')
+            ->select('id', 'name', 'email', 'role', 'is_active', 'pin')
+            ->latest()
             ->get();
 
         return response()->json(['data' => $karyawan]);
     }
 
+    /**
+     * SHOW KARYAWAN
+     */
     public function showKaryawan($id)
     {
         $user = auth()->user();
@@ -74,132 +86,17 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $karyawan = \App\Models\User::where('outlet_id', $user->outlet_id)
+        $karyawan = User::where('outlet_id', $user->outlet_id)
             ->where('role', 'karyawan')
+            ->select('id', 'name', 'email', 'role', 'is_active', 'pin')
             ->findOrFail($id);
 
         return response()->json(['data' => $karyawan]);
     }
 
-    public function deleteKaryawan($id)
-    {
-        $user = auth()->user();
-
-        if ($user->role !== 'manager') {
-            return response()->json(['message' => 'Akses ditolak'], 403);
-        }
-
-        $karyawan = \App\Models\User::where('outlet_id', $user->outlet_id)
-            ->where('role', 'karyawan')
-            ->findOrFail($id);
-
-        $karyawan->delete();
-
-        return response()->json(['message' => 'Karyawan berhasil dihapus']);
-    }
-
-    // ========================================================
-    // DEVELOPER ENDPOINTS (ALL USERS)
-    // ========================================================
-
-    public function createUser(Request $request)
-    {
-        $user = auth()->user();
-
-        if ($user->role !== 'developer') {
-            return response()->json(['message' => 'Akses ditolak'], 403);
-        }
-
-        $request->validate([
-            'name' => 'required',
-            'email' => 'required|email|unique:users',
-            'password' => 'required|min:6',
-            'pin' => 'required|min:4|max:6',
-            'role' => 'required|in:developer,manager,karyawan',
-            'outlet_id' => 'nullable|exists:outlets,id'
-        ]);
-
-        $newUser = \App\Models\User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => bcrypt($request->password),
-            'pin' => bcrypt($request->pin),
-            'role' => $request->role,
-            'outlet_id' => $request->outlet_id
-        ]);
-
-        return response()->json([
-            'message' => 'User berhasil dibuat',
-            'data' => $newUser
-        ], 201);
-    }
-
-    public function listUsers()
-    {
-        $user = auth()->user();
-
-        if ($user->role !== 'developer') {
-            return response()->json(['message' => 'Akses ditolak'], 403);
-        }
-
-        $users = \App\Models\User::all();
-
-        return response()->json(['data' => $users]);
-    }
-
-    public function showUser($id)
-    {
-        $user = auth()->user();
-
-        if ($user->role !== 'developer') {
-            return response()->json(['message' => 'Akses ditolak'], 403);
-        }
-
-        $targetUser = \App\Models\User::findOrFail($id);
-
-        return response()->json(['data' => $targetUser]);
-    }
-
-    public function updateUser(Request $request, $id)
-    {
-        $user = auth()->user();
-
-        if ($user->role !== 'developer') {
-            return response()->json(['message' => 'Akses ditolak'], 403);
-        }
-
-        $targetUser = \App\Models\User::findOrFail($id);
-
-        $request->validate([
-            'name' => 'required',
-            'email' => 'required|email|unique:users,email,' . $id,
-            'password' => 'nullable|min:6',
-            'pin' => 'nullable|min:4|max:6',
-            'role' => 'required|in:developer,manager,karyawan',
-            'outlet_id' => 'nullable|exists:outlets,id'
-        ]);
-
-        $targetUser->name = $request->name;
-        $targetUser->email = $request->email;
-        $targetUser->role = $request->role;
-        $targetUser->outlet_id = $request->outlet_id;
-
-        if ($request->password) {
-            $targetUser->password = bcrypt($request->password);
-        }
-
-        if ($request->pin) {
-            $targetUser->pin = bcrypt($request->pin);
-        }
-
-        $targetUser->save();
-
-        return response()->json([
-            'message' => 'User berhasil diupdate',
-            'data' => $targetUser
-        ]);
-    }
-
+    /**
+     * UPDATE KARYAWAN
+     */
     public function updateKaryawan(Request $request, $id)
     {
         $user = auth()->user();
@@ -208,30 +105,42 @@ class UserController extends Controller
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $karyawan = \App\Models\User::where('outlet_id', $user->outlet_id)
+        $karyawan = User::where('outlet_id', $user->outlet_id)
             ->where('role', 'karyawan')
             ->findOrFail($id);
 
-        // Validasi
         $request->validate([
-            'name' => 'required',
-            'email' => 'required|email|unique:users,email,' . $id,
+            'name' => 'required|string|max:100',
+            'email' => [
+                'required',
+                'email',
+                Rule::unique('users', 'email')->ignore($id)
+            ],
             'password' => 'nullable|min:6',
-            'pin' => 'nullable|min:4|max:6'
+            'pin' => [
+                'nullable',
+                'digits:6',
+                Rule::unique('users')->where(function ($q) use ($user) {
+                    return $q->where('outlet_id', $user->outlet_id);
+                })->ignore($id)
+            ],
+            'is_active' => 'boolean'
         ]);
 
-        // Update data
         $karyawan->name = $request->name;
-        $karyawan->email = $request->email;
+        $karyawan->email = strtolower($request->email);
 
-        // Kalau password diisi → update
         if ($request->password) {
-            $karyawan->password = bcrypt($request->password);
+            $karyawan->password = Hash::make($request->password);
         }
 
-        // Kalau pin diisi → update
         if ($request->pin) {
-            $karyawan->pin = bcrypt($request->pin);
+            // TANPA HASH
+            $karyawan->pin = $request->pin;
+        }
+
+        if (!is_null($request->is_active)) {
+            $karyawan->is_active = $request->is_active;
         }
 
         $karyawan->save();
@@ -242,17 +151,89 @@ class UserController extends Controller
         ]);
     }
 
-    public function deleteUser($id)
+    /**
+     * DELETE KARYAWAN
+     */
+    public function deleteKaryawan($id)
     {
         $user = auth()->user();
 
-        if ($user->role !== 'developer') {
+        if ($user->role !== 'manager') {
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        $targetUser = \App\Models\User::findOrFail($id);
-        $targetUser->delete();
+        $karyawan = User::where('outlet_id', $user->outlet_id)
+            ->where('role', 'karyawan')
+            ->findOrFail($id);
 
-        return response()->json(['message' => 'User berhasil dihapus']);
+        $karyawan->delete();
+
+        return response()->json([
+            'message' => 'Karyawan berhasil dihapus'
+        ]);
+    }
+
+    /**
+     * ===============================
+     * DEVELOPER SECTION
+     * ===============================
+     */
+
+    public function listUsers()
+    {
+        $this->authorizeDeveloper();
+
+        return response()->json([
+            'data' => User::latest()->get()
+        ]);
+    }
+
+    public function createUser(Request $request)
+    {
+        $this->authorizeDeveloper();
+
+        $request->validate([
+            'name' => 'required',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|min:6',
+            'pin' => 'nullable|digits:6',
+            'role' => 'required|in:developer,manager,karyawan',
+            'outlet_id' => 'nullable|exists:outlets,id'
+        ]);
+
+        $user = User::create([
+            'name' => $request->name,
+            'email' => strtolower($request->email),
+            'password' => Hash::make($request->password),
+            'pin' => $request->pin, // TANPA HASH
+            'role' => $request->role,
+            'outlet_id' => $request->outlet_id
+        ]);
+
+        return response()->json([
+            'message' => 'User berhasil dibuat',
+            'data' => $user
+        ], 201);
+    }
+
+    public function deleteUser($id)
+    {
+        $this->authorizeDeveloper();
+
+        User::findOrFail($id)->delete();
+
+        return response()->json([
+            'message' => 'User berhasil dihapus'
+        ]);
+    }
+
+    /**
+     * HELPER
+     */
+    private function authorizeDeveloper()
+    {
+        if (auth()->user()->role !== 'developer') {
+            abort(403, 'Akses ditolak');
+        }
     }
 }

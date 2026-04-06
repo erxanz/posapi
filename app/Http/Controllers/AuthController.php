@@ -9,44 +9,43 @@ use App\Models\User;
 class AuthController extends Controller
 {
     /**
-     * REGISTER
+     * REGISTER (Manager + Outlet)
      */
     public function register(Request $request)
     {
-        // validasi input
         $request->validate([
-            'name' => 'required',
+            'name' => 'required|string|max:100',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|min:6'
+            'password' => 'required|min:6|confirmed',
         ]);
 
-        // buat user baru
         $user = User::create([
             'name' => $request->name,
-            'email' => $request->email,
+            'email' => strtolower($request->email),
             'password' => Hash::make($request->password),
-            'role' => 'manager' // default role manager
+            'role' => 'manager'
         ]);
+
+        $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'message' => 'Registrasi berhasil',
+            'token' => $token,
             'user' => $user
         ], 201);
     }
 
     /**
-     * LOGIN
+     * LOGIN EMAIL
      */
     public function login(Request $request)
     {
-        // validasi input
         $request->validate([
             'email' => 'required|email',
             'password' => 'required'
         ]);
 
-        // cek user
-        $user = User::where('email', $request->email)->first();
+        $user = User::where('email', strtolower($request->email))->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             return response()->json([
@@ -54,28 +53,34 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // buat token sanctum
+        if (!$user->is_active ?? false) {
+            return response()->json([
+                'message' => 'Akun tidak aktif'
+            ], 403);
+        }
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login berhasil',
             'token' => $token,
-            'user' => $user
+            'user' => $user->load('outlet')
         ]);
     }
 
     /**
-     * Login PIN Karyawan (Kasir)
+     * LOGIN PIN (KASIR / KARYAWAN)
      */
     public function loginPin(Request $request)
     {
-        // validasi input
         $request->validate([
-            'pin' => 'required|digits:6'
+            'pin' => 'required|digits:6',
+            'outlet_id' => 'required|exists:outlets,id' // WAJIB biar tidak bentrok antar outlet
         ]);
 
-        // cek user berdasarkan PIN
-        $user = User::where('pin', $request->pin)->first();
+        $user = User::where('pin', $request->pin)
+            ->where('outlet_id', $request->outlet_id)
+            ->first();
 
         if (!$user) {
             return response()->json([
@@ -83,13 +88,18 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // buat token sanctum
+        if (!$user->is_active ?? false) {
+            return response()->json([
+                'message' => 'Akun tidak aktif'
+            ], 403);
+        }
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login berhasil',
             'token' => $token,
-            'user' => $user
+            'user' => $user->load('outlet')
         ]);
     }
 
@@ -99,16 +109,16 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         return response()->json([
-            'user' => $request->user()->load('outlet') // load outlet relationship
+            'user' => $request->user()->load('outlet')
         ]);
     }
 
     /**
-     * LOGOUT
+     * LOGOUT (DEVICE CURRENT ONLY)
      */
     public function logout(Request $request)
     {
-        $request->user()->tokens()->delete();
+        $request->user()->currentAccessToken()->delete();
 
         return response()->json([
             'message' => 'Logout berhasil'
