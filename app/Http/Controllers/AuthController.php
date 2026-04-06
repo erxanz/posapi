@@ -153,7 +153,7 @@ class AuthController extends Controller
         );
 
         // LINK RESET (ganti dengan URL frontend kamu)
-        $resetLink = "http://localhost:8000/reset-password?token=$token&email={$user->email}";
+        $resetLink = "http://localhost:8000/reset-password?token=$token&email=" . urlencode($user->email);
 
         Mail::raw("Klik link berikut untuk reset password:\n$resetLink", function ($message) use ($user) {
             $message->to($user->email)
@@ -207,6 +207,13 @@ class AuthController extends Controller
             return response()->json([
                 'message' => 'User tidak ditemukan'
             ], 404);
+        }
+
+        // cek role (hanya manager/developer)
+        if (!in_array($user->role, ['manager', 'developer'])) {
+            return response()->json([
+                'message' => 'Hanya untuk manager/developer'
+            ], 403);
         }
 
         // update password
