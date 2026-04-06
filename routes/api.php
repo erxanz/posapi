@@ -41,9 +41,9 @@ Route::prefix('v1')->group(function () {
         // ================= OUTLET =================
         Route::post('/outlets', [OutletController::class, 'createOutlet'])->name('outlets.create');
         Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
-        Route::get('/outlets/{id}', [OutletController::class, 'show'])->name('outlets.show');
-        Route::put('/outlets/{id}', [OutletController::class, 'update'])->name('outlets.update');
-        Route::delete('/outlets/{id}', [OutletController::class, 'destroy'])->name('outlets.destroy');
+        Route::get('/outlets/{outlet}', [OutletController::class, 'show'])->name('outlets.show');
+        Route::put('/outlets/{outlet}', [OutletController::class, 'update'])->name('outlets.update');
+        Route::delete('/outlets/{outlet}', [OutletController::class, 'destroy'])->name('outlets.destroy');
 
         // ================= TABLE =================
         Route::apiResource('tables', TableController::class);

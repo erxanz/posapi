@@ -166,7 +166,13 @@ class OutletController extends Controller
      */
     private function authorizeOutlet(Outlet $outlet): void
     {
-        if ($outlet->owner_id !== auth()->id()) {
+        $user = auth()->user();
+
+        $isOwner = (int) $outlet->owner_id === (int) $user->id;
+        $isAssignedManager = $user->role === 'manager' && (int) $user->outlet_id === (int) $outlet->id;
+        $isDeveloper = $user->role === 'developer';
+
+        if (!$isOwner && !$isAssignedManager && !$isDeveloper) {
             abort(403, 'Forbidden');
         }
     }
