@@ -9,7 +9,7 @@ use App\Models\User;
 class AuthController extends Controller
 {
     /**
-     * REGISTER (Manager + Outlet)
+     * REGISTER (Manager)
      */
     public function register(Request $request)
     {
@@ -36,7 +36,7 @@ class AuthController extends Controller
     }
 
     /**
-     * LOGIN EMAIL
+     * LOGIN EMAIL (MANAGER & DEVELOPER)
      */
     public function login(Request $request)
     {
@@ -53,9 +53,10 @@ class AuthController extends Controller
             ], 401);
         }
 
-        if (!$user->is_active ?? false) {
+        // WAJIB CEK AKTIF (karena ini khusus karyawan)
+        if ($user->role === 'karyawan' && !$user->is_active) {
             return response()->json([
-                'message' => 'Akun tidak aktif'
+                'message' => 'Akun karyawan tidak aktif'
             ], 403);
         }
 
@@ -69,13 +70,13 @@ class AuthController extends Controller
     }
 
     /**
-     * LOGIN PIN (KASIR / KARYAWAN)
+     * LOGIN PIN (KARYAWAN)
      */
     public function loginPin(Request $request)
     {
         $request->validate([
             'pin' => 'required|digits:6',
-            'outlet_id' => 'required|exists:outlets,id' // WAJIB biar tidak bentrok antar outlet
+            'outlet_id' => 'required|exists:outlets,id'
         ]);
 
         $user = User::where('pin', $request->pin)
@@ -88,9 +89,10 @@ class AuthController extends Controller
             ], 401);
         }
 
-        if (!$user->is_active ?? false) {
+        // WAJIB CEK AKTIF (karena ini khusus karyawan)
+        if (!$user->is_active) {
             return response()->json([
-                'message' => 'Akun tidak aktif'
+                'message' => 'Akun karyawan tidak aktif'
             ], 403);
         }
 
@@ -114,7 +116,7 @@ class AuthController extends Controller
     }
 
     /**
-     * LOGOUT (DEVICE CURRENT ONLY)
+     * LOGOUT (CURRENT DEVICE ONLY)
      */
     public function logout(Request $request)
     {
