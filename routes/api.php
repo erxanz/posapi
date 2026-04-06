@@ -17,7 +17,7 @@ Route::prefix('v1')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->name('register');
     Route::post('/login', [AuthController::class, 'login'])->name('login')->middleware('throttle:5,1'); // Limit login attempts
     Route::post('/login-pin', [AuthController::class, 'loginPin'])->name('login.pin');
-    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.email');
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.forgot');
     Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');
 
     // ================= PUBLIC API (QR) =================
