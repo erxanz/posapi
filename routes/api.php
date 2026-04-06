@@ -10,7 +10,6 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\TableController;
 use App\Http\Controllers\StationController;
-use Illuminate\Support\Facades\Mail;
 
 Route::prefix('v1')->group(function () {
 
