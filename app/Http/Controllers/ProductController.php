@@ -6,7 +6,6 @@ use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use App\Models\Category;
 use App\Models\Table;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Cache;
@@ -28,24 +27,25 @@ class ProductController extends Controller
             "menu_outlet_{$outletId}",
             60,
             fn () => Product::query()
-            ->select([
-                'id',
-                'category_id',
-                'station_id',
-                'name',
-                'description',
-                'price',
-                'stock',
-                'image',
-                'is_active',
-            ])
-            ->where('outlet_id', $outletId)
-            ->where('is_active', true)
-            ->with([
-                'category:id,name'
-            ])
-            ->orderBy('name')
-            ->get()
+                ->select([
+                    'id',
+                    'category_id',
+                    'station_id',
+                    'name',
+                    'description',
+                    'price',
+                    'stock',
+                    'image',
+                    'is_active',
+                ])
+                ->where('outlet_id', $outletId)
+                ->where('is_active', true)
+                ->where('stock', '>', 0) // ✅ hanya tampilkan yang ada stok
+                ->with([
+                    'category:id,name'
+                ])
+                ->orderBy('name')
+                ->get()
         );
 
         return response()->json([
@@ -84,22 +84,23 @@ class ProductController extends Controller
         if ($request->filled('category_id')) {
             $query->whereHas('category', function ($q) use ($request, $user) {
                 $q->where('id', $request->category_id)
-                    ->where('outlet_id', $user->outlet_id);
+                  ->where('outlet_id', $user->outlet_id);
             });
         }
 
-        // SEARCH (multi keyword)
+        // SEARCH (multi keyword, fleksibel)
         if ($request->filled('search')) {
             $keywords = array_filter(explode(' ', trim($request->search)));
 
             $query->where(function ($q) use ($keywords) {
                 foreach ($keywords as $word) {
-                    $q->where('name', 'like', "{$word}%");
+                    $q->where('name', 'like', "%{$word}%");
                 }
             });
         }
 
         $limit = min($request->limit ?? 10, 100);
+
         return response()->json([
             'data' => $query->paginate($limit)
         ]);
@@ -110,16 +111,20 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
-        Cache::forget("menu_outlet_{$user->outlet_id}");
-
         $user = auth()->user();
 
         if (!$user->outlet_id) {
             return response()->json(['message' => 'User belum punya outlet'], 400);
         }
 
+        // VALIDASI AMAN (category sesuai outlet)
         $request->validate([
-            'category_id' => 'required|exists:categories,id',
+            'category_id' => [
+                'required',
+                Rule::exists('categories', 'id')->where(function ($q) use ($user) {
+                    $q->where('outlet_id', $user->outlet_id);
+                })
+            ],
             'station_id' => [
                 'nullable',
                 Rule::exists('stations', 'id')->where(function ($q) use ($user) {
@@ -135,15 +140,6 @@ class ProductController extends Controller
             'is_active' => 'boolean'
         ]);
 
-        // VALIDASI CATEGORY
-        $category = Category::where('id', $request->category_id)
-            ->where('outlet_id', $user->outlet_id)
-            ->firstOrFail();
-
-        if (!$category) {
-            return response()->json(['message' => 'Category tidak valid'], 422);
-        }
-
         $data = $request->only([
             'category_id',
             'station_id',
@@ -152,7 +148,6 @@ class ProductController extends Controller
             'price',
             'cost_price',
             'stock',
-            'image',
             'is_active'
         ]);
 
@@ -164,6 +159,9 @@ class ProductController extends Controller
         $data['outlet_id'] = $user->outlet_id;
 
         $product = Product::create($data);
+
+        // CLEAR CACHE
+        Cache::forget("menu_outlet_{$user->outlet_id}");
 
         return response()->json([
             'data' => $product->load('category:id,name')
@@ -187,14 +185,17 @@ class ProductController extends Controller
      */
     public function update(Request $request, Product $product)
     {
-        Cache::forget("menu_outlet_{$user->outlet_id}");
-
         $user = auth()->user();
 
         $this->authorizeProduct($product);
 
         $request->validate([
-            'category_id' => 'required|exists:categories,id',
+            'category_id' => [
+                'required',
+                Rule::exists('categories', 'id')->where(function ($q) use ($user) {
+                    $q->where('outlet_id', $user->outlet_id);
+                })
+            ],
             'station_id' => [
                 'nullable',
                 Rule::exists('stations', 'id')->where(function ($q) use ($user) {
@@ -210,25 +211,15 @@ class ProductController extends Controller
             'is_active' => 'boolean'
         ]);
 
-        // VALIDASI CATEGORY
-        $category = Category::where('id', $request->category_id)
-            ->where('outlet_id', $user->outlet_id)
-            ->firstOrFail();
-
-        if (!$category) {
-            return response()->json(['message' => 'Category tidak valid'], 422);
-        }
-
         $data = $request->only([
             'category_id',
             'station_id',
             'name',
-            'price',
             'description',
+            'price',
             'cost_price',
             'stock',
-            'image',
-            'is_active',
+            'is_active'
         ]);
 
         // UPDATE IMAGE
@@ -243,6 +234,9 @@ class ProductController extends Controller
 
         $product->update($data);
 
+        // CLEAR CACHE
+        Cache::forget("menu_outlet_{$user->outlet_id}");
+
         return response()->json([
             'data' => $product->load('category:id,name')
         ], 200);
@@ -253,7 +247,7 @@ class ProductController extends Controller
      */
     public function destroy(Product $product)
     {
-        Cache::forget("menu_outlet_{$user->outlet_id}");
+        $user = auth()->user();
 
         $this->authorizeProduct($product);
 
@@ -262,6 +256,9 @@ class ProductController extends Controller
         }
 
         $product->delete();
+
+        // CLEAR CACHE
+        Cache::forget("menu_outlet_{$user->outlet_id}");
 
         return response()->json([
             'message' => 'Product deleted successfully'
