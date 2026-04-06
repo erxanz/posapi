@@ -147,17 +147,25 @@ class AuthController extends Controller
         DB::table('password_reset_tokens')->updateOrInsert(
             ['email' => $user->email],
             [
-                'token' => $token,
+                'token' => Hash::make($token),
                 'created_at' => now()
             ]
         );
 
         // LINK RESET (ganti dengan URL frontend kamu)
-        $resetLink = "http://127.0.0.1:8000/reset-password?token=$token&email=" . urlencode($user->email);
-
-        Mail::raw("Klik link berikut untuk reset password:\n$resetLink", function ($message) use ($user) {
-            $message->to($user->email)
-                    ->subject('Reset Password');
+        $resetLink = "http://localhost:3000/reset-password?token=$token&email=" . urlencode($user->email);
+        // Mail::raw("Klik link berikut untuk reset password:\n$resetLink", function ($message) use ($user) {
+        //     $message->to($user->email)
+        //             ->subject('Reset Password');
+        // });
+        Mail::html("
+            <h2>Reset Password</h2>
+            <p>Klik tombol di bawah untuk reset password:</p>
+            <a href='$resetLink' style='padding:10px 15px;background:#4CAF50;color:white;text-decoration:none;'>Reset Password</a>
+            <p>Link berlaku 15 menit</p>
+            ", function ($message) use ($user) {
+                    $message->to($user->email)
+                            ->subject('Reset Password');
         });
 
         return response()->json([
@@ -187,7 +195,7 @@ class AuthController extends Controller
         }
 
         // cek token
-        if ($record->token !== $request->token) {
+        if (!Hash::check($request->token, $record->token)) {
             return response()->json([
                 'message' => 'Token tidak valid'
             ], 400);
