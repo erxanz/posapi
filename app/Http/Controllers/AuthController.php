@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Mail;
 
 class AuthController extends Controller
 {
@@ -135,7 +136,6 @@ class AuthController extends Controller
             ], 404);
         }
 
-        // hanya manager & developer
         if (!in_array($user->role, ['manager', 'developer'])) {
             return response()->json([
                 'message' => 'Hanya untuk manager/developer'
@@ -148,13 +148,18 @@ class AuthController extends Controller
             ['email' => $user->email],
             [
                 'token' => $token,
-                'created_at' => Carbon::now()
+                'created_at' => now()
             ]
         );
 
+        // KIRIM EMAIL
+        Mail::raw("Token reset password kamu: $token", function ($message) use ($user) {
+            $message->to($user->email)
+                    ->subject('Reset Password');
+        });
+
         return response()->json([
-            'message' => 'Token reset password berhasil dibuat',
-            'token' => $token // nanti bisa kirim via email
+            'message' => 'Email reset password sudah dikirim'
         ]);
     }
 
@@ -179,26 +184,35 @@ class AuthController extends Controller
             ], 400);
         }
 
+        // cek token
         if ($record->token !== $request->token) {
             return response()->json([
                 'message' => 'Token tidak valid'
             ], 400);
         }
 
-        // cek expired (15 menit)
+        // cek expired
         if (Carbon::parse($record->created_at)->addMinutes(15)->isPast()) {
             return response()->json([
                 'message' => 'Token sudah kadaluarsa'
             ], 400);
         }
 
+        // pastikan user ada
         $user = User::where('email', $request->email)->first();
 
+        if (!$user) {
+            return response()->json([
+                'message' => 'User tidak ditemukan'
+            ], 404);
+        }
+
+        // update password
         $user->update([
             'password' => Hash::make($request->password)
         ]);
 
-        // hapus token setelah dipakai
+        // hapus token
         DB::table('password_reset_tokens')
             ->where('email', $request->email)
             ->delete();
