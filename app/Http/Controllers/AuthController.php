@@ -152,14 +152,16 @@ class AuthController extends Controller
             ]
         );
 
-        // KIRIM EMAIL
-        Mail::raw("Token reset password kamu: $token", function ($message) use ($user) {
+        // LINK RESET (ganti dengan URL frontend kamu)
+        $resetLink = "http://localhost:3000/reset-password?token=$token&email={$user->email}";
+
+        Mail::raw("Klik link berikut untuk reset password:\n$resetLink", function ($message) use ($user) {
             $message->to($user->email)
                     ->subject('Reset Password');
         });
 
         return response()->json([
-            'message' => 'Email reset password sudah dikirim'
+            'message' => 'Link reset password sudah dikirim ke email'
         ]);
     }
 
