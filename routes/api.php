@@ -37,6 +37,7 @@ Route::prefix('v1')->group(function () {
         // ================= AUTH =================
         Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
         Route::get('/me', [AuthController::class, 'me'])->name('me');
+        Route::put('/me', [AuthController::class, 'updateProfile'])->name('me.update');
 
         // ================= OUTLET =================
         Route::post('/outlets', [OutletController::class, 'createOutlet'])->name('outlets.create');

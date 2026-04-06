@@ -120,6 +120,36 @@ class AuthController extends Controller
     }
 
     /**
+     * Update user profile.
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
+            'password' => 'nullable|string|min:8|confirmed',
+        ]);
+
+        $user->name = $request->name;
+        $user->email = $request->email;
+
+        // Update password hanya jika form password diisi
+        if ($request->filled('password')) {
+            $user->password = \Illuminate\Support\Facades\Hash::make($request->password);
+        }
+
+        $user->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profil berhasil diperbarui.',
+            'user' => $user
+        ]);
+    }
+
+    /**
      * FORGOT PASSWORD
      */
     public function forgotPassword(Request $request)
