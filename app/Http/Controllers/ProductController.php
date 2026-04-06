@@ -8,8 +8,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use App\Models\Category;
 use App\Models\Table;
-use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
 {
@@ -19,22 +17,20 @@ class ProductController extends Controller
     public function publicMenu($outletId, $tableId)
     {
         $table = Table::query()
-            ->select(['id', 'name', 'outlet_id', 'is_active'])
+            ->select(['id', 'name', 'outlet_id', 'status'])
             ->where('id', $tableId)
             ->where('outlet_id', $outletId)
             ->firstOrFail();
 
-        $products = Cache::remember(
-            "menu_outlet_{$outletId}",
-            60,
-            fn () => Product::query()
+        $products = Product::withoutGlobalScopes()
             ->select([
                 'id',
                 'category_id',
                 'station_id',
                 'name',
-                'description',
                 'price',
+                'description',
+                'cost_price',
                 'stock',
                 'image',
                 'is_active',
@@ -45,13 +41,12 @@ class ProductController extends Controller
                 'category:id,name'
             ])
             ->orderBy('name')
-            ->get()
-        );
+            ->get();
 
         return response()->json([
             'table' => $table,
             'products' => $products
-        ], 200);
+        ]);
     }
 
     /**
@@ -62,14 +57,13 @@ class ProductController extends Controller
         $user = auth()->user();
 
         $query = Product::query()
-            ->where('outlet_id', $user->outlet_id)
             ->select([
                 'id',
                 'category_id',
                 'station_id',
                 'name',
-                'description',
                 'price',
+                'description',
                 'cost_price',
                 'stock',
                 'image',
@@ -94,15 +88,14 @@ class ProductController extends Controller
 
             $query->where(function ($q) use ($keywords) {
                 foreach ($keywords as $word) {
-                    $q->where('name', 'like', "{$word}%");
+                    $q->where('name', 'like', "%{$word}%");
                 }
             });
         }
 
-        $limit = min($request->limit ?? 10, 100);
-        return response()->json([
-            'data' => $query->paginate($limit)
-        ]);
+        return response()->json(
+            $query->paginate($request->limit ?? 10)
+        );
     }
 
     /**
@@ -110,8 +103,6 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
-        Cache::forget("menu_outlet_{$user->outlet_id}");
-
         $user = auth()->user();
 
         if (!$user->outlet_id) {
@@ -120,25 +111,20 @@ class ProductController extends Controller
 
         $request->validate([
             'category_id' => 'required|exists:categories,id',
-            'station_id' => [
-                'nullable',
-                Rule::exists('stations', 'id')->where(function ($q) use ($user) {
-                    $q->where('outlet_id', $user->outlet_id);
-                })
-            ],
+            'station_id' => 'nullable|exists:stations,id',
             'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
             'price' => 'required|integer|min:0',
             'cost_price' => 'required|integer|min:0',
             'stock' => 'required|integer|min:0',
-            'image' => 'nullable|image|max:2048',
-            'is_active' => 'boolean'
+            'description' => 'nullable|string',
+            'is_active' => 'boolean',
+            'image' => 'nullable|image|max:2048'
         ]);
 
         // VALIDASI CATEGORY
         $category = Category::where('id', $request->category_id)
             ->where('outlet_id', $user->outlet_id)
-            ->firstOrFail();
+            ->first();
 
         if (!$category) {
             return response()->json(['message' => 'Category tidak valid'], 422);
@@ -148,8 +134,8 @@ class ProductController extends Controller
             'category_id',
             'station_id',
             'name',
-            'description',
             'price',
+            'description',
             'cost_price',
             'stock',
             'image',
@@ -165,9 +151,10 @@ class ProductController extends Controller
 
         $product = Product::create($data);
 
-        return response()->json([
-            'data' => $product->load('category:id,name')
-        ], 201);
+        return response()->json(
+            $product->load('category:id,name'),
+            201
+        );
     }
 
     /**
@@ -177,9 +164,9 @@ class ProductController extends Controller
     {
         $this->authorizeProduct($product);
 
-        return response()->json([
-            'data' => $product->load('category:id,name')
-        ], 200);
+        return response()->json(
+            $product->load('category:id,name')
+        );
     }
 
     /**
@@ -187,33 +174,26 @@ class ProductController extends Controller
      */
     public function update(Request $request, Product $product)
     {
-        Cache::forget("menu_outlet_{$user->outlet_id}");
-
         $user = auth()->user();
 
         $this->authorizeProduct($product);
 
         $request->validate([
             'category_id' => 'required|exists:categories,id',
-            'station_id' => [
-                'nullable',
-                Rule::exists('stations', 'id')->where(function ($q) use ($user) {
-                    $q->where('outlet_id', $user->outlet_id);
-                })
-            ],
+            'station_id' => 'nullable|exists:stations,id',
             'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
             'price' => 'required|integer|min:0',
             'cost_price' => 'required|integer|min:0',
             'stock' => 'required|integer|min:0',
-            'image' => 'nullable|image|max:2048',
-            'is_active' => 'boolean'
+            'description' => 'nullable|string',
+            'is_active' => 'boolean',
+            'image' => 'nullable|image|max:2048'
         ]);
 
         // VALIDASI CATEGORY
         $category = Category::where('id', $request->category_id)
             ->where('outlet_id', $user->outlet_id)
-            ->firstOrFail();
+            ->first();
 
         if (!$category) {
             return response()->json(['message' => 'Category tidak valid'], 422);
@@ -234,7 +214,7 @@ class ProductController extends Controller
         // UPDATE IMAGE
         if ($request->hasFile('image')) {
 
-            if ($product->image && Storage::disk('public')->exists($product->image)) {
+            if ($product->image) {
                 Storage::disk('public')->delete($product->image);
             }
 
@@ -243,9 +223,9 @@ class ProductController extends Controller
 
         $product->update($data);
 
-        return response()->json([
-            'data' => $product->load('category:id,name')
-        ], 200);
+        return response()->json(
+            $product->load('category:id,name')
+        );
     }
 
     /**
@@ -253,11 +233,9 @@ class ProductController extends Controller
      */
     public function destroy(Product $product)
     {
-        Cache::forget("menu_outlet_{$user->outlet_id}");
-
         $this->authorizeProduct($product);
 
-        if ($product->image && Storage::disk('public')->exists($product->image)) {
+        if ($product->image) {
             Storage::disk('public')->delete($product->image);
         }
 
@@ -265,7 +243,7 @@ class ProductController extends Controller
 
         return response()->json([
             'message' => 'Product deleted successfully'
-        ], 200);
+        ]);
     }
 
     /**
