@@ -7,7 +7,6 @@ use App\Models\Table;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
@@ -70,15 +69,29 @@ class ProductController extends Controller
 
         // SECURITY: Filter by outlet
         if ($user->isManager()) {
-            $outletIds = $user->ownedOutlets()->pluck('id')->toArray();
-            $query->whereIn('outlet_id', $outletIds);
+            // Manager wajib kirim outlet_id agar data tidak tercampur antar outlet.
+            if (!$request->filled('outlet_id')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manager wajib menyertakan parameter outlet_id',
+                ], 400);
+            }
+
+            if (!$user->canAccessOutlet($request->outlet_id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Forbidden',
+                ], 403);
+            }
+
+            $query->where('outlet_id', $request->outlet_id);
         } elseif ($user->isKaryawan()) {
             $query->where('outlet_id', $user->outlet_id);
         }
         // Developer bisa lihat semua
 
         // Optional filters
-        if ($request->filled('outlet_id')) {
+        if (!$user->isManager() && $request->filled('outlet_id')) {
             if (!$user->canAccessOutlet($request->outlet_id)) {
                 return response()->json([
                     'success' => false,
@@ -142,7 +155,7 @@ class ProductController extends Controller
         }
 
         $validated = $request->validate([
-            'outlet_id' => $user->isDeveloper() ? 'required|exists:outlets,id' : 'nullable',
+            'outlet_id' => 'required|exists:outlets,id',
             'category_id' => 'required|exists:categories,id',
             'station_id' => 'nullable|exists:stations,id',
             'name' => 'required|string|max:255',
@@ -154,16 +167,12 @@ class ProductController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        // SECURITY: Manager assign ke outlet miliknya
-        if ($user->isManager()) {
-            $outletId = $user->ownedOutlets()->first()?->id;
-            if (!$outletId) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Manager tidak memiliki outlet',
-                ], 422);
-            }
-            $validated['outlet_id'] = $outletId;
+        // SECURITY: Manager hanya boleh create produk di outlet miliknya.
+        if ($user->isManager() && !$user->canAccessOutlet($validated['outlet_id'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden: Anda tidak memiliki akses ke outlet ini',
+            ], 403);
         }
 
         // SECURITY: Validasi category belongs to same outlet
@@ -176,7 +185,7 @@ class ProductController extends Controller
         }
 
         // SECURITY: Validasi station belongs to same outlet (jika ada)
-        if ($validated['station_id']) {
+        if (!empty($validated['station_id'])) {
             $station = \App\Models\Station::findOrFail($validated['station_id']);
             if ($station->outlet_id != $validated['outlet_id']) {
                 return response()->json([
