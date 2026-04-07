@@ -23,25 +23,77 @@ class Order extends Model
         'status',
     ];
 
-    // RELASI
-    public function items()
+    // ===== RELASI =====
+
+    /**
+     * RELASI: Order belongs to Outlet
+     */
+    public function outlet()
     {
-        return $this->hasMany(OrderItem::class);
+        return $this->belongsTo(Outlet::class);
     }
 
-    public function table()
-    {
-        return $this->belongsTo(Table::class);
-    }
-
+    /**
+     * RELASI: Order belongs to User (cashier/waiter yang membuat order)
+     */
     public function user()
     {
         return $this->belongsTo(User::class);
     }
 
-    // SCOPE
-    public function scopeOpen($query)
+    /**
+     * RELASI: Order belongs to Table
+     */
+    public function table()
     {
-        return $query->where('status', 'open');
+        return $this->belongsTo(Table::class);
+    }
+
+    /**
+     * RELASI: Order has many OrderItem
+     */
+    public function items()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    // ===== UTILITY METHODS =====
+
+    /**
+     * SECURITY: Check if user dapat akses order ini
+     */
+    public function canBeAccessedBy(User $user): bool
+    {
+        if ($user->isDeveloper()) {
+            return true;
+        }
+
+        // Manager dapat akses orders di outlet miliknya
+        if ($user->isManager()) {
+            return $this->outlet->owner_id === $user->id;
+        }
+
+        // Karyawan dapat akses orders di outlet miliknya
+        if ($user->isKaryawan()) {
+            return $this->outlet_id === $user->outlet_id;
+        }
+
+        return false;
+    }
+
+    /**
+     * Calculate total price dari items
+     */
+    public function calculateTotal(): int
+    {
+        return (int) $this->items()->sum('total_price');
+    }
+
+    /**
+     * Check apakah order masih bisa dimodifikasi (draft/pending)
+     */
+    public function canBeModified(): bool
+    {
+        return $this->status === 'pending';
     }
 }

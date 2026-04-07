@@ -9,171 +9,174 @@ use Illuminate\Support\Facades\DB;
 class OutletController extends Controller
 {
     /**
-     * Create outlet (manager only)
+     * GET /outlets
+     * Manager dan Developer dapat melihat outlets mereka
+     *
+     * Manager: hanya outlets yang dia own
+     * Developer: semua outlets
      */
-    public function createOutlet(Request $request)
+    public function index(Request $request)
     {
         $user = auth()->user();
 
-        // role check
-        if ($user->role !== 'manager') {
-            return response()->json(['message' => 'Forbidden'], 403);
+        $query = Outlet::query();
+
+        // Filter berdasarkan role
+        if ($user->isManager()) {
+            // Manager hanya lihat outlets miliknya
+            $query->where('owner_id', $user->id);
         }
+        // Developer bisa lihat semua (no filter)
 
-        // validasi
-        $request->validate([
-            'name' => 'required|string|max:255'
-        ]);
-
-        // optional: cegah manager punya banyak outlet
-        if ($user->outlet_id) {
-            return response()->json([
-                'message' => 'Manager sudah memiliki outlet'
-            ], 422);
-        }
-
-        // pakai transaction biar aman
-        $outlet = DB::transaction(function () use ($request, $user) {
-
-            $outlet = Outlet::create([
-                'name' => $request->name,
-                'owner_id' => $user->id
-            ]);
-
-            // assign outlet ke user
-            $user->update([
-                'outlet_id' => $outlet->id
-            ]);
-
-            return $outlet;
-        });
+        $outlets = $query->with('owner', 'karyawans')
+            ->latest()
+            ->paginate(20);
 
         return response()->json([
-            'message' => 'Outlet berhasil dibuat',
-            'data' => $outlet
-        ], 201);
+            'success' => true,
+            'data' => $outlets,
+        ]);
     }
 
     /**
-     * List outlet (milik user)
-     */
-    public function index()
-    {
-        $outlets = Outlet::where('owner_id', auth()->id())
-            ->latest()
-            ->get();
-
-        return response()->json($outlets);
-    }
-
-    /**
-     * Create outlet (manager only)
+     * POST /outlets
+     * Hanya Manager dan Developer yang dapat create outlet
+     * Manager: outlet akan di-assign ke dirinya sendiri
+     * Developer: bisa assign ke manager manapun
      */
     public function store(Request $request)
     {
         $user = auth()->user();
 
-        // role check
-        if ($user->role !== 'manager') {
-            return response()->json(['message' => 'Forbidden'], 403);
+        // SECURITY: Hanya manager dan developer yang bisa create outlet
+        if (!$user->isManager() && !$user->isDeveloper()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden: Hanya manager dan developer yang dapat membuat outlet',
+            ], 403);
         }
 
-        // validasi
+        // Validasi input
         $validated = $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'required|string|max:255',
+            'owner_id' => $user->isDeveloper() ? 'required|exists:users,id' : 'nullable',
         ]);
 
-        // 1 manager = 1 outlet
-        if ($user->outlet_id) {
-            return response()->json([
-                'message' => 'Manager sudah memiliki outlet'
-            ], 422);
+        // SECURITY: Manager hanya bisa create outlet untuk dirinya
+        if ($user->isManager()) {
+            $validated['owner_id'] = $user->id;
         }
 
-        $outlet = DB::transaction(function () use ($validated, $user) {
-
-            $outlet = Outlet::create([
-                'name' => $validated['name'],
-                'owner_id' => $user->id
-            ]);
-
-            $user->update([
-                'outlet_id' => $outlet->id
-            ]);
-
-            return $outlet;
-        });
+        $outlet = Outlet::create($validated);
 
         return response()->json([
+            'success' => true,
             'message' => 'Outlet berhasil dibuat',
-            'data' => $outlet
+            'data' => $outlet->load('owner'),
         ], 201);
     }
 
     /**
-     * Show detail outlet
+     * POST /outlets (alias untuk store)
+     * Backward compatibility
      */
-    public function show(Outlet $outlet)
+    public function createOutlet(Request $request)
     {
-        $this->authorizeOutlet($outlet);
-
-        return response()->json($outlet);
+        return $this->store($request);
     }
 
     /**
-     * Update outlet
+     * GET /outlets/{outlet}
+     * Hanya bisa lihat detail outlet jika user adalah owner (manager) atau developer
+     */
+    public function show(Request $request, Outlet $outlet)
+    {
+        $user = auth()->user();
+
+        // SECURITY: Check akses
+        if (!$outlet->isOwnedBy($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden: Anda tidak dapat mengakses outlet ini',
+            ], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $outlet->load('owner', 'karyawans', 'tables', 'categories', 'products', 'stations', 'orders'),
+        ]);
+    }
+
+    /**
+     * PUT /outlets/{outlet}
+     * Manager hanya bisa update outlet miliknya
+     * Developer bisa update outlet apapun
      */
     public function update(Request $request, Outlet $outlet)
     {
-        $this->authorizeOutlet($outlet);
+        $user = auth()->user();
 
+        // SECURITY: Check akses
+        if (!$outlet->isOwnedBy($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden: Anda tidak dapat mengubah outlet ini',
+            ], 403);
+        }
+
+        // Validasi input
         $validated = $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'sometimes|required|string|max:255',
         ]);
 
         $outlet->update($validated);
 
         return response()->json([
-            'message' => 'Outlet berhasil diupdate',
-            'data' => $outlet
+            'success' => true,
+            'message' => 'Outlet berhasil diperbarui',
+            'data' => $outlet,
         ]);
     }
 
     /**
-     * Delete outlet
+     * DELETE /outlets/{outlet}
+     * Hanya owner atau developer yang bisa delete
      */
-    public function destroy(Outlet $outlet)
-    {
-        $this->authorizeOutlet($outlet);
-
-        DB::transaction(function () use ($outlet) {
-
-            // kosongkan outlet_id semua karyawan
-            $outlet->karyawans()->update([
-                'outlet_id' => null
-            ]);
-
-            $outlet->delete();
-        });
-
-        return response()->json([
-            'message' => 'Outlet berhasil dihapus'
-        ]);
-    }
-
-    /**
-     * Authorization helper
-     */
-    private function authorizeOutlet(Outlet $outlet): void
+    public function destroy(Request $request, Outlet $outlet)
     {
         $user = auth()->user();
 
-        $isOwner = (int) $outlet->owner_id === (int) $user->id;
-        $isAssignedManager = $user->role === 'manager' && (int) $user->outlet_id === (int) $outlet->id;
-        $isDeveloper = $user->role === 'developer';
-
-        if (!$isOwner && !$isAssignedManager && !$isDeveloper) {
-            abort(403, 'Forbidden');
+        // SECURITY: Check akses
+        if (!$outlet->isOwnedBy($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Forbidden: Anda tidak dapat menghapus outlet ini',
+            ], 403);
         }
+
+        // SECURITY: Cek apakah outlet masih punya data
+        $karyawansCount = $outlet->karyawans()->count();
+        if ($karyawansCount > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => "Tidak dapat menghapus outlet karena masih ada {$karyawansCount} karyawan",
+            ], 422);
+        }
+
+        $ordersCount = $outlet->orders()->count();
+        if ($ordersCount > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => "Tidak dapat menghapus outlet karena masih ada {$ordersCount} order",
+            ], 422);
+        }
+
+        $outlet->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Outlet berhasil dihapus',
+        ]);
     }
 }
+

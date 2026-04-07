@@ -44,6 +44,30 @@ class Station extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    // ===== SECURITY & UTILITY =====
+
+    /**
+     * SECURITY: Check apakah user dapat akses station ini
+     */
+    public function canBeAccessedBy(User $user): bool
+    {
+        if ($user->isDeveloper()) {
+            return true;
+        }
+
+        // Manager hanya akses station di outlet miliknya
+        if ($user->isManager()) {
+            return $this->outlet->owner_id === $user->id;
+        }
+
+        // Karyawan hanya akses station di outlet miliknya
+        if ($user->isKaryawan()) {
+            return $this->outlet_id === $user->outlet_id;
+        }
+
+        return false;
+    }
+
     public function scopeUsed($query)
     {
         return $query->where(function ($q) {

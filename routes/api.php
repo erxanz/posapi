@@ -15,20 +15,19 @@ Route::prefix('v1')->group(function () {
 
     // ================= AUTH (PUBLIC) =================
     Route::post('/register', [AuthController::class, 'register'])->name('register');
-    Route::post('/login', [AuthController::class, 'login'])->name('login')->middleware('throttle:5,1'); // Limit login attempts
+    Route::post('/login', [AuthController::class, 'login'])->name('login')->middleware('throttle:5,1');
     Route::post('/login-pin', [AuthController::class, 'loginPin'])->name('login.pin');
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.forgot');
     Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');
 
     // ================= PUBLIC API (QR) =================
+    // No auth required, customer dapat access menu & order
     Route::prefix('public')->group(function () {
-
         Route::get('/menu/{outletId}/{tableId}', [ProductController::class, 'publicMenu'])
             ->name('public.menu');
 
         Route::post('/order', [OrderController::class, 'publicOrder'])
             ->name('public.order');
-
     });
 
     // ================= PROTECTED (SANCTUM) =================
@@ -39,17 +38,19 @@ Route::prefix('v1')->group(function () {
         Route::get('/me', [AuthController::class, 'me'])->name('me');
         Route::put('/me', [AuthController::class, 'updateProfile'])->name('me.update');
 
-        // ================= OUTLET =================
-        Route::post('/outlets', [OutletController::class, 'createOutlet'])->name('outlets.create');
-        Route::get('/outlets', [OutletController::class, 'index'])->name('outlets.index');
-        Route::get('/outlets/{outlet}', [OutletController::class, 'show'])->name('outlets.show');
-        Route::put('/outlets/{outlet}', [OutletController::class, 'update'])->name('outlets.update');
-        Route::delete('/outlets/{outlet}', [OutletController::class, 'destroy'])->name('outlets.destroy');
+        // ================= OUTLET (Manager/Developer) =================
+        Route::middleware('check.outlet.access')->group(function () {
+            Route::prefix('outlets')->group(function () {
+                Route::post('/', [OutletController::class, 'store'])->name('outlets.store');
+                Route::get('/', [OutletController::class, 'index'])->name('outlets.index');
+                Route::get('/{outlet}', [OutletController::class, 'show'])->name('outlets.show');
+                Route::put('/{outlet}', [OutletController::class, 'update'])->name('outlets.update');
+                Route::delete('/{outlet}', [OutletController::class, 'destroy'])->name('outlets.destroy');
+            });
+        });
 
-        // ================= TABLE =================
-        Route::apiResource('tables', TableController::class);
-
-        // ================= USER (KARYAWAN) =================
+        // ================= USER MANAGEMENT =================
+        // Karyawan CRUD (Manager)
         Route::prefix('users/karyawan')->group(function () {
             Route::post('/', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
             Route::get('/', [UserController::class, 'listKaryawan'])->name('users.karyawan.list');
@@ -58,48 +59,54 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{karyawan}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
         });
 
-        // ================= USER (DEVELOPER) =================
+        // Developer User Management
         Route::prefix('users')->group(function () {
             Route::post('/', [UserController::class, 'createUser'])->name('users.create');
             Route::get('/', [UserController::class, 'listUsers'])->name('users.list');
-            Route::get('/{id}', [UserController::class, 'showUser'])->name('users.show');
-            Route::put('/{id}', [UserController::class, 'updateUser'])->name('users.update');
-            Route::delete('/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
+            Route::get('/{user}', [UserController::class, 'showUser'])->name('users.show');
+            Route::put('/{user}', [UserController::class, 'updateUser'])->name('users.update');
+            Route::delete('/{user}', [UserController::class, 'deleteUser'])->name('users.delete');
+        });
+
+        // ================= TABLE =================
+        Route::middleware('check.outlet.access')->group(function () {
+            Route::apiResource('tables', TableController::class);
         });
 
         // ================= CATEGORY =================
-        Route::apiResource('categories', CategoryController::class);
+        Route::middleware('check.outlet.access')->group(function () {
+            Route::apiResource('categories', CategoryController::class);
+        });
 
         // ================= PRODUCT =================
-        Route::apiResource('products', ProductController::class);
+        Route::middleware('check.outlet.access')->group(function () {
+            Route::apiResource('products', ProductController::class);
+        });
 
         // ================= STATION =================
-        Route::apiResource('stations', StationController::class);
-
+        Route::middleware('check.outlet.access')->group(function () {
+            Route::apiResource('stations', StationController::class);
+        });
 
         // ================= ORDER =================
-        Route::prefix('orders')->group(function () {
+        Route::middleware('check.outlet.access')->group(function () {
+            Route::prefix('orders')->group(function () {
+                // Standard CRUD
+                Route::get('/', [OrderController::class, 'index'])->name('orders.index');
+                Route::post('/', [OrderController::class, 'store'])->name('orders.store');
+                Route::get('/{order}', [OrderController::class, 'show'])->name('orders.show');
 
-            Route::get('/', [OrderController::class, 'index']);
-            Route::post('/', [OrderController::class, 'store']);
-            Route::get('/{id}', [OrderController::class, 'show']);
+                // Order management
+                Route::post('/{order}/items', [OrderController::class, 'addItem'])->name('orders.addItem');
+                Route::delete('/{order}/items/{item}', [OrderController::class, 'removeItem'])->name('orders.removeItem');
+                Route::post('/{order}/checkout', [OrderController::class, 'checkout'])->name('orders.checkout');
+                Route::post('/{order}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
 
-            // cart
-            Route::post('/{id}/items', [OrderController::class, 'addItem']);
-            Route::delete('/{id}/items/{itemId}', [OrderController::class, 'removeItem']);
-
-            // checkout
-            Route::post('/{id}/checkout', [OrderController::class, 'checkout']);
-
+                // Kitchen display
+                Route::patch('/items/{item}/status', [OrderController::class, 'updateItemStatus'])->name('orders.updateItemStatus');
+            });
         });
 
-        // ================= ORDER ITEM (KITCHEN ACTION) =================
-        Route::prefix('order-items')->group(function () {
+    }); // END Protected routes
 
-            // update status (pending → cooking → done)
-            Route::patch('/{id}/status', [OrderController::class, 'updateItemStatus']);
-
-        });
-
-    });
-});
+}); // END v1 prefix

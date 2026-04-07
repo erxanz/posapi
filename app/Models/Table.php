@@ -72,7 +72,34 @@ class Table extends Model
         return $this->hasMany(Order::class);
     }
 
-    public function isAvailable()
+    // ===== SECURITY & UTILITY =====
+
+    /**
+     * SECURITY: Check apakah user dapat akses table ini
+     */
+    public function canBeAccessedBy(User $user): bool
+    {
+        if ($user->isDeveloper()) {
+            return true;
+        }
+
+        // Manager hanya akses table di outlet miliknya
+        if ($user->isManager()) {
+            return $this->outlet->owner_id === $user->id;
+        }
+
+        // Karyawan hanya akses table di outlet miliknya
+        if ($user->isKaryawan()) {
+            return $this->outlet_id === $user->outlet_id;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check apakah table available
+     */
+    public function isAvailable(): bool
     {
         return $this->status === 'available' && $this->is_active;
     }

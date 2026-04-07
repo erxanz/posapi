@@ -4,8 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
 use App\Models\Category;
 
 class Product extends Model
@@ -28,35 +26,20 @@ class Product extends Model
     /**
      * Casting biar aman
      */
-    protected $casts = [
-        'price' => 'integer',
-        'cost_price' => 'integer',
-        'stock' => 'integer',
-        'is_active' => 'boolean',
-    ];
-
-    /**
-     * Global scope outlet
-     */
-    protected static function booted()
+    protected function casts(): array
     {
-        static::addGlobalScope('outlet', function (Builder $query) {
-
-            // AMAN: cek auth dulu
-            if (Auth::check()) {
-                $user = Auth::user();
-
-                // developer bebas
-                if ($user->role !== 'developer') {
-                    $query->where('outlet_id', $user->outlet_id);
-                }
-            }
-
-        });
+        return [
+            'is_active' => 'boolean',
+            'price' => 'integer',
+            'cost_price' => 'integer',
+            'stock' => 'integer',
+        ];
     }
 
+    // ===== RELASI =====
+
     /**
-     * Relasi ke category
+     * RELASI: Product belongs to Category
      */
     public function category()
     {
@@ -64,7 +47,7 @@ class Product extends Model
     }
 
     /**
-     * (Optional) relasi ke outlet
+     * RELASI: Product belongs to Outlet
      */
     public function outlet()
     {
@@ -72,10 +55,58 @@ class Product extends Model
     }
 
     /**
-    * (Optional) relasi ke station
-    */
+     * RELASI: Product belongs to Station
+     */
     public function station()
     {
         return $this->belongsTo(Station::class);
+    }
+
+    /**
+     * RELASI: Product has many OrderItems
+     */
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    // ===== SECURITY & UTILITY =====
+
+    /**
+     * SECURITY: Check apakah user dapat akses product ini
+     */
+    public function canBeAccessedBy(User $user): bool
+    {
+        if ($user->isDeveloper()) {
+            return true;
+        }
+
+        // Manager hanya akses produk di outlet miliknya
+        if ($user->isManager()) {
+            return $this->outlet->owner_id === $user->id;
+        }
+
+        // Karyawan hanya akses produk di outlet miliknya
+        if ($user->isKaryawan()) {
+            return $this->outlet_id === $user->outlet_id;
+        }
+
+        return false;
+    }
+
+    /**
+     * SCOPE: Filter products by outlet
+     */
+    public function scopeByOutlet($query, $outletId)
+    {
+        return $query->where('outlet_id', $outletId);
+    }
+
+    /**
+     * SCOPE: Only active products
+     */
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
     }
 }

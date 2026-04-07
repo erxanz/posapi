@@ -13,7 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        //
+        // Register custom middleware aliases
+        $middleware->alias([
+            'check.outlet.access' => \App\Http\Middleware\CheckOutletAccess::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //
