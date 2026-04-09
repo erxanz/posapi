@@ -25,13 +25,6 @@ class OutletController extends Controller
             'name' => 'required|string|max:255'
         ]);
 
-        // optional: cegah manager punya banyak outlet
-        if ($user->outlet_id) {
-            return response()->json([
-                'message' => 'Manager sudah memiliki outlet'
-            ], 422);
-        }
-
         // pakai transaction biar aman
         $outlet = DB::transaction(function () use ($request, $user) {
 
@@ -40,10 +33,12 @@ class OutletController extends Controller
                 'owner_id' => $user->id
             ]);
 
-            // assign outlet ke user
-            $user->update([
-                'outlet_id' => $outlet->id
-            ]);
+            // jadikan outlet pertama sebagai outlet default manager
+            if (!$user->outlet_id) {
+                $user->update([
+                    'outlet_id' => $outlet->id
+                ]);
+            }
 
             return $outlet;
         });
@@ -83,13 +78,6 @@ class OutletController extends Controller
             'name' => 'required|string|max:255'
         ]);
 
-        // 1 manager = 1 outlet
-        if ($user->outlet_id) {
-            return response()->json([
-                'message' => 'Manager sudah memiliki outlet'
-            ], 422);
-        }
-
         $outlet = DB::transaction(function () use ($validated, $user) {
 
             $outlet = Outlet::create([
@@ -97,9 +85,11 @@ class OutletController extends Controller
                 'owner_id' => $user->id
             ]);
 
-            $user->update([
-                'outlet_id' => $outlet->id
-            ]);
+            if (!$user->outlet_id) {
+                $user->update([
+                    'outlet_id' => $outlet->id
+                ]);
+            }
 
             return $outlet;
         });

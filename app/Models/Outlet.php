@@ -30,4 +30,11 @@ class Outlet extends Model
     {
         return $this->hasMany(Order::class);
     }
+
+    public function products()
+    {
+        return $this->belongsToMany(Product::class)
+            ->withPivot(['price', 'stock', 'is_active'])
+            ->withTimestamps();
+    }
 }

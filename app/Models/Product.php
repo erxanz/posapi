@@ -4,24 +4,18 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
-use App\Models\Category;
 
 class Product extends Model
 {
     use HasFactory;
 
     protected $fillable = [
+        'owner_id',
         'name',
-        'price',
-        'stock',
         'category_id',
         'description',
-        'outlet_id',
         'cost_price',
         'image',
-        'is_active',
         'station_id',
     ];
 
@@ -29,31 +23,8 @@ class Product extends Model
      * Casting biar aman
      */
     protected $casts = [
-        'price' => 'integer',
         'cost_price' => 'integer',
-        'stock' => 'integer',
-        'is_active' => 'boolean',
     ];
-
-    /**
-     * Global scope outlet
-     */
-    protected static function booted()
-    {
-        static::addGlobalScope('outlet', function (Builder $query) {
-
-            // AMAN: cek auth dulu
-            if (Auth::check()) {
-                $user = Auth::user();
-
-                // developer bebas
-                if ($user->role !== 'developer') {
-                    $query->where('outlet_id', $user->outlet_id);
-                }
-            }
-
-        });
-    }
 
     /**
      * Relasi ke category
@@ -64,11 +35,21 @@ class Product extends Model
     }
 
     /**
-     * (Optional) relasi ke outlet
+     * Relasi ke owner catalog
      */
-    public function outlet()
+    public function owner()
     {
-        return $this->belongsTo(Outlet::class);
+        return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    /**
+     * Relasi distribusi produk ke banyak outlet
+     */
+    public function outlets()
+    {
+        return $this->belongsToMany(Outlet::class)
+            ->withPivot(['price', 'stock', 'is_active'])
+            ->withTimestamps();
     }
 
     /**

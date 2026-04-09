@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Order;
-use App\Models\Product;
+use App\Models\Outlet;
 use App\Models\Table;
 use Illuminate\Support\Facades\DB;
 
@@ -52,16 +52,21 @@ class OrderController extends Controller
             return response()->json(['message' => 'Order sudah ditutup'], 400);
         }
 
-        // ambil product sesuai outlet (SECURITY FIX)
-        $product = Product::where('id', $request->product_id)
-            ->where('outlet_id', auth()->user()->outlet_id)
+        // Ambil konfigurasi produk berdasarkan outlet di pivot.
+        $product = Outlet::query()
+            ->findOrFail($order->outlet_id)
+            ->products()
+            ->where('products.id', $request->product_id)
+            ->wherePivot('is_active', true)
             ->firstOrFail();
 
-        if (!$product->is_active) {
+        if ((int) $product->pivot->stock < (int) $request->qty) {
             return response()->json([
-                'message' => "Produk {$product->name} tidak tersedia"
+                'message' => "Stok {$product->name} tidak cukup"
             ], 400);
         }
+
+        $price = (int) $product->pivot->price;
 
         DB::beginTransaction();
 
@@ -76,8 +81,8 @@ class OrderController extends Controller
                 $order->items()->create([
                     'product_id' => $product->id,
                     'qty' => $request->qty,
-                    'price' => $product->price,
-                    'total_price' => $product->price * $request->qty
+                    'price' => $price,
+                    'total_price' => $price * $request->qty
                 ]);
             }
 
@@ -161,6 +166,7 @@ class OrderController extends Controller
 
         try {
             $total = 0;
+            $outlet = Outlet::query()->findOrFail($request->outlet_id);
 
             $table = Table::where('id', $request->table_id)
                 ->where('outlet_id', $request->outlet_id)
@@ -174,21 +180,24 @@ class OrderController extends Controller
             ]);
 
             foreach ($request->items as $item) {
-                $product = Product::where('id', $item['product_id'])
-                    ->where('outlet_id', $request->outlet_id)
+                $product = $outlet->products()
+                    ->where('products.id', $item['product_id'])
+                    ->wherePivot('is_active', true)
                     ->firstOrFail();
 
-                if (!$product->is_active) {
-                    throw new \Exception("Produk {$product->name} tidak tersedia");
+                if ((int) $product->pivot->stock < (int) $item['qty']) {
+                    throw new \Exception("Stok {$product->name} tidak cukup");
                 }
 
-                $subtotal = $product->price * $item['qty'];
+                $price = (int) $product->pivot->price;
+
+                $subtotal = $price * $item['qty'];
                 $total += $subtotal;
 
                 $order->items()->create([
                     'product_id' => $product->id,
                     'qty' => $item['qty'],
-                    'price' => $product->price,
+                    'price' => $price,
                     'total_price' => $subtotal
                 ]);
             }

@@ -11,8 +11,13 @@ class Category extends Model
 
     protected $fillable = [
         'name',
-        'outlet_id',
+        'owner_id',
     ];
+
+    public function owner()
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
 
     public function products()
     {

@@ -13,16 +13,21 @@ class StationController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
+        $ownerId = $this->resolveOwnerId($user);
+
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner tidak ditemukan'], 400);
+        }
 
         $limit = min($request->limit ?? 10, 100);
 
         $query = Station::query()
-            ->select(['id', 'outlet_id', 'name', 'created_at'])
-            ->where('outlet_id', $user->outlet_id)
+            ->select(['id', 'owner_id', 'name', 'created_at'])
+            ->where('owner_id', $ownerId)
             ->withCount([
                 'products',
                 'orders as orders_count' => function ($q) {
-                    $q->distinct(); // hindari duplicate count
+                    $q->distinct();
                 }
             ])
             ->latest();
@@ -42,9 +47,10 @@ class StationController extends Controller
     public function store(Request $request)
     {
         $user = auth()->user();
+        $ownerId = $this->resolveOwnerId($user);
 
-        if (!$user->outlet_id) {
-            return response()->json(['message' => 'User belum punya outlet'], 400);
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner tidak ditemukan'], 400);
         }
 
         $request->validate([
@@ -53,7 +59,7 @@ class StationController extends Controller
 
         $station = Station::create([
             'name' => $request->name,
-            'outlet_id' => $user->outlet_id,
+            'owner_id' => $ownerId,
         ]);
 
         return response()->json([
@@ -126,28 +132,49 @@ class StationController extends Controller
         $user = auth()->user();
 
         $station = Station::query()
-            ->select(['id', 'name', 'outlet_id'])
+            ->select(['id', 'name', 'owner_id'])
             ->where('id', $id)
-            ->where('outlet_id', $user->outlet_id)
-            ->with([
-                'products' => function ($q) {
-                    $q->select([
-                        'id',
-                        'name',
-                        'price',
-                        'category_id',
-                        'station_id'
-                    ])
-                    ->where('is_active', true)
-                    ->with([
-                        'category:id,name'
-                    ]);
-                }
-            ])
             ->firstOrFail();
 
+        $this->authorizeStation($station);
+
+        if (!$user->outlet_id) {
+            return response()->json(['message' => 'User belum punya outlet'], 400);
+        }
+
+        $products = \App\Models\Outlet::query()
+            ->findOrFail($user->outlet_id)
+            ->products()
+            ->select([
+                'products.id',
+                'products.name',
+                'products.category_id',
+                'products.station_id',
+            ])
+            ->where('products.station_id', $station->id)
+            ->wherePivot('is_active', true)
+            ->with(['category:id,name'])
+            ->get()
+            ->map(function ($product) {
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'category_id' => $product->category_id,
+                    'station_id' => $product->station_id,
+                    'price' => (int) $product->pivot->price,
+                    'stock' => (int) $product->pivot->stock,
+                    'is_active' => (bool) $product->pivot->is_active,
+                    'category' => $product->category,
+                ];
+            });
+
         return response()->json([
-            'data' => $station
+            'data' => [
+                'id' => $station->id,
+                'name' => $station->name,
+                'owner_id' => $station->owner_id,
+                'products' => $products,
+            ]
         ]);
     }
 
@@ -156,8 +183,27 @@ class StationController extends Controller
      */
     private function authorizeStation(Station $station): void
     {
-        if ($station->outlet_id !== auth()->user()->outlet_id) {
+        $ownerId = $this->resolveOwnerId(auth()->user());
+
+        if (!$ownerId || (int) $station->owner_id !== (int) $ownerId) {
             abort(403, 'Forbidden');
         }
+    }
+
+    private function resolveOwnerId($user): ?int
+    {
+        if ($user->role === 'developer') {
+            return request()->integer('owner_id') ?: $user->id;
+        }
+
+        if ($user->role === 'manager') {
+            return $user->id;
+        }
+
+        if ($user->outlet_id) {
+            return \App\Models\Outlet::query()->whereKey($user->outlet_id)->value('owner_id');
+        }
+
+        return null;
     }
 }

@@ -85,7 +85,7 @@ class DatabaseSeeder extends Seeder
             ])->map(function ($name) use ($outlet) {
                 return Category::factory()->create([
                     'name' => $name,
-                    'outlet_id' => $outlet->id,
+                    'owner_id' => $outlet->owner_id,
                 ]);
             });
 
@@ -97,7 +97,7 @@ class DatabaseSeeder extends Seeder
             ])->map(function ($name) use ($outlet) {
                 return Station::create([
                     'name' => $name,
-                    'outlet_id' => $outlet->id,
+                    'owner_id' => $outlet->owner_id,
                 ]);
             });
 
@@ -105,16 +105,26 @@ class DatabaseSeeder extends Seeder
             foreach ($categories as $category) {
 
                 // 5 produk per kategori
-                Product::factory()->count(5)->create([
+                $products = Product::factory()->count(5)->create([
+                    'owner_id' => $outlet->owner_id,
                     'category_id' => $category->id,
-                    'outlet_id' => $outlet->id,
                     'station_id' => $stations->random()->id,
                 ]);
+
+                foreach ($products as $product) {
+                    $outlet->products()->syncWithoutDetaching([
+                        $product->id => [
+                            'price' => fake()->numberBetween($product->cost_price, 75000),
+                            'stock' => fake()->numberBetween(0, 100),
+                            'is_active' => true,
+                        ]
+                    ]);
+                }
             }
 
             // ================= SAMPLE ORDER =================
             $tables = Table::where('outlet_id', $outlet->id)->get();
-            $products = Product::where('outlet_id', $outlet->id)->get();
+            $products = $outlet->products()->get();
             $users = User::where('outlet_id', $outlet->id)
                 ->whereIn('role', ['manager', 'karyawan'])
                 ->get();
@@ -142,14 +152,14 @@ class DatabaseSeeder extends Seeder
 
                 foreach ($pickedProducts as $product) {
                     $qty = fake()->numberBetween(1, 3);
-                    $subtotal = $product->price * $qty;
+                    $subtotal = (int) $product->pivot->price * $qty;
 
                     DB::table('order_items')->insert([
                         'order_id' => $order->id,
                         'product_id' => $product->id,
                         'station_id' => $product->station_id,
                         'qty' => $qty,
-                        'price' => $product->price,
+                        'price' => (int) $product->pivot->price,
                         'total_price' => $subtotal,
                         'created_at' => now(),
                         'updated_at' => now(),

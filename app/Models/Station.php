@@ -13,13 +13,13 @@ class Station extends Model
     use HasFactory;
 
     protected $fillable = [
-        'outlet_id',
+        'owner_id',
         'name',
     ];
 
-    public function outlet()
+    public function owner()
     {
-        return $this->belongsTo(Outlet::class);
+        return $this->belongsTo(User::class, 'owner_id');
     }
 
     public function products()

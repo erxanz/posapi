@@ -13,14 +13,19 @@ class CategoryController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
+        $ownerId = $this->resolveOwnerId($user);
+
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner tidak ditemukan'], 400);
+        }
 
         $limit = min($request->limit ?? 10, 100);
 
         $query = Category::query()
-            ->select(['id', 'name', 'outlet_id', 'created_at']) // hemat column
-            ->where('outlet_id', $user->outlet_id)
+            ->select(['id', 'name', 'owner_id', 'created_at'])
+            ->where('owner_id', $ownerId)
             ->withCount('products')
-            ->latest('id'); // default sort by latest id
+            ->latest('id');
 
         if ($request->filled('search')) {
             $query->where('name', 'like', trim($request->search) . '%'); // pakai index
@@ -37,18 +42,19 @@ class CategoryController extends Controller
     public function store(Request $request)
     {
         $user = auth()->user();
+        $ownerId = $this->resolveOwnerId($user);
 
-        if (!$user->outlet_id) {
-            return response()->json(['message' => 'User belum punya outlet'], 400);
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner tidak ditemukan'], 400);
         }
 
         $request->validate([
-            'name' => 'required|string|max:50|unique:categories,name,NULL,id,outlet_id,' . $user->outlet_id
+            'name' => 'required|string|max:50|unique:categories,name,NULL,id,owner_id,' . $ownerId
         ]);
 
         $category = Category::create([
             'name' => strtolower(trim($request->name)),
-            'outlet_id' => $user->outlet_id
+            'owner_id' => $ownerId
         ]);
 
         return response()->json([
@@ -78,8 +84,10 @@ class CategoryController extends Controller
     {
         $this->authorizeCategory($category);
 
+        $ownerId = $this->resolveOwnerId(auth()->user());
+
         $request->validate([
-            'name' => 'required|string|max:50|unique:categories,name,' . $category->id . ',id,outlet_id,' . auth()->user()->outlet_id
+            'name' => 'required|string|max:50|unique:categories,name,' . $category->id . ',id,owner_id,' . $ownerId
         ]);
 
         $category->update([
@@ -117,8 +125,27 @@ class CategoryController extends Controller
      */
     private function authorizeCategory(Category $category): void
     {
-        if ($category->outlet_id !== auth()->user()->outlet_id) {
+        $ownerId = $this->resolveOwnerId(auth()->user());
+
+        if (!$ownerId || (int) $category->owner_id !== (int) $ownerId) {
             abort(403, 'Forbidden');
         }
+    }
+
+    private function resolveOwnerId($user): ?int
+    {
+        if ($user->role === 'developer') {
+            return request()->integer('owner_id') ?: $user->id;
+        }
+
+        if ($user->role === 'manager') {
+            return $user->id;
+        }
+
+        if ($user->outlet_id) {
+            return \App\Models\Outlet::query()->whereKey($user->outlet_id)->value('owner_id');
+        }
+
+        return null;
     }
 }

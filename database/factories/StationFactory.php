@@ -3,7 +3,6 @@
 namespace Database\Factories;
 
 use App\Models\Station;
-use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -26,17 +25,8 @@ class StationFactory extends Factory
         ]);
 
         return [
-            'outlet_id' => null,
+            'owner_id' => null,
             'name' => $name,
-            'code' => strtoupper(Str::slug($name)),
-            'is_active' => fake()->boolean(90),
         ];
-    }
-
-    public function inactive(): static
-    {
-        return $this->state(fn () => [
-            'is_active' => false,
-        ]);
     }
 }

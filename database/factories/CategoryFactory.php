@@ -19,7 +19,7 @@ class CategoryFactory extends Factory
     {
         return [
             'name' => fake()->word(),
-            'outlet_id' => null, // jangan buat Outlet::factory() di sini
+            'owner_id' => null,
         ];
     }
 }
