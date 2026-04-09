@@ -88,12 +88,16 @@ Route::prefix('v1')->group(function () {
             Route::post('/', [OrderController::class, 'store']);
             Route::get('/{id}', [OrderController::class, 'show']);
 
+            // checkout order (create order + items)
+            Route::post('/checkout', [OrderController::class, 'checkoutOrder']);
+
             // cart
             Route::post('/{id}/items', [OrderController::class, 'addItem']);
             Route::delete('/{id}/items/{itemId}', [OrderController::class, 'removeItem']);
 
-            // checkout
+            // payment
             Route::post('/{id}/checkout', [OrderController::class, 'checkout']);
+            Route::post('/{id}/payments', [OrderController::class, 'pay']);
 
         });
 

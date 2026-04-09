@@ -9,6 +9,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Outlet;
 use App\Models\Order;
+use App\Models\Payment;
 
 class User extends Authenticatable
 {
@@ -67,6 +68,11 @@ class User extends Authenticatable
     public function orders()
     {
         return $this->hasMany(Order::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(Payment::class, 'paid_by');
     }
 
     public function isDeveloper(): bool

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\Outlet;
+use App\Models\Payment;
 use App\Models\Table;
 use Illuminate\Support\Facades\DB;
 
@@ -224,65 +225,228 @@ class OrderController extends Controller
     }
 
     /**
-     * Checkout (bayar)
+     * Checkout order (create order + order_items)
      */
-    public function checkout(Request $request, $orderId)
+    public function checkoutOrder(Request $request)
     {
-        $request->validate([
-            'paid_amount' => 'required|numeric|min:0'
+        $user = auth()->user();
+
+        $validated = $request->validate([
+            'outlet_id' => 'required|exists:outlets,id',
+            'table_id' => 'required|exists:tables,id',
+            'customer_name' => 'nullable|string|max:100',
+            'notes' => 'nullable|string|max:255',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.qty' => 'required|integer|min:1',
+        ]);
+
+        $outlet = Outlet::findOrFail($validated['outlet_id']);
+
+        if (!$this->canAccessOutlet($outlet->id)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $table = Table::where('id', $validated['table_id'])
+            ->where('outlet_id', $outlet->id)
+            ->firstOrFail();
+
+        DB::beginTransaction();
+
+        try {
+            $order = Order::create([
+                'outlet_id' => $outlet->id,
+                'user_id' => $user->id,
+                'table_id' => $table->id,
+                'customer_name' => $validated['customer_name'] ?? null,
+                'notes' => $validated['notes'] ?? null,
+                'invoice_number' => $this->generateInvoiceNumber($outlet->id),
+                'status' => 'pending',
+                'total_price' => 0,
+            ]);
+
+            $total = 0;
+
+            foreach ($validated['items'] as $item) {
+                $product = $outlet->products()
+                    ->where('products.id', $item['product_id'])
+                    ->wherePivot('is_active', true)
+                    ->firstOrFail();
+
+                $stock = (int) $product->pivot->stock;
+                $qty = (int) $item['qty'];
+
+                if ($stock < $qty) {
+                    throw new \Exception("Stok {$product->name} tidak cukup");
+                }
+
+                $price = (int) $product->pivot->price;
+                $subtotal = $price * $qty;
+                $stationId = $product->pivot->station_id ?? $product->station_id;
+
+                $order->items()->create([
+                    'product_id' => $product->id,
+                    'station_id' => $stationId,
+                    'qty' => $qty,
+                    'price' => $price,
+                    'total_price' => $subtotal,
+                ]);
+
+                $total += $subtotal;
+            }
+
+            $order->update([
+                'total_price' => $total,
+            ]);
+
+            $table->update([
+                'status' => 'occupied',
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Checkout order berhasil dibuat',
+                'order' => $order->load('items.product', 'table'),
+            ], 201);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Payment endpoint (supports split payment)
+     */
+    public function pay(Request $request, $orderId)
+    {
+        $validated = $request->validate([
+            'payments' => 'required|array|min:1',
+            'payments.*.amount_paid' => 'required|integer|min:1',
+            'payments.*.method' => 'required|string|max:50',
+            'payments.*.reference_no' => 'nullable|string|max:100',
         ]);
 
         $order = Order::where('id', $orderId)
             ->where('outlet_id', auth()->user()->outlet_id)
             ->firstOrFail();
 
-        if ($order->status !== 'open') {
+        if ($order->status === 'paid') {
             return response()->json(['message' => 'Order sudah dibayar'], 400);
         }
 
+        if ($order->status === 'cancelled') {
+            return response()->json(['message' => 'Order sudah dibatalkan'], 400);
+        }
+
         if ($order->items()->count() === 0) {
-            return response()->json(['message' => 'Keranjang kosong'], 400);
+            return response()->json(['message' => 'Order tidak memiliki item'], 400);
         }
-
-        $paid = $request->paid_amount;
-
-        if ($paid < $order->total_price) {
-            return response()->json(['message' => 'Uang kurang'], 400);
-        }
-
-        $change = $paid - $order->total_price;
 
         DB::beginTransaction();
 
         try {
-            $order->update([
-                'status' => 'paid',
-                'invoice_number' => $order->invoice_number ?? 'INV-' . strtoupper(uniqid())
-            ]);
+            $alreadyPaid = (int) $order->payments()->sum(DB::raw('amount_paid - change_amount'));
+            $remaining = max(0, (int) $order->total_price - $alreadyPaid);
+            $createdPayments = [];
 
-            // UPDATE STATUS MEJA
-            if ($order->table_id) {
-                $order->table->update([
-                    'status' => 'available'
+            foreach ($validated['payments'] as $row) {
+                if ($remaining <= 0) {
+                    break;
+                }
+
+                $amount = (int) $row['amount_paid'];
+                $appliedAmount = min($amount, $remaining);
+                $changeAmount = max(0, $amount - $appliedAmount);
+
+                $payment = Payment::create([
+                    'order_id' => $order->id,
+                    'amount_paid' => $amount,
+                    'change_amount' => $changeAmount,
+                    'method' => $row['method'],
+                    'reference_no' => $row['reference_no'] ?? null,
+                    'paid_at' => now(),
+                    'paid_by' => auth()->id(),
                 ]);
+
+                $createdPayments[] = $payment;
+                $remaining -= $appliedAmount;
+            }
+
+            $effectivePaid = (int) $order->payments()->sum(DB::raw('amount_paid - change_amount'));
+            $isPaid = $effectivePaid >= (int) $order->total_price;
+
+            if ($isPaid) {
+                $order->update(['status' => 'paid']);
+
+                if ($order->table_id) {
+                    $order->table()->update(['status' => 'available']);
+                }
             }
 
             DB::commit();
 
             return response()->json([
-                'message' => 'Transaksi berhasil',
-                'order' => $order->load('items.product'),
-                'paid' => $paid,
-                'change' => $change
+                'message' => $isPaid ? 'Pembayaran berhasil, order lunas' : 'Pembayaran tercatat, order belum lunas',
+                'order' => $order->fresh()->load('items.product', 'payments'),
+                'payment_summary' => [
+                    'order_total' => (int) $order->total_price,
+                    'effective_paid' => $effectivePaid,
+                    'remaining' => max(0, (int) $order->total_price - $effectivePaid),
+                    'is_paid' => $isPaid,
+                ],
+                'payments_created' => $createdPayments,
             ]);
 
         } catch (\Throwable $e) {
             DB::rollBack();
 
             return response()->json([
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Checkout (bayar)
+     */
+    public function checkout(Request $request, $orderId)
+    {
+        $validated = $request->validate([
+            'paid_amount' => 'required|integer|min:1',
+            'method' => 'nullable|string|max:50',
+            'reference_no' => 'nullable|string|max:100',
+        ]);
+
+        $request->merge([
+            'payments' => [[
+                'amount_paid' => $validated['paid_amount'],
+                'method' => $validated['method'] ?? 'cash',
+                'reference_no' => $validated['reference_no'] ?? null,
+            ]],
+        ]);
+
+        return $this->pay($request, $orderId);
+    }
+
+    private function canAccessOutlet(int $outletId): bool
+    {
+        $user = auth()->user();
+
+        if ($user->role === 'developer') {
+            return true;
+        }
+
+        return (int) $user->outlet_id === $outletId;
+    }
+
+    private function generateInvoiceNumber(int $outletId): string
+    {
+        return 'INV-' . str_pad((string) $outletId, 2, '0', STR_PAD_LEFT) . '-' . now()->format('YmdHis') . '-' . strtoupper(substr((string) uniqid(), -4));
     }
 
     /**
