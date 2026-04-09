@@ -6,9 +6,67 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use App\Models\User;
+use App\Models\Outlet;
 
 class UserController extends Controller
 {
+    /**
+     * LIST USER (ROLE-BASED)
+     */
+    public function index(Request $request)
+    {
+        $user = auth()->user();
+        $query = User::with('outlet');
+
+        // Hanya role developer/manager yang boleh mengakses daftar user.
+        if (!$user->isDeveloper() && !$user->isManager()) {
+            return response()->json(['message' => 'Akses ditolak'], 403);
+        }
+
+        // 1. Jika login sebagai MANAGER, hanya tampilkan karyawan di outlet miliknya.
+        if ($user->isManager()) {
+            $outletIds = Outlet::where('owner_id', $user->id)->pluck('id');
+
+            $query->whereIn('outlet_id', $outletIds)
+                ->where('role', 'karyawan');
+        }
+        // 2. Jika login sebagai DEVELOPER.
+        elseif ($user->isDeveloper()) {
+            // Jika developer meminta karyawan dari manager tertentu.
+            if ($request->filled('manager_id')) {
+                $managerId = $request->manager_id;
+                $outletIds = Outlet::where('owner_id', $managerId)->pluck('id');
+
+                $query->whereIn('outlet_id', $outletIds)
+                    ->where('role', 'karyawan');
+            }
+            // Filter role biasa (untuk tabel utama).
+            elseif ($request->filled('role')) {
+                $query->where('role', $request->role);
+            }
+        }
+
+        // Search fitur.
+        if ($request->filled('search')) {
+            $search = $request->search;
+
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        $limit = (int) $request->input('limit', 100);
+        if ($limit <= 0) {
+            $limit = 100;
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $query->latest()->paginate($limit),
+        ]);
+    }
+
     /**
      * CREATE KARYAWAN (MANAGER)
      */
@@ -179,13 +237,9 @@ class UserController extends Controller
      * ===============================
      */
 
-    public function listUsers()
+    public function listUsers(Request $request)
     {
-        $this->authorizeDeveloper();
-
-        return response()->json([
-            'data' => User::latest()->get()
-        ]);
+        return $this->index($request);
     }
 
     public function createUser(Request $request)
