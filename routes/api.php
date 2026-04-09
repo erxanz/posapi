@@ -46,6 +46,9 @@ Route::prefix('v1')->group(function () {
         Route::put('/outlets/{outlet}', [OutletController::class, 'update'])->name('outlets.update');
         Route::delete('/outlets/{outlet}', [OutletController::class, 'destroy'])->name('outlets.destroy');
 
+        Route::get('/outlets/{outlet}/products', [OutletController::class, 'getProducts']);
+        Route::post('/outlets/{outlet}/sync-products', [OutletController::class, 'syncProducts']);
+
         // ================= TABLE =================
         Route::apiResource('tables', TableController::class);
 

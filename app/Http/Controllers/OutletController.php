@@ -130,6 +130,60 @@ class OutletController extends Controller
     }
 
     /**
+     * Get products assigned to this outlet
+     */
+    public function getProducts(Outlet $outlet)
+    {
+        $this->authorizeOutlet($outlet);
+
+        // Ambil relasi products beserta pivot datanya
+        $products = $outlet->products()->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $products
+        ]);
+    }
+
+    /**
+     * Sync products to this outlet (Checklist, Harga, Stok)
+     */
+    public function syncProducts(Request $request, Outlet $outlet)
+    {
+        $this->authorizeOutlet($outlet);
+
+        $request->validate([
+            'products' => 'nullable|array',
+            'products.*.product_id' => 'required|exists:products,id',
+            'products.*.price' => 'required|integer|min:0',
+            'products.*.stock' => 'required|integer|min:0',
+            'products.*.is_active' => 'required|boolean',
+        ]);
+
+        $syncData = [];
+
+        if ($request->has('products')) {
+            foreach ($request->products as $item) {
+                // Mapping data untuk masuk ke tabel pivot 'outlet_product'
+                $syncData[$item['product_id']] = [
+                    'price' => $item['price'],
+                    'stock' => $item['stock'],
+                    'is_active' => $item['is_active'],
+                ];
+            }
+        }
+
+        // Gunakan sync() bawaan Laravel. Ini otomatis menghapus menu yang tidak dicentang
+        // dan menambahkan/mengupdate menu yang dicentang.
+        $outlet->products()->sync($syncData);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Katalog outlet berhasil diperbarui.'
+        ]);
+    }
+
+    /**
      * Delete outlet
      */
     public function destroy(Outlet $outlet)
