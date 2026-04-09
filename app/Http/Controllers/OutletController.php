@@ -157,6 +157,7 @@ class OutletController extends Controller
             'products.*.product_id' => 'required|exists:products,id',
             'products.*.price' => 'required|integer|min:0',
             'products.*.stock' => 'required|integer|min:0',
+            'products.*.station_id' => 'nullable|exists:stations,id',
             'products.*.is_active' => 'required|boolean',
         ]);
 
@@ -168,6 +169,7 @@ class OutletController extends Controller
                 $syncData[$item['product_id']] = [
                     'price' => $item['price'],
                     'stock' => $item['stock'],
+                    'station_id' => $item['station_id'] ?? null,
                     'is_active' => $item['is_active'],
                 ];
             }

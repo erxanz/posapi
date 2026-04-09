@@ -64,7 +64,7 @@ class DatabaseSeeder extends Seeder
         }
 
         // ================= CATEGORY & PRODUCT =================
-        foreach (Outlet::all() as $outlet) {
+        foreach (Outlet::orderBy('id')->get() as $outlet) {
 
             // buat 8 meja per outlet
             for ($tableNo = 1; $tableNo <= 8; $tableNo++) {
@@ -72,6 +72,7 @@ class DatabaseSeeder extends Seeder
                     'outlet_id' => $outlet->id,
                     'name' => 'Meja ' . str_pad((string) $tableNo, 2, '0', STR_PAD_LEFT),
                     'code' => 'T' . str_pad((string) $tableNo, 2, '0', STR_PAD_LEFT),
+                    'capacity' => 4,
                     'status' => 'available',
                     'is_active' => true,
                 ]);
@@ -101,21 +102,56 @@ class DatabaseSeeder extends Seeder
                 ]);
             });
 
+            $productCatalog = [
+                'Makanan' => [
+                    ['name' => 'Nasi Goreng', 'description' => 'Nasi goreng spesial', 'cost_price' => 12000, 'station' => 'Kitchen'],
+                    ['name' => 'Mie Goreng', 'description' => 'Mie goreng gurih', 'cost_price' => 11000, 'station' => 'Kitchen'],
+                    ['name' => 'Ayam Geprek', 'description' => 'Ayam geprek sambal', 'cost_price' => 15000, 'station' => 'Kitchen'],
+                    ['name' => 'Soto Ayam', 'description' => 'Soto ayam hangat', 'cost_price' => 13000, 'station' => 'Kitchen'],
+                    ['name' => 'Bakso', 'description' => 'Bakso kuah sapi', 'cost_price' => 14000, 'station' => 'Kitchen'],
+                ],
+                'Minuman' => [
+                    ['name' => 'Es Teh Manis', 'description' => 'Teh manis dingin', 'cost_price' => 3000, 'station' => 'Bar'],
+                    ['name' => 'Es Jeruk', 'description' => 'Jeruk peras segar', 'cost_price' => 4000, 'station' => 'Bar'],
+                    ['name' => 'Kopi Hitam', 'description' => 'Kopi hitam panas', 'cost_price' => 5000, 'station' => 'Bar'],
+                    ['name' => 'Cappuccino', 'description' => 'Kopi susu foam', 'cost_price' => 8000, 'station' => 'Bar'],
+                    ['name' => 'Matcha Latte', 'description' => 'Matcha latte dingin', 'cost_price' => 9000, 'station' => 'Bar'],
+                ],
+                'Snack' => [
+                    ['name' => 'Kentang Goreng', 'description' => 'Kentang goreng crispy', 'cost_price' => 7000, 'station' => 'Kitchen'],
+                    ['name' => 'Pisang Goreng', 'description' => 'Pisang goreng hangat', 'cost_price' => 6000, 'station' => 'Kitchen'],
+                    ['name' => 'Cireng', 'description' => 'Cireng isi', 'cost_price' => 5000, 'station' => 'Kitchen'],
+                    ['name' => 'Roti Bakar', 'description' => 'Roti bakar coklat', 'cost_price' => 6500, 'station' => 'Kitchen'],
+                    ['name' => 'Donat', 'description' => 'Donat gula halus', 'cost_price' => 5500, 'station' => 'Kitchen'],
+                ],
+            ];
+
+            $stationMap = $stations->keyBy('name');
+
             // produk per kategori
-            foreach ($categories as $category) {
+            foreach ($categories as $categoryIndex => $category) {
+                $productRows = $productCatalog[$category->name] ?? [];
 
-                // 5 produk per kategori
-                $products = Product::factory()->count(5)->create([
-                    'owner_id' => $outlet->owner_id,
-                    'category_id' => $category->id,
-                    'station_id' => $stations->random()->id,
-                ]);
+                foreach ($productRows as $productIndex => $row) {
+                    $stationId = optional($stationMap->get($row['station']))->id;
 
-                foreach ($products as $product) {
+                    $product = Product::create([
+                        'owner_id' => $outlet->owner_id,
+                        'category_id' => $category->id,
+                        'station_id' => $stationId,
+                        'name' => $row['name'],
+                        'description' => $row['description'],
+                        'cost_price' => $row['cost_price'],
+                        'image' => null,
+                    ]);
+
+                    $price = $row['cost_price'] + 5000;
+                    $stock = 20 + ($categoryIndex * 10) + ($productIndex * 3);
+
                     $outlet->products()->syncWithoutDetaching([
                         $product->id => [
-                            'price' => fake()->numberBetween($product->cost_price, 75000),
-                            'stock' => fake()->numberBetween(0, 100),
+                            'price' => $price,
+                            'stock' => $stock,
                             'is_active' => true,
                         ]
                     ]);
@@ -123,35 +159,39 @@ class DatabaseSeeder extends Seeder
             }
 
             // ================= SAMPLE ORDER =================
-            $tables = Table::where('outlet_id', $outlet->id)->get();
-            $products = $outlet->products()->get();
+            $tables = Table::where('outlet_id', $outlet->id)->orderBy('id')->get();
+            $products = $outlet->products()->orderBy('products.id')->get();
             $users = User::where('outlet_id', $outlet->id)
                 ->whereIn('role', ['manager', 'karyawan'])
+                ->orderBy('id')
                 ->get();
 
             // 4 order per outlet
             for ($o = 0; $o < 4; $o++) {
-                $status = fake()->randomElement(['pending', 'paid']);
+                $status = $o % 2 === 0 ? 'pending' : 'paid';
+                $selectedUser = $users[$o % $users->count()];
+                $selectedTable = $tables[$o % $tables->count()];
 
                 $order = Order::factory()->create([
                     'outlet_id' => $outlet->id,
-                    'user_id' => $users->random()->id,
-                    'table_id' => $tables->random()->id,
-                    'customer_name' => fake()->name(),
-                    'invoice_number' => 'INV-' . strtoupper(uniqid()),
+                    'user_id' => $selectedUser->id,
+                    'table_id' => $selectedTable->id,
+                    'customer_name' => 'Customer ' . $outlet->id . '-' . ($o + 1),
+                    'notes' => null,
+                    'invoice_number' => 'INV-' . str_pad((string) $outlet->id, 2, '0', STR_PAD_LEFT) . '-' . str_pad((string) ($o + 1), 4, '0', STR_PAD_LEFT),
                     'status' => $status,
                     'total_price' => 0,
                 ]);
 
-                $pickedProducts = $products->random(fake()->numberBetween(1, 3));
-                $pickedProducts = $pickedProducts instanceof \Illuminate\Support\Collection
-                    ? $pickedProducts
-                    : collect([$pickedProducts]);
+                $pickedProducts = $products->slice($o * 2, 2);
+                if ($pickedProducts->isEmpty()) {
+                    $pickedProducts = $products->take(2);
+                }
 
                 $total = 0;
 
-                foreach ($pickedProducts as $product) {
-                    $qty = fake()->numberBetween(1, 3);
+                foreach ($pickedProducts->values() as $itemIndex => $product) {
+                    $qty = $itemIndex + 1;
                     $subtotal = (int) $product->pivot->price * $qty;
 
                     DB::table('order_items')->insert([
