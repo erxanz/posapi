@@ -13,11 +13,15 @@ return new class extends Migration
     {
         Schema::create('stations', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('owner_id')->nullable()->constrained('users')->cascadeOnDelete();
             $table->string('name'); // nama stasiun (misal: kichen, bar, kasir)
             $table->timestamps();
 
-            $table->index(['outlet_id', 'name']);
+            $table->index(['owner_id', 'name']);
+        });
+
+        Schema::table('products', function (Blueprint $table) {
+            $table->foreign('station_id')->references('id')->on('stations')->nullOnDelete();
         });
     }
 
@@ -26,6 +30,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::table('products', function (Blueprint $table) {
+            $table->dropForeign(['station_id']);
+        });
+
         Schema::dropIfExists('stations');
     }
 };

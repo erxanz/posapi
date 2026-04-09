@@ -14,12 +14,12 @@ return new class extends Migration
         Schema::create('categories', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('owner_id')->nullable()->constrained('users')->cascadeOnDelete();
             $table->timestamps();
 
-            $table->unique(['name', 'outlet_id']); // nama category unik per outlet
+            $table->unique(['name', 'owner_id']); // nama category unik per owner
             $table->index('name'); // untuk search by name cepat
-            $table->index('outlet_id'); // untuk filter by outlet cepat
+            $table->index('owner_id'); // untuk filter by owner cepat
         });
     }
 
