@@ -227,7 +227,7 @@ class AuthController extends Controller
                         <p style='word-break: break-all; background-color: #f9f9f9; padding: 10px; border-radius: 4px; font-size: 13px; color: #666;'>$resetLink</p>
 
                         <div class='info-box'>
-                            <strong>⏱️ Penting:</strong> Link reset password ini hanya berlaku selama <strong>15 menit</strong>. Jika Anda tidak mereset password dalam waktu tersebut, Anda harus meminta link baru.
+                            <strong>Penting:</strong> Link reset password ini hanya berlaku selama <strong>15 menit</strong>. Jika Anda tidak mereset password dalam waktu tersebut, Anda harus meminta link baru.
                         </div>
 
                         <div class='divider'></div>
