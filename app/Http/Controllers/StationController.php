@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Outlet;
 use App\Models\Station;
 use Illuminate\Http\Request;
 
@@ -138,12 +139,16 @@ class StationController extends Controller
 
         $this->authorizeStation($station);
 
-        if (!$user->outlet_id) {
-            return response()->json(['message' => 'User belum punya outlet'], 400);
+        $outletId = $this->resolveOutletIdForStationProducts($user, (int) $station->owner_id);
+
+        if (!$outletId) {
+            return response()->json([
+                'message' => 'Outlet tidak ditemukan. Sertakan outlet_id yang valid.'
+            ], 400);
         }
 
-        $products = \App\Models\Outlet::query()
-            ->findOrFail($user->outlet_id)
+        $products = Outlet::query()
+            ->findOrFail($outletId)
             ->products()
             ->select([
                 'products.id',
@@ -205,5 +210,23 @@ class StationController extends Controller
         }
 
         return null;
+    }
+
+    private function resolveOutletIdForStationProducts($user, int $ownerId): ?int
+    {
+        if ($user->role === 'karyawan') {
+            return $user->outlet_id ?: null;
+        }
+
+        $outletId = request()->integer('outlet_id');
+
+        if (!$outletId) {
+            return null;
+        }
+
+        return Outlet::query()
+            ->whereKey($outletId)
+            ->where('owner_id', $ownerId)
+            ->value('id');
     }
 }

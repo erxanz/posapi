@@ -8,7 +8,7 @@ use Illuminate\Http\Request;
 class CategoryController extends Controller
 {
     /**
-     * List categories (by outlet)
+     * List categories (by owner)
      */
     public function index(Request $request)
     {
@@ -121,7 +121,7 @@ class CategoryController extends Controller
     }
 
     /**
-     * Helper authorization (multi-outlet security)
+     * Helper authorization (owner-based security)
      */
     private function authorizeCategory(Category $category): void
     {

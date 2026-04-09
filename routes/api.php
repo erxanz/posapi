@@ -75,6 +75,7 @@ Route::prefix('v1')->group(function () {
 
         // ================= STATION =================
         Route::apiResource('stations', StationController::class);
+        Route::get('/stations/{id}/products', [StationController::class, 'products'])->name('stations.products');
 
 
         // ================= ORDER =================

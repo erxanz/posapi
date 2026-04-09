@@ -126,9 +126,12 @@ class ProductController extends Controller
             ]);
         }
 
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner tidak ditemukan'], 400);
+        }
+
         $query = Product::query()
-            ->when($user->role !== 'developer', fn ($q) => $q->where('owner_id', $ownerId))
-            ->when($user->role === 'developer' && $request->filled('owner_id'), fn ($q) => $q->where('owner_id', $request->owner_id))
+            ->where('owner_id', $ownerId)
             ->select([
                 'id',
                 'owner_id',
