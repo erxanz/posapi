@@ -48,6 +48,11 @@ class Order extends Model
     // SCOPE
     public function scopeOpen($query)
     {
-        return $query->where('status', 'open');
+        return $query->where('status', 'pending');
+    }
+
+    public function scopePending($query)
+    {
+        return $query->where('status', 'pending');
     }
 }

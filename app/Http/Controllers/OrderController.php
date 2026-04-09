@@ -25,12 +25,12 @@ class OrderController extends Controller
     }
 
     /**
-     * DISABLE STORE (order harus dari meja)
+     * DISABLE STORE (gunakan endpoint checkout untuk membuat order)
      */
     public function store(Request $request)
     {
         return response()->json([
-            'message' => 'Gunakan endpoint openTable untuk membuat order'
+            'message' => 'Gunakan endpoint checkout untuk membuat order'
         ], 400);
     }
 
@@ -48,9 +48,9 @@ class OrderController extends Controller
             ->where('outlet_id', auth()->user()->outlet_id)
             ->firstOrFail();
 
-        // hanya order OPEN yang bisa diubah
-        if ($order->status !== 'open') {
-            return response()->json(['message' => 'Order sudah ditutup'], 400);
+        // hanya order pending yang bisa diubah
+        if ($order->status !== 'pending') {
+            return response()->json(['message' => 'Order sudah tidak bisa diubah'], 400);
         }
 
         // Ambil konfigurasi produk berdasarkan outlet di pivot.
@@ -129,7 +129,7 @@ class OrderController extends Controller
     }
 
     /**
-     * Hapus item dari order
+     * Hapus item dari order pending
      */
     public function removeItem($orderId, $itemId)
     {
@@ -137,8 +137,8 @@ class OrderController extends Controller
             ->where('outlet_id', auth()->user()->outlet_id)
             ->firstOrFail();
 
-        if ($order->status !== 'open') {
-            return response()->json(['message' => 'Order sudah ditutup'], 400);
+        if ($order->status !== 'pending') {
+            return response()->json(['message' => 'Order sudah tidak bisa diubah'], 400);
         }
 
         $item = $order->items()->findOrFail($itemId);
@@ -177,7 +177,7 @@ class OrderController extends Controller
                 'outlet_id' => $request->outlet_id,
                 'table_id' => $table->id,
                 'customer_name' => $request->customer_name,
-                'status' => 'open'
+                'status' => 'pending'
             ]);
 
             foreach ($request->items as $item) {
