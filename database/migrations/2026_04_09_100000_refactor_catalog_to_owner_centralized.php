@@ -37,12 +37,32 @@ return new class extends Migration
             $table->index(['outlet_id', 'is_active']);
         });
 
-        DB::statement('UPDATE categories c INNER JOIN outlets o ON o.id = c.outlet_id SET c.owner_id = o.owner_id');
-        DB::statement('UPDATE stations s INNER JOIN outlets o ON o.id = s.outlet_id SET s.owner_id = o.owner_id');
-        DB::statement('UPDATE products p INNER JOIN outlets o ON o.id = p.outlet_id SET p.owner_id = o.owner_id');
+        DB::statement('UPDATE categories
+            SET owner_id = (
+                SELECT owner_id
+                FROM outlets
+                WHERE outlets.id = categories.outlet_id
+            )
+            WHERE outlet_id IS NOT NULL');
+
+        DB::statement('UPDATE stations
+            SET owner_id = (
+                SELECT owner_id
+                FROM outlets
+                WHERE outlets.id = stations.outlet_id
+            )
+            WHERE outlet_id IS NOT NULL');
+
+        DB::statement('UPDATE products
+            SET owner_id = (
+                SELECT owner_id
+                FROM outlets
+                WHERE outlets.id = products.outlet_id
+            )
+            WHERE outlet_id IS NOT NULL');
 
         DB::statement('INSERT INTO outlet_product (outlet_id, product_id, price, stock, is_active, created_at, updated_at)
-            SELECT p.outlet_id, p.id, p.price, p.stock, p.is_active, NOW(), NOW()
+            SELECT p.outlet_id, p.id, p.price, p.stock, p.is_active, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             FROM products p
             WHERE p.outlet_id IS NOT NULL');
 
@@ -80,17 +100,33 @@ return new class extends Migration
             $table->boolean('is_active')->default(true)->after('image');
         });
 
-        DB::statement('UPDATE products p
-            LEFT JOIN (
-                SELECT product_id, MIN(outlet_id) AS outlet_id
-                FROM outlet_product
-                GROUP BY product_id
-            ) op ON op.product_id = p.id
-            LEFT JOIN outlet_product op2 ON op2.product_id = p.id AND op2.outlet_id = op.outlet_id
-            SET p.outlet_id = op.outlet_id,
-                p.price = COALESCE(op2.price, 0),
-                p.stock = COALESCE(op2.stock, 0),
-                p.is_active = COALESCE(op2.is_active, 1)');
+        DB::statement('UPDATE products
+            SET outlet_id = (
+                    SELECT MIN(op.outlet_id)
+                    FROM outlet_product op
+                    WHERE op.product_id = products.id
+                ),
+                price = COALESCE((
+                    SELECT op2.price
+                    FROM outlet_product op2
+                    WHERE op2.product_id = products.id
+                    ORDER BY op2.outlet_id
+                    LIMIT 1
+                ), 0),
+                stock = COALESCE((
+                    SELECT op3.stock
+                    FROM outlet_product op3
+                    WHERE op3.product_id = products.id
+                    ORDER BY op3.outlet_id
+                    LIMIT 1
+                ), 0),
+                is_active = COALESCE((
+                    SELECT op4.is_active
+                    FROM outlet_product op4
+                    WHERE op4.product_id = products.id
+                    ORDER BY op4.outlet_id
+                    LIMIT 1
+                ), 1)');
 
         Schema::table('products', function (Blueprint $table) {
             $table->dropIndex(['owner_id', 'category_id']);
@@ -106,15 +142,25 @@ return new class extends Migration
             $table->foreignId('outlet_id')->nullable()->after('id')->constrained()->nullOnDelete();
         });
 
-        DB::statement('UPDATE categories c
-            LEFT JOIN outlets o ON o.owner_id = c.owner_id
-            SET c.outlet_id = o.id
-            WHERE c.outlet_id IS NULL');
+        DB::statement('UPDATE categories
+            SET outlet_id = (
+                SELECT o.id
+                FROM outlets o
+                WHERE o.owner_id = categories.owner_id
+                ORDER BY o.id
+                LIMIT 1
+            )
+            WHERE outlet_id IS NULL');
 
-        DB::statement('UPDATE stations s
-            LEFT JOIN outlets o ON o.owner_id = s.owner_id
-            SET s.outlet_id = o.id
-            WHERE s.outlet_id IS NULL');
+        DB::statement('UPDATE stations
+            SET outlet_id = (
+                SELECT o.id
+                FROM outlets o
+                WHERE o.owner_id = stations.owner_id
+                ORDER BY o.id
+                LIMIT 1
+            )
+            WHERE outlet_id IS NULL');
 
         Schema::table('categories', function (Blueprint $table) {
             $table->dropUnique(['name', 'owner_id']);
