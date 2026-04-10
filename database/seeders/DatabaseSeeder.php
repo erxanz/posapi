@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
-    private const DEFAULT_PRODUCT_IMAGE_URL = 'https://pixabay.com/id/illustrations/ai-dihasilkan-rendang-makanan-8469683/';
+    private const DEFAULT_PRODUCT_IMAGE_URL = 'https://images.pexels.com/photos/36892229/pexels-photo-36892229.jpeg';
 
     public function run(): void
     {
