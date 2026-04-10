@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\DB;
 
 class DatabaseSeeder extends Seeder
 {
+    private const DEFAULT_PRODUCT_IMAGE_URL = 'https://pixabay.com/id/illustrations/ai-dihasilkan-rendang-makanan-8469683/';
+
     public function run(): void
     {
         // ================= DEVELOPER =================
@@ -142,7 +144,7 @@ class DatabaseSeeder extends Seeder
                         'name' => $row['name'],
                         'description' => $row['description'],
                         'cost_price' => $row['cost_price'],
-                        'image' => null,
+                        'image' => self::DEFAULT_PRODUCT_IMAGE_URL,
                     ]);
 
                     $price = $row['cost_price'] + 5000;

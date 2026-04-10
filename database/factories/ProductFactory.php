@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 class ProductFactory extends Factory
 {
     protected static int $sequence = 1;
+    private const DEFAULT_IMAGE_URL = 'https://pixabay.com/id/images/search/makanan/';
 
     /**
      * Define the model's default state.
@@ -30,7 +31,7 @@ class ProductFactory extends Factory
             'name' => 'Produk ' . str_pad((string) $seq, 3, '0', STR_PAD_LEFT),
             'description' => 'Deskripsi produk ' . $seq,
             'cost_price' => $costPrice,
-            'image' => null,
+            'image' => self::DEFAULT_IMAGE_URL,
             'station_id' => null,
         ];
     }
