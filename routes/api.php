@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ShiftKaryawanController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\TableController;
@@ -79,6 +80,9 @@ Route::prefix('v1')->group(function () {
         // ================= STATION =================
         Route::apiResource('stations', StationController::class);
         Route::get('/stations/{id}/products', [StationController::class, 'products'])->name('stations.products');
+
+        // ================= SHIFT KARYAWAN =================
+        Route::apiResource('shift-karyawans', ShiftKaryawanController::class);
 
 
         // ================= ORDER =================
