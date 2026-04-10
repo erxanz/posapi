@@ -73,7 +73,8 @@ class ProductController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        $limit = min($request->integer('limit', 10), 100);
+        $limit = $request->integer('limit', 50);
+        $limit = max(10, min($limit, 100));
         $ownerId = $this->resolveOwnerId($user);
 
         if ($user->role === 'karyawan') {
