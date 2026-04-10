@@ -227,5 +227,65 @@ class DatabaseSeeder extends Seeder
             }
         }
         // ================= END LOOP =================
+
+        // ================= SHIFT KARYAWAN =================
+        foreach (User::where('role', 'karyawan')->get() as $karyawan) {
+            $shiftCount = fake()->numberBetween(1, 3);
+            for ($s = 1; $s <= $shiftCount; $s++) {
+                DB::table('shift_karyawans')->insert([
+                    'outlet_id' => $karyawan->outlet_id,
+                    'user_id' => $karyawan->id,
+                    'shift_ke' => $s,
+                    'uang_awal' => fake()->numberBetween(100000, 500000),
+                    'started_at' => now()->subHours($s * 8)->subMinutes(fake()->numberBetween(0, 59)),
+                    'ended_at' => null,
+                    'status' => 'active',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
+        // ================= PAYMENT =================
+        foreach (Order::where('status', 'paid')->get() as $order) {
+            DB::table('payments')->insert([
+                'order_id' => $order->id,
+                'amount_paid' => $order->total_price + fake()->numberBetween(0, 50000),
+                'change_amount' => fake()->numberBetween(0, 50000),
+                'method' => fake()->randomElement(['cash', 'debit', 'credit', 'qris', 'ewallet']),
+                'reference_no' => fake()->optional()->bothify('REF-########'),
+                'paid_at' => now()->subMinutes(fake()->numberBetween(0, 120)),
+                'paid_by' => fake()->boolean(70) ? User::factory()->create()->id : null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // ================= END SHIFT KARYAWAN & PAYMENT =================
+        foreach (User::where('role', 'karyawan')->get() as $karyawan) {
+            DB::table('shift_karyawans')->where('user_id', $karyawan->id)->update([
+                'ended_at' => now(),
+                'status' => 'closed',
+            ]);
+        }
+
+        // pastikan meja yang occupied karena order pending, sisanya available
+        foreach (Table::all() as $table) {
+            $hasPendingOrder = Order::where('table_id', $table->id)->where('status', 'pending')->exists();
+            $table->update([
+                'status' => $hasPendingOrder ? 'occupied' : 'available',
+            ]);
+        }
+
+        // ================= SUMMARY =================
+        $outletCount = Outlet::count();
+        $managerCount = User::where('role', 'manager')->count();
+        $karyawanCount = User::where('role', 'karyawan')->count();
+        $categoryCount = Category::count();
+        $productCount = Product::count();
+        $tableCount = Table::count();
+        $stationCount = Station::count();
+        $orderCount = Order::count();
+        $paymentCount = DB::table('payments')->count();
     }
 }
