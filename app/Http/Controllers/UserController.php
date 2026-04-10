@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use App\Models\User;
 use App\Models\Outlet;
@@ -87,7 +86,7 @@ class UserController extends Controller
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6',
-            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+            'image' => 'nullable', // Boleh String Boleh File
             'phone_number' => 'nullable|string|max:30',
             'pin' => [
                 'required',
@@ -98,11 +97,18 @@ class UserController extends Controller
             ]
         ]);
 
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = $request->file('image')->store('users', 'public');
+        } elseif ($request->filled('image')) {
+            $imagePath = $request->image;
+        }
+
         $karyawan = User::create([
             'name' => $request->name,
             'email' => strtolower($request->email),
             'password' => Hash::make($request->password),
-            'image' => $this->storeImageIfUploaded($request),
+            'image' => $imagePath,
             'phone_number' => $request->phone_number,
 
             // TANPA HASH
@@ -131,7 +137,7 @@ class UserController extends Controller
 
         $karyawan = User::where('outlet_id', $user->outlet_id)
             ->where('role', 'karyawan')
-            ->select('id', 'name', 'email', 'role', 'is_active', 'pin')
+            ->select('id', 'name', 'email', 'image', 'role', 'is_active', 'pin')
             ->latest()
             ->get();
 
@@ -151,7 +157,7 @@ class UserController extends Controller
 
         $karyawan = User::where('outlet_id', $user->outlet_id)
             ->where('role', 'karyawan')
-            ->select('id', 'name', 'email', 'role', 'is_active', 'pin')
+            ->select('id', 'name', 'email', 'image', 'role', 'is_active', 'pin')
             ->findOrFail($id);
 
         return response()->json(['data' => $karyawan]);
@@ -180,7 +186,7 @@ class UserController extends Controller
                 Rule::unique('users', 'email')->ignore($id)
             ],
             'password' => 'nullable|min:6',
-            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+            'image' => 'nullable', // Boleh String atau file
             'phone_number' => 'nullable|string|max:30',
             'pin' => [
                 'nullable',
@@ -194,14 +200,13 @@ class UserController extends Controller
 
         $karyawan->name = $request->name;
         $karyawan->email = strtolower($request->email);
-        if ($request->hasFile('image')) {
-            if ($karyawan->image) {
-                Storage::disk('public')->delete($karyawan->image);
-            }
-
-            $karyawan->image = $this->storeImageIfUploaded($request);
-        }
         $karyawan->phone_number = $request->phone_number;
+
+        if ($request->hasFile('image')) {
+            $karyawan->image = $request->file('image')->store('users', 'public');
+        } elseif ($request->filled('image')) {
+            $karyawan->image = $request->image;
+        }
 
         if ($request->password) {
             $karyawan->password = Hash::make($request->password);
@@ -272,11 +277,18 @@ class UserController extends Controller
             'outlet_id' => 'nullable|exists:outlets,id'
         ]);
 
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = $request->file('image')->store('users', 'public');
+        } elseif ($request->filled('image')) {
+            $imagePath = $request->image;
+        }
+
         $user = User::create([
             'name' => $request->name,
             'email' => strtolower($request->email),
             'password' => Hash::make($request->password),
-            'image' => $this->storeImageIfUploaded($request),
+            'image' => $imagePath,
             'phone_number' => $request->phone_number,
             'pin' => $request->pin, // TANPA HASH
             'role' => $request->role,
@@ -289,15 +301,70 @@ class UserController extends Controller
         ], 201);
     }
 
-    public function deleteUser($id)
+    /**
+     * UPDATE USER (DEVELOPER)
+     */
+    public function updateUser(Request $request, $id)
     {
         $this->authorizeDeveloper();
 
-        User::findOrFail($id)->delete();
+        $user = User::findOrFail($id);
+
+        $request->validate([
+            'name' => 'required',
+            'email' => [
+                'required',
+                'email',
+                Rule::unique('users', 'email')->ignore($id)
+            ],
+            'password' => 'nullable|min:6',
+            'image' => 'nullable', // Boleh String / File
+            'phone_number' => 'nullable|string|max:30',
+            'pin' => 'nullable|digits:6',
+            'role' => 'required|in:developer,manager,karyawan',
+            'outlet_id' => 'nullable|exists:outlets,id'
+        ]);
+
+        $user->name = $request->name;
+        $user->email = strtolower($request->email);
+        $user->phone_number = $request->phone_number;
+        $user->role = $request->role;
+        $user->outlet_id = $request->outlet_id;
+
+        if ($request->hasFile('image')) {
+            $user->image = $request->file('image')->store('users', 'public');
+        } elseif ($request->filled('image')) {
+            $user->image = $request->image;
+        }
+
+        if ($request->password) {
+            $user->password = Hash::make($request->password);
+        }
+
+        if ($request->pin) {
+            $user->pin = $request->pin;
+        }
+
+        $user->save();
 
         return response()->json([
-            'message' => 'User berhasil dihapus'
+            'message' => 'User berhasil diperbarui',
+            'data' => $user
         ]);
+    }
+
+    public function showUser($id)
+    {
+        $this->authorizeDeveloper();
+        $user = User::findOrFail($id);
+        return response()->json(['data' => $user]);
+    }
+
+    public function deleteUser($id)
+    {
+        $this->authorizeDeveloper();
+        User::findOrFail($id)->delete();
+        return response()->json(['message' => 'User berhasil dihapus']);
     }
 
     /**
@@ -308,14 +375,5 @@ class UserController extends Controller
         if (auth()->user()->role !== 'developer') {
             abort(403, 'Akses ditolak');
         }
-    }
-
-    private function storeImageIfUploaded(Request $request): ?string
-    {
-        if (!$request->hasFile('image')) {
-            return null;
-        }
-
-        return $request->file('image')->store('users', 'public');
     }
 }
