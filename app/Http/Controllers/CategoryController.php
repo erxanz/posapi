@@ -19,7 +19,8 @@ class CategoryController extends Controller
             return response()->json(['message' => 'Owner tidak ditemukan'], 400);
         }
 
-        $limit = min($request->limit ?? 10, 100);
+        $limit = $request->integer('limit', 50);
+        $limit = max(10, min($limit, 100));
 
         $query = Category::query()
             ->select(['id', 'name', 'owner_id', 'created_at'])
