@@ -86,7 +86,7 @@ class UserController extends Controller
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6',
-            'image' => 'nullable', // Boleh String Boleh File
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number' => 'nullable|string|max:30',
             'pin' => [
                 'required',
@@ -186,7 +186,7 @@ class UserController extends Controller
                 Rule::unique('users', 'email')->ignore($id)
             ],
             'password' => 'nullable|min:6',
-            'image' => 'nullable', // Boleh String atau file
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number' => 'nullable|string|max:30',
             'pin' => [
                 'nullable',
@@ -318,7 +318,7 @@ class UserController extends Controller
                 Rule::unique('users', 'email')->ignore($id)
             ],
             'password' => 'nullable|min:6',
-            'image' => 'nullable', // Boleh String / File
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number' => 'nullable|string|max:30',
             'pin' => 'nullable|digits:6',
             'role' => 'required|in:developer,manager,karyawan',
