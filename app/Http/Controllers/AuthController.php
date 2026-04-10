@@ -21,12 +21,16 @@ class AuthController extends Controller
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6|confirmed',
+            'image' => 'nullable|string|max:255',
+            'phone_number' => 'nullable|string|max:30',
         ]);
 
         $user = User::create([
             'name' => $request->name,
             'email' => strtolower($request->email),
             'password' => Hash::make($request->password),
+            'image' => $request->image,
+            'phone_number' => $request->phone_number,
             'role' => 'manager'
         ]);
 
@@ -130,10 +134,14 @@ class AuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
             'password' => 'nullable|string|min:8|confirmed',
+            'image' => 'nullable|string|max:255',
+            'phone_number' => 'nullable|string|max:30',
         ]);
 
         $user->name = $request->name;
-        $user->email = $request->email;
+        $user->email = strtolower($request->email);
+        $user->image = $request->image;
+        $user->phone_number = $request->phone_number;
 
         // Update password hanya jika form password diisi
         if ($request->filled('password')) {

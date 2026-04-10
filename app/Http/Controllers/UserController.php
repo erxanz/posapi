@@ -86,6 +86,8 @@ class UserController extends Controller
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6',
+            'image' => 'nullable|string|max:255',
+            'phone_number' => 'nullable|string|max:30',
             'pin' => [
                 'required',
                 'digits:6',
@@ -99,6 +101,8 @@ class UserController extends Controller
             'name' => $request->name,
             'email' => strtolower($request->email),
             'password' => Hash::make($request->password),
+            'image' => $request->image,
+            'phone_number' => $request->phone_number,
 
             // TANPA HASH
             'pin' => $request->pin,
@@ -175,6 +179,8 @@ class UserController extends Controller
                 Rule::unique('users', 'email')->ignore($id)
             ],
             'password' => 'nullable|min:6',
+            'image' => 'nullable|string|max:255',
+            'phone_number' => 'nullable|string|max:30',
             'pin' => [
                 'nullable',
                 'digits:6',
@@ -187,6 +193,8 @@ class UserController extends Controller
 
         $karyawan->name = $request->name;
         $karyawan->email = strtolower($request->email);
+        $karyawan->image = $request->image;
+        $karyawan->phone_number = $request->phone_number;
 
         if ($request->password) {
             $karyawan->password = Hash::make($request->password);
@@ -250,6 +258,8 @@ class UserController extends Controller
             'name' => 'required',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6',
+            'image' => 'nullable|string|max:255',
+            'phone_number' => 'nullable|string|max:30',
             'pin' => 'nullable|digits:6',
             'role' => 'required|in:developer,manager,karyawan',
             'outlet_id' => 'nullable|exists:outlets,id'
@@ -259,6 +269,8 @@ class UserController extends Controller
             'name' => $request->name,
             'email' => strtolower($request->email),
             'password' => Hash::make($request->password),
+            'image' => $request->image,
+            'phone_number' => $request->phone_number,
             'pin' => $request->pin, // TANPA HASH
             'role' => $request->role,
             'outlet_id' => $request->outlet_id

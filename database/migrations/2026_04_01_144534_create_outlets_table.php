@@ -14,6 +14,9 @@ return new class extends Migration
         Schema::create('outlets', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->string('image')->nullable();
+            $table->string('phone_number_outlet')->nullable();
+            $table->string('address_outlet')->nullable();
             // manager pemilik outlet
             $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
             $table->timestamps();

@@ -13,6 +13,9 @@ class Outlet extends Model
 
     protected $fillable = [
         'name',
+        'image',
+        'phone_number_outlet',
+        'address_outlet',
         'owner_id',
     ];
 

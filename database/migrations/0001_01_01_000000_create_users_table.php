@@ -21,6 +21,9 @@ return new class extends Migration
             $table->string('password');
             $table->rememberToken();
 
+            $table->string('image')->nullable();
+            $table->string('phone_number')->nullable();
+
             // PIN untuk kasir
             $table->string('pin', 6)->nullable();
 

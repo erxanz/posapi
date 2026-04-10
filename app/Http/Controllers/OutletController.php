@@ -22,7 +22,10 @@ class OutletController extends Controller
 
         // validasi
         $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'required|string|max:255',
+            'image' => 'nullable|string|max:255',
+            'phone_number_outlet' => 'nullable|string|max:30',
+            'address_outlet' => 'nullable|string|max:255',
         ]);
 
         // pakai transaction biar aman
@@ -30,6 +33,9 @@ class OutletController extends Controller
 
             $outlet = Outlet::create([
                 'name' => $request->name,
+                'image' => $request->image,
+                'phone_number_outlet' => $request->phone_number_outlet,
+                'address_outlet' => $request->address_outlet,
                 'owner_id' => $user->id
             ]);
 
@@ -75,13 +81,19 @@ class OutletController extends Controller
 
         // validasi
         $validated = $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'required|string|max:255',
+            'image' => 'nullable|string|max:255',
+            'phone_number_outlet' => 'nullable|string|max:30',
+            'address_outlet' => 'nullable|string|max:255',
         ]);
 
         $outlet = DB::transaction(function () use ($validated, $user) {
 
             $outlet = Outlet::create([
                 'name' => $validated['name'],
+                'image' => $validated['image'] ?? null,
+                'phone_number_outlet' => $validated['phone_number_outlet'] ?? null,
+                'address_outlet' => $validated['address_outlet'] ?? null,
                 'owner_id' => $user->id
             ]);
 
@@ -118,7 +130,10 @@ class OutletController extends Controller
         $this->authorizeOutlet($outlet);
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255'
+            'name' => 'required|string|max:255',
+            'image' => 'nullable|string|max:255',
+            'phone_number_outlet' => 'nullable|string|max:30',
+            'address_outlet' => 'nullable|string|max:255',
         ]);
 
         $outlet->update($validated);
