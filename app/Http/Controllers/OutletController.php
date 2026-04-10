@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Outlet;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class OutletController extends Controller
 {
@@ -51,11 +52,16 @@ class OutletController extends Controller
         // validasi (Tambahan user_id untuk input dari Developer)
         $request->validate([
             'name' => 'required|string|max:255',
-            'image' => 'nullable|string|max:255',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number_outlet' => 'nullable|string|max:30',
             'address_outlet' => 'nullable|string|max:255',
             'user_id' => 'nullable|exists:users,id', // Diisi oleh Developer
         ]);
+
+        $imagePath = $request->input('image');
+        if ($request->hasFile('image')) {
+            $imagePath = $this->storeImageIfUploaded($request);
+        }
 
         // pakai transaction biar aman
         $outlet = DB::transaction(function () use ($request, $user) {
@@ -70,7 +76,7 @@ class OutletController extends Controller
 
             $outlet = Outlet::create([
                 'name' => $request->name,
-                'image' => $request->image,
+                'image' => $imagePath,
                 'phone_number_outlet' => $request->phone_number_outlet,
                 'address_outlet' => $request->address_outlet,
                 'owner_id' => $ownerId
@@ -121,11 +127,19 @@ class OutletController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'image' => 'nullable|string|max:255',
+            'image' => 'nullable',
             'phone_number_outlet' => 'nullable|string|max:30',
             'address_outlet' => 'nullable|string|max:255',
             'user_id' => 'nullable|exists:users,id',
         ]);
+
+        if ($request->hasFile('image')) {
+            if ($outlet->image) {
+                Storage::disk('public')->delete($outlet->image);
+            }
+
+            $validated['image'] = $this->storeImageIfUploaded($request);
+        }
 
         // Jika developer mengupdate owner outlet
         if ($user->role === 'developer' && $request->filled('user_id')) {
@@ -245,5 +259,10 @@ class OutletController extends Controller
         if (!$isOwner && !$isAssignedManager && !$isDeveloper) {
             abort(403, 'Forbidden');
         }
+    }
+
+    private function storeImageIfUploaded(Request $request): string
+    {
+        return $request->file('image')->store('outlets', 'public');
     }
 }
