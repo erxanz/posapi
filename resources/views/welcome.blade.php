@@ -86,6 +86,11 @@
                         <code class="api-path">/api/v1/me</code>
                         <span class="note">Auth Required</span>
                     </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-put">PUT</span>
+                        <code class="api-path">/api/v1/me</code>
+                        <span class="note">Auth Required</span>
+                    </div>
                 </div>
             </details>
         </div>
@@ -144,17 +149,17 @@
                     </div>
                     <div class="endpoint-row">
                         <span class="badge badge-get">GET</span>
-                        <code class="api-path">/api/v1/users/karyawan/{id}</code>
+                        <code class="api-path">/api/v1/users/karyawan/{karyawan}</code>
                         <span class="note">Manager</span>
                     </div>
                     <div class="endpoint-row">
                         <span class="badge badge-delete">DELETE</span>
-                        <code class="api-path">/api/v1/users/karyawan/{id}</code>
+                        <code class="api-path">/api/v1/users/karyawan/{karyawan}</code>
                         <span class="note">Manager</span>
                     </div>
                     <div class="endpoint-row">
                         <span class="badge badge-put">PUT</span>
-                        <code class="api-path">/api/v1/users/karyawan/{id}</code>
+                        <code class="api-path">/api/v1/users/karyawan/{karyawan}</code>
                         <span class="note">Manager</span>
                     </div>
                     <div class="endpoint-row">
@@ -200,9 +205,38 @@
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
                     <div class="endpoint-row">
-                        <span class="badge badge-resource">API RES</span>
+                        <span class="badge badge-post">POST</span>
                         <code class="api-path">/api/v1/outlets</code>
-                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/outlets</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/outlets/{outlet}</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-put">PUT</span>
+                        <code class="api-path">/api/v1/outlets/{outlet}</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-delete">DELETE</span>
+                        <code class="api-path">/api/v1/outlets/{outlet}</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/outlets/{outlet}/products</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/outlets/{outlet}/sync-products</code>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
@@ -251,6 +285,34 @@
                         <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
                         <span class="note">Auth Required</span>
                     </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/stations/{id}/products</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Shift Karyawan Section - CLOSED by default -->
+        <div class="section-card">
+            <details>
+                <summary
+                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Shift Karyawan</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-business-time" style="color: #0891b2; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down"
+                            style="color: #0891b2; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/shift-karyawans</code>
+                        <span class="api-method-list">GET, POST, GET {id}, PUT/PATCH, DELETE</span>
+                        <span class="note">Auth Required</span>
+                    </div>
                 </div>
             </details>
         </div>
@@ -277,7 +339,7 @@
                     <div class="endpoint-row">
                         <span class="badge badge-resource">API RES</span>
                         <code class="api-path">/api/v1/products</code>
-                        <span class="api-method-list">GET, POST, GET {id}</span>
+                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
@@ -298,9 +360,23 @@
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
                     <div class="endpoint-row">
-                        <span class="badge badge-resource">API RES</span>
+                        <span class="badge badge-get">GET</span>
                         <code class="api-path">/api/v1/orders</code>
-                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/orders/{id}</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/checkout</code>
                         <span class="note">Auth Required</span>
                     </div>
                     <div class="endpoint-row">
@@ -316,6 +392,16 @@
                     <div class="endpoint-row">
                         <span class="badge badge-post">POST</span>
                         <code class="api-path">/api/v1/orders/{id}/checkout</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/{id}/payments</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-put">PATCH</span>
+                        <code class="api-path">/api/v1/orders/{id}/adjustments</code>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
@@ -953,12 +1039,12 @@
         });
     </script>
 
-<div class="relasi-container">
-    <div class="relasi-grid">
-        <section class="relasi-card">
+    <div class="relasi-container">
+        <div class="relasi-grid">
+            <section class="relasi-card">
 
-            <div class="relasi-diagram-wrap">
-                <pre class="mermaid">
+                <div class="relasi-diagram-wrap">
+                    <pre class="mermaid">
                 erDiagram
                     USERS ||--o{ OUTLETS : "one-to-many (owner_id)"
                     OUTLETS ||--o{ USERS : "one-to-many (outlet_id)"
