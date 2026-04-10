@@ -8,6 +8,7 @@ use App\Models\Outlet;
 use App\Models\Payment;
 use App\Models\Table;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
@@ -107,11 +108,49 @@ class OrderController extends Controller
      */
     private function updateTotal($order)
     {
-        $total = $order->items()->sum('total_price');
+        $this->recalculateOrderTotals($order);
+    }
+
+    private function recalculateOrderTotals(Order $order, array $overrides = []): void
+    {
+        $subtotal = (int) $order->items()->sum('total_price');
+
+        $discountType = $overrides['discount_type'] ?? $order->discount_type;
+        $discountValue = isset($overrides['discount_value']) ? (float) $overrides['discount_value'] : (float) ($order->discount_value ?? 0);
+
+        $taxType = $overrides['tax_type'] ?? $order->tax_type;
+        $taxValue = isset($overrides['tax_value']) ? (float) $overrides['tax_value'] : (float) ($order->tax_value ?? 0);
+
+        $discountAmount = $this->computeAdjustmentAmount($discountType, $discountValue, $subtotal);
+        $baseAfterDiscount = max(0, $subtotal - $discountAmount);
+        $taxAmount = $this->computeAdjustmentAmount($taxType, $taxValue, $baseAfterDiscount);
+        $total = max(0, $baseAfterDiscount + $taxAmount);
 
         $order->update([
-            'total_price' => $total
+            'subtotal_price' => $subtotal,
+            'discount_type' => $discountType,
+            'discount_value' => $discountType ? round($discountValue, 2) : null,
+            'discount_amount' => $discountAmount,
+            'tax_type' => $taxType,
+            'tax_value' => $taxType ? round($taxValue, 2) : null,
+            'tax_amount' => $taxAmount,
+            'total_price' => $total,
         ]);
+    }
+
+    private function computeAdjustmentAmount(?string $type, float $value, int $baseAmount): int
+    {
+        if (!$type || $baseAmount <= 0 || $value <= 0) {
+            return 0;
+        }
+
+        if ($type === 'percent') {
+            $percent = min(100, max(0, $value));
+
+            return (int) round(($baseAmount * $percent) / 100);
+        }
+
+        return min($baseAmount, max(0, (int) round($value)));
     }
 
     /**
@@ -154,10 +193,14 @@ class OrderController extends Controller
      */
     public function publicOrder(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'outlet_id' => 'required|exists:outlets,id',
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
+            'discount_type' => 'nullable|in:fixed,percent',
+            'discount_value' => 'nullable|numeric|min:0',
+            'tax_type' => 'nullable|in:fixed,percent',
+            'tax_value' => 'nullable|numeric|min:0',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1'
@@ -166,8 +209,8 @@ class OrderController extends Controller
         DB::beginTransaction();
 
         try {
-            $total = 0;
             $outlet = Outlet::query()->findOrFail($request->outlet_id);
+            $adjustments = $this->resolveAdjustmentInput($validated);
 
             $table = Table::where('id', $request->table_id)
                 ->where('outlet_id', $request->outlet_id)
@@ -177,6 +220,10 @@ class OrderController extends Controller
                 'outlet_id' => $request->outlet_id,
                 'table_id' => $table->id,
                 'customer_name' => $request->customer_name,
+                'discount_type' => $adjustments['discount_type'],
+                'discount_value' => $adjustments['discount_value'],
+                'tax_type' => $adjustments['tax_type'],
+                'tax_value' => $adjustments['tax_value'],
                 'status' => 'pending'
             ]);
 
@@ -193,7 +240,6 @@ class OrderController extends Controller
                 $price = (int) $product->pivot->price;
 
                 $subtotal = $price * $item['qty'];
-                $total += $subtotal;
 
                 $order->items()->create([
                     'product_id' => $product->id,
@@ -203,8 +249,9 @@ class OrderController extends Controller
                 ]);
             }
 
+            $this->recalculateOrderTotals($order);
+
             $order->update([
-                'total_price' => $total,
                 'invoice_number' => 'INV-' . strtoupper(uniqid())
             ]);
 
@@ -236,6 +283,10 @@ class OrderController extends Controller
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:255',
+            'discount_type' => 'nullable|in:fixed,percent',
+            'discount_value' => 'nullable|numeric|min:0',
+            'tax_type' => 'nullable|in:fixed,percent',
+            'tax_value' => 'nullable|numeric|min:0',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
@@ -254,6 +305,8 @@ class OrderController extends Controller
         DB::beginTransaction();
 
         try {
+            $adjustments = $this->resolveAdjustmentInput($validated);
+
             $order = Order::create([
                 'outlet_id' => $outlet->id,
                 'user_id' => $user->id,
@@ -261,11 +314,13 @@ class OrderController extends Controller
                 'customer_name' => $validated['customer_name'] ?? null,
                 'notes' => $validated['notes'] ?? null,
                 'invoice_number' => $this->generateInvoiceNumber($outlet->id),
+                'discount_type' => $adjustments['discount_type'],
+                'discount_value' => $adjustments['discount_value'],
+                'tax_type' => $adjustments['tax_type'],
+                'tax_value' => $adjustments['tax_value'],
                 'status' => 'pending',
                 'total_price' => 0,
             ]);
-
-            $total = 0;
 
             foreach ($validated['items'] as $item) {
                 $product = $outlet->products()
@@ -291,13 +346,9 @@ class OrderController extends Controller
                     'price' => $price,
                     'total_price' => $subtotal,
                 ]);
-
-                $total += $subtotal;
             }
 
-            $order->update([
-                'total_price' => $total,
-            ]);
+            $this->recalculateOrderTotals($order);
 
             $table->update([
                 'status' => 'occupied',
@@ -433,6 +484,38 @@ class OrderController extends Controller
         return $this->pay($request, $orderId);
     }
 
+    public function updateAdjustments(Request $request, $orderId)
+    {
+        $validated = $request->validate([
+            'discount_type' => 'nullable|in:fixed,percent',
+            'discount_value' => 'nullable|numeric|min:0',
+            'tax_type' => 'nullable|in:fixed,percent',
+            'tax_value' => 'nullable|numeric|min:0',
+        ]);
+
+        $order = Order::where('id', $orderId)
+            ->where('outlet_id', auth()->user()->outlet_id)
+            ->firstOrFail();
+
+        if ($order->status !== 'pending') {
+            return response()->json(['message' => 'Adjustment hanya bisa untuk order pending'], 400);
+        }
+
+        $adjustments = $this->resolveAdjustmentInput($validated);
+
+        $this->recalculateOrderTotals($order, [
+            'discount_type' => $adjustments['discount_type'],
+            'discount_value' => $adjustments['discount_type'] ? (float) $adjustments['discount_value'] : 0,
+            'tax_type' => $adjustments['tax_type'],
+            'tax_value' => $adjustments['tax_type'] ? (float) $adjustments['tax_value'] : 0,
+        ]);
+
+        return response()->json([
+            'message' => 'Diskon dan pajak berhasil diperbarui',
+            'order' => $order->fresh()->load('items.product', 'table'),
+        ]);
+    }
+
     private function canAccessOutlet(int $outletId): bool
     {
         $user = auth()->user();
@@ -442,6 +525,45 @@ class OrderController extends Controller
         }
 
         return (int) $user->outlet_id === $outletId;
+    }
+
+    private function resolveAdjustmentInput(array $validated): array
+    {
+        $discountType = $validated['discount_type'] ?? null;
+        $discountValue = isset($validated['discount_value']) ? (float) $validated['discount_value'] : null;
+        $taxType = $validated['tax_type'] ?? null;
+        $taxValue = isset($validated['tax_value']) ? (float) $validated['tax_value'] : null;
+
+        if ($discountType && $discountValue === null) {
+            throw ValidationException::withMessages([
+                'discount_value' => ['discount_value wajib diisi jika discount_type dipilih'],
+            ]);
+        }
+
+        if ($taxType && $taxValue === null) {
+            throw ValidationException::withMessages([
+                'tax_value' => ['tax_value wajib diisi jika tax_type dipilih'],
+            ]);
+        }
+
+        if ($discountType === 'percent' && $discountValue > 100) {
+            throw ValidationException::withMessages([
+                'discount_value' => ['discount_value persen maksimal 100'],
+            ]);
+        }
+
+        if ($taxType === 'percent' && $taxValue > 100) {
+            throw ValidationException::withMessages([
+                'tax_value' => ['tax_value persen maksimal 100'],
+            ]);
+        }
+
+        return [
+            'discount_type' => $discountType,
+            'discount_value' => $discountType ? round((float) $discountValue, 2) : null,
+            'tax_type' => $taxType,
+            'tax_value' => $taxType ? round((float) $taxValue, 2) : null,
+        ];
     }
 
     private function generateInvoiceNumber(int $outletId): string

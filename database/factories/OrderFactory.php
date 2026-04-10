@@ -18,6 +18,8 @@ class OrderFactory extends Factory
      */
     public function definition(): array
     {
+        $subtotal = fake()->numberBetween(10000, 250000);
+
         return [
             'outlet_id' => null,
             'user_id' => null,
@@ -25,7 +27,14 @@ class OrderFactory extends Factory
             'customer_name' => fake()->optional()->name(),
             'notes' => fake()->optional()->sentence(),
             'invoice_number' => 'INV-' . strtoupper(Str::random(10)),
-            'total_price' => fake()->numberBetween(0, 250000),
+            'subtotal_price' => $subtotal,
+            'discount_type' => null,
+            'discount_value' => null,
+            'discount_amount' => 0,
+            'tax_type' => null,
+            'tax_value' => null,
+            'tax_amount' => 0,
+            'total_price' => $subtotal,
             'status' => fake()->randomElement(['pending', 'paid', 'cancelled']),
         ];
     }

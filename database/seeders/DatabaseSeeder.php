@@ -179,6 +179,13 @@ class DatabaseSeeder extends Seeder
                     'customer_name' => 'Customer ' . $outlet->id . '-' . ($o + 1),
                     'notes' => null,
                     'invoice_number' => 'INV-' . str_pad((string) $outlet->id, 2, '0', STR_PAD_LEFT) . '-' . str_pad((string) ($o + 1), 4, '0', STR_PAD_LEFT),
+                    'subtotal_price' => 0,
+                    'discount_type' => null,
+                    'discount_value' => null,
+                    'discount_amount' => 0,
+                    'tax_type' => null,
+                    'tax_value' => null,
+                    'tax_amount' => 0,
                     'status' => $status,
                     'total_price' => 0,
                 ]);
@@ -208,7 +215,10 @@ class DatabaseSeeder extends Seeder
                     $total += $subtotal;
                 }
 
-                $order->update(['total_price' => $total]);
+                $order->update([
+                    'subtotal_price' => $total,
+                    'total_price' => $total,
+                ]);
 
                 // order pending -> meja occupied, order paid -> meja available
                 $order->table->update([

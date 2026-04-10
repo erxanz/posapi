@@ -102,6 +102,7 @@ Route::prefix('v1')->group(function () {
             // payment
             Route::post('/{id}/checkout', [OrderController::class, 'checkout']);
             Route::post('/{id}/payments', [OrderController::class, 'pay']);
+            Route::patch('/{id}/adjustments', [OrderController::class, 'updateAdjustments']);
 
         });
 

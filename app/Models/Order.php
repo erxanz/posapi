@@ -20,9 +20,28 @@ class Order extends Model
         'customer_name',
         'notes',
         'invoice_number',
+        'subtotal_price',
+        'discount_type',
+        'discount_value',
+        'discount_amount',
+        'tax_type',
+        'tax_value',
+        'tax_amount',
         'total_price',
         'status',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'subtotal_price' => 'integer',
+            'discount_value' => 'decimal:2',
+            'discount_amount' => 'integer',
+            'tax_value' => 'decimal:2',
+            'tax_amount' => 'integer',
+            'total_price' => 'integer',
+        ];
+    }
 
     // RELASI
     public function items()

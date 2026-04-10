@@ -21,7 +21,17 @@ return new class extends Migration
             $table->string('notes')->nullable();
             $table->foreignId('table_id')->constrained()->cascadeOnDelete();
             $table->string('invoice_number')->unique();
+
+            // total & penyesuaian order
+            $table->integer('subtotal_price')->default(0);
+            $table->enum('discount_type', ['fixed', 'percent'])->nullable();
+            $table->decimal('discount_value', 12, 2)->nullable();
+            $table->integer('discount_amount')->default(0);
+            $table->enum('tax_type', ['fixed', 'percent'])->nullable();
+            $table->decimal('tax_value', 12, 2)->nullable();
+            $table->integer('tax_amount')->default(0);
             $table->integer('total_price')->default(0);
+
             $table->enum('status', ['pending', 'paid', 'cancelled'])->default('pending');
             $table->timestamps();
             $table->index(['outlet_id', 'invoice_number', 'status']);
