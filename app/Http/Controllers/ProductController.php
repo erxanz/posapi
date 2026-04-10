@@ -94,7 +94,6 @@ class ProductController extends Controller
                     'products.cost_price',
                     'products.image',
                 ])
-                ->wherePivot('is_active', true)
                 ->with(['category:id,name'])
                 ->orderByDesc('products.created_at');
 
