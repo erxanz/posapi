@@ -164,6 +164,16 @@ class OutletController extends Controller
      */
     public function syncProducts(Request $request, Outlet $outlet)
     {
+        $user = auth()->user();
+
+        // BLOKIR AKSES DEVELOPER UNTUK MENGATUR MENU
+        if ($user->role === 'developer') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Akses Ditolak: Developer tidak diizinkan mengatur katalog menu outlet.'
+            ], 403);
+        }
+
         $this->authorizeOutlet($outlet);
 
         $request->validate([
