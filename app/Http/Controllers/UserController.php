@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use App\Models\User;
 use App\Models\Outlet;
@@ -86,7 +87,7 @@ class UserController extends Controller
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6',
-            'image' => 'nullable|string|max:255',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number' => 'nullable|string|max:30',
             'pin' => [
                 'required',
@@ -101,7 +102,7 @@ class UserController extends Controller
             'name' => $request->name,
             'email' => strtolower($request->email),
             'password' => Hash::make($request->password),
-            'image' => $request->image,
+            'image' => $this->storeImageIfUploaded($request),
             'phone_number' => $request->phone_number,
 
             // TANPA HASH
@@ -179,7 +180,7 @@ class UserController extends Controller
                 Rule::unique('users', 'email')->ignore($id)
             ],
             'password' => 'nullable|min:6',
-            'image' => 'nullable|string|max:255',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number' => 'nullable|string|max:30',
             'pin' => [
                 'nullable',
@@ -193,7 +194,13 @@ class UserController extends Controller
 
         $karyawan->name = $request->name;
         $karyawan->email = strtolower($request->email);
-        $karyawan->image = $request->image;
+        if ($request->hasFile('image')) {
+            if ($karyawan->image) {
+                Storage::disk('public')->delete($karyawan->image);
+            }
+
+            $karyawan->image = $this->storeImageIfUploaded($request);
+        }
         $karyawan->phone_number = $request->phone_number;
 
         if ($request->password) {
@@ -258,7 +265,7 @@ class UserController extends Controller
             'name' => 'required',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6',
-            'image' => 'nullable|string|max:255',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number' => 'nullable|string|max:30',
             'pin' => 'nullable|digits:6',
             'role' => 'required|in:developer,manager,karyawan',
@@ -269,7 +276,7 @@ class UserController extends Controller
             'name' => $request->name,
             'email' => strtolower($request->email),
             'password' => Hash::make($request->password),
-            'image' => $request->image,
+            'image' => $this->storeImageIfUploaded($request),
             'phone_number' => $request->phone_number,
             'pin' => $request->pin, // TANPA HASH
             'role' => $request->role,
@@ -301,5 +308,14 @@ class UserController extends Controller
         if (auth()->user()->role !== 'developer') {
             abort(403, 'Akses ditolak');
         }
+    }
+
+    private function storeImageIfUploaded(Request $request): ?string
+    {
+        if (!$request->hasFile('image')) {
+            return null;
+        }
+
+        return $request->file('image')->store('users', 'public');
     }
 }
