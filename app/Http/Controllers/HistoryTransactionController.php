@@ -52,8 +52,15 @@ class HistoryTransactionController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+         // PERBAIKAN: Tambahkan 'order.table' dan 'outlet' agar Flutter tidak menerima nilai null
         return response()->json(
-            $historyTransaction->load(['order.items.product', 'payment', 'cashier'])
+            $historyTransaction->load([
+                'order.items.product',
+                'order.table',
+                'payment',
+                'cashier',
+                'outlet'
+            ])
         );
     }
 
