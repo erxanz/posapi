@@ -28,7 +28,8 @@ return new class extends Migration
             $table->string('pin', 6)->nullable();
 
             // relasi ke outlet
-            $table->foreignId('outlet_id')->nullable()->constrained()->nullOnDelete();
+            // $table->foreignId('outlet_id')->nullable()->constrained()->nullOnDelete();
+            $table->unsignedBigInteger('outlet_id')->nullable();
 
             // role user
             $table->enum('role', ['developer', 'manager', 'karyawan'])->default('manager');
