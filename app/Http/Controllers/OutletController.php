@@ -58,13 +58,15 @@ class OutletController extends Controller
             'user_id' => 'nullable|exists:users,id', // Diisi oleh Developer
         ]);
 
-        $imagePath = $request->input('image');
+        $imagePath = null; // Set default null agar aman
         if ($request->hasFile('image')) {
             $imagePath = $this->storeImageIfUploaded($request);
+        } elseif ($request->filled('image')) {
+            $imagePath = $request->input('image');
         }
 
-        // pakai transaction biar aman
-        $outlet = DB::transaction(function () use ($request, $user) {
+        // PERBAIKAN: Menambahkan $imagePath ke dalam 'use' closure function
+        $outlet = DB::transaction(function () use ($request, $user, $imagePath) {
 
             // Menentukan siapa owner-nya
             $ownerId = $user->id; // Default untuk Manager
@@ -233,9 +235,12 @@ class OutletController extends Controller
         DB::transaction(function () use ($outlet) {
 
             // kosongkan outlet_id semua karyawan
-            $outlet->karyawans()->update([
-                'outlet_id' => null
-            ]);
+            // Note: Pastikan relasi 'karyawans' sudah ada di model Outlet
+            if (method_exists($outlet, 'karyawans')) {
+                 $outlet->karyawans()->update([
+                    'outlet_id' => null
+                ]);
+            }
 
             $outlet->delete();
         });

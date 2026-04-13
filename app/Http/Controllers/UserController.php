@@ -18,52 +18,38 @@ class UserController extends Controller
         $user = auth()->user();
         $query = User::with('outlet');
 
-        // Hanya role developer & manager yang boleh mengakses daftar user.
         if (!$user->isDeveloper() && !$user->isManager()) {
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
-        // 1. Jika login sebagai MANAGER, hanya tampilkan karyawan di outlet miliknya.
+        // 1. MANAGER: cari semua outlet dimana ia menjadi owner_id, lalu ambil karyawannya
         if ($user->isManager()) {
             $outletIds = Outlet::where('owner_id', $user->id)->pluck('id');
-
-            $query->whereIn('outlet_id', $outletIds)
-                ->where('role', 'karyawan');
+            $query->whereIn('outlet_id', $outletIds)->where('role', 'karyawan');
         }
-        // 2. Jika login sebagai DEVELOPER.
+        // 2. DEVELOPER: bebas akses
         elseif ($user->isDeveloper()) {
-            // Jika developer meminta karyawan dari manager tertentu.
             if ($request->filled('manager_id')) {
                 $managerId = $request->manager_id;
                 $outletIds = Outlet::where('owner_id', $managerId)->pluck('id');
-
-                $query->whereIn('outlet_id', $outletIds)
-                    ->where('role', 'karyawan');
-            }
-            // Filter role biasa (untuk tabel utama).
-            elseif ($request->filled('role')) {
+                $query->whereIn('outlet_id', $outletIds)->where('role', 'karyawan');
+            } elseif ($request->filled('role')) {
                 $query->where('role', $request->role);
             }
         }
 
-        // Search fitur.
         if ($request->filled('search')) {
             $search = $request->search;
-
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%");
+                  ->orWhere('email', 'like', "%{$search}%");
             });
         }
 
         $limit = (int) $request->input('limit', 100);
-        if ($limit <= 0) {
-            $limit = 100;
-        }
-
         return response()->json([
             'success' => true,
-            'data' => $query->latest()->paginate($limit),
+            'data' => $query->latest()->paginate($limit > 0 ? $limit : 100),
         ]);
     }
 
@@ -73,26 +59,32 @@ class UserController extends Controller
     }
 
     /**
-     * CREATE USER (GABUNGAN DEVELOPER & MANAGER)
+     * CREATE USER
      */
     public function createUser(Request $request)
     {
         $authUser = auth()->user();
 
-        if ($authUser->role !== 'developer' && $authUser->role !== 'manager') {
+        if (!$authUser->isDeveloper() && !$authUser->isManager()) {
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
         $role = $request->role;
         $outlet_id = $request->outlet_id;
 
-        // Jika yang membuat adalah Manager, paksa role dan outlet-nya
-        if ($authUser->role === 'manager') {
-            if (!$authUser->outlet_id) {
-                return response()->json(['message' => 'Anda belum memiliki outlet untuk menempatkan karyawan'], 400);
-            }
+        // Validasi Khusus Manager
+        if ($authUser->isManager()) {
             $role = 'karyawan';
-            $outlet_id = $authUser->outlet_id;
+
+            if (!$outlet_id) {
+                return response()->json(['message' => 'Outlet penempatan wajib dipilih.'], 400);
+            }
+
+            // Pastikan outlet yang dipilih di form benar-benar dimiliki oleh Manager ini
+            $ownsOutlet = Outlet::where('id', $outlet_id)->where('owner_id', $authUser->id)->exists();
+            if (!$ownsOutlet) {
+                return response()->json(['message' => 'Outlet tujuan tidak valid atau bukan milik Anda.'], 403);
+            }
         }
 
         $request->validate([
@@ -104,12 +96,10 @@ class UserController extends Controller
             'pin' => [
                 'nullable',
                 'digits:6',
-                Rule::unique('users')->where(function ($q) use ($outlet_id) {
-                    return $q->where('outlet_id', $outlet_id);
-                })
+                Rule::unique('users')->where(fn ($q) => $q->where('outlet_id', $outlet_id))
             ],
-            'role' => $authUser->role === 'developer' ? 'required|in:developer,manager,karyawan' : 'nullable',
-            'outlet_id' => $authUser->role === 'developer' ? 'nullable|exists:outlets,id' : 'nullable'
+            'role' => $authUser->isDeveloper() ? 'required|in:developer,manager,karyawan' : 'nullable',
+            'outlet_id' => $authUser->isDeveloper() ? 'nullable|exists:outlets,id' : 'nullable'
         ]);
 
         $imagePath = null;
@@ -130,70 +120,80 @@ class UserController extends Controller
             'outlet_id' => $outlet_id
         ]);
 
-        return response()->json([
-            'message' => 'User berhasil dibuat',
-            'data' => $user
-        ], 201);
+        return response()->json(['message' => 'User berhasil dibuat', 'data' => $user], 201);
     }
 
     /**
-     * UPDATE USER (GABUNGAN DEVELOPER & MANAGER)
+     * UPDATE USER
      */
     public function updateUser(Request $request, $id)
     {
         $authUser = auth()->user();
 
-        if ($authUser->role !== 'developer' && $authUser->role !== 'manager') {
+        if (!$authUser->isDeveloper() && !$authUser->isManager()) {
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
         $user = User::findOrFail($id);
 
-        // Jika Manager, pastikan dia hanya mengedit karyawannya sendiri
-        if ($authUser->role === 'manager') {
-            if ($user->role !== 'karyawan' || $user->outlet_id !== $authUser->outlet_id) {
-                return response()->json(['message' => 'Akses ditolak. Anda hanya bisa mengedit karyawan di outlet Anda.'], 403);
+        // Validasi Khusus Manager saat mau mengedit
+        if ($authUser->isManager()) {
+            if ($user->role !== 'karyawan') {
+                return response()->json(['message' => 'Akses ditolak. Anda hanya bisa mengedit karyawan.'], 403);
+            }
+
+            // Pastikan Karyawan ini aslinya memang dari outlet milik Manager
+            $ownsCurrentOutlet = Outlet::where('id', $user->outlet_id)->where('owner_id', $authUser->id)->exists();
+            if (!$ownsCurrentOutlet) {
+                return response()->json(['message' => 'Akses ditolak. Karyawan ini tidak berada di bawah wewenang Anda.'], 403);
             }
         }
 
+        // Tentukan outlet tujuan untuk validasi PIN unik per outlet
+        $targetOutletId = $authUser->isDeveloper() ? $request->outlet_id : ($request->filled('outlet_id') ? $request->outlet_id : $user->outlet_id);
+
         $request->validate([
             'name' => 'required',
-            'email' => [
-                'required',
-                'email',
-                Rule::unique('users', 'email')->ignore($id)
-            ],
+            'email' => ['required', 'email', Rule::unique('users', 'email')->ignore($id)],
             'password' => 'nullable|min:6',
             'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number' => 'nullable|string|max:30',
             'pin' => [
                 'nullable',
                 'digits:6',
-                Rule::unique('users')->where(function ($q) use ($user) {
-                    return $q->where('outlet_id', $user->outlet_id);
-                })->ignore($id)
+                Rule::unique('users')->where(fn ($q) => $q->where('outlet_id', $targetOutletId))->ignore($id)
             ],
-            'role' => $authUser->role === 'developer' ? 'required|in:developer,manager,karyawan' : 'nullable',
-            'outlet_id' => $authUser->role === 'developer' ? 'nullable|exists:outlets,id' : 'nullable'
+            'role' => $authUser->isDeveloper() ? 'required|in:developer,manager,karyawan' : 'nullable',
+            'outlet_id' => $authUser->isDeveloper() ? 'nullable|exists:outlets,id' : 'nullable'
         ]);
 
+        // Simpan data umum
         $user->name = $request->name;
         $user->email = strtolower($request->email);
         $user->phone_number = $request->phone_number;
 
-        // Hanya Developer yang boleh merubah role dan menukar penempatan outlet
-        if ($authUser->role === 'developer') {
+        // Logika Perpindahan Outlet & Perubahan Role
+        if ($authUser->isDeveloper()) {
             $user->role = $request->role;
             $user->outlet_id = $request->outlet_id;
+        }
+        // Jika Manager merubah dropdown Outlet di form
+        elseif ($authUser->isManager() && $request->filled('outlet_id')) {
+            $newOutletId = $request->outlet_id;
+
+            // Cek lagi: Apakah outlet BARU yang dipilih di dropdown juga milik Manager ini?
+            $ownsNewOutlet = Outlet::where('id', $newOutletId)->where('owner_id', $authUser->id)->exists();
+            if (!$ownsNewOutlet) {
+                return response()->json(['message' => 'Penempatan gagal. Outlet tujuan bukan milik Anda.'], 403);
+            }
+            $user->outlet_id = $newOutletId;
         }
 
         if ($request->hasFile('image')) {
             $user->image = $request->file('image')->store('users', 'public');
-        } elseif ($request->filled('image')) {
-            $user->image = $request->image;
         }
 
-        if ($request->password) {
+        if ($request->filled('password')) {
             $user->password = Hash::make($request->password);
         }
 
@@ -207,27 +207,25 @@ class UserController extends Controller
 
         $user->save();
 
-        return response()->json([
-            'message' => 'User berhasil diperbarui',
-            'data' => $user
-        ]);
+        return response()->json(['message' => 'Data User berhasil diperbarui', 'data' => $user]);
     }
 
     /**
-     * SHOW USER DETAIL
+     * SHOW USER
      */
     public function showUser($id)
     {
         $authUser = auth()->user();
 
-        if ($authUser->role !== 'developer' && $authUser->role !== 'manager') {
+        if (!$authUser->isDeveloper() && !$authUser->isManager()) {
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
         $user = User::findOrFail($id);
 
-        if ($authUser->role === 'manager') {
-            if ($user->role !== 'karyawan' || $user->outlet_id !== $authUser->outlet_id) {
+        if ($authUser->isManager()) {
+            $ownsCurrentOutlet = Outlet::where('id', $user->outlet_id)->where('owner_id', $authUser->id)->exists();
+            if ($user->role !== 'karyawan' || !$ownsCurrentOutlet) {
                 return response()->json(['message' => 'Akses ditolak'], 403);
             }
         }
@@ -242,22 +240,21 @@ class UserController extends Controller
     {
         $authUser = auth()->user();
 
-        if ($authUser->role !== 'developer' && $authUser->role !== 'manager') {
+        if (!$authUser->isDeveloper() && !$authUser->isManager()) {
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
         $user = User::findOrFail($id);
 
-        if ($authUser->role === 'manager') {
-            if ($user->role !== 'karyawan' || $user->outlet_id !== $authUser->outlet_id) {
+        if ($authUser->isManager()) {
+            $ownsCurrentOutlet = Outlet::where('id', $user->outlet_id)->where('owner_id', $authUser->id)->exists();
+            if ($user->role !== 'karyawan' || !$ownsCurrentOutlet) {
                 return response()->json(['message' => 'Akses ditolak'], 403);
             }
         }
 
         $user->delete();
 
-        return response()->json([
-            'message' => 'User berhasil dihapus'
-        ]);
+        return response()->json(['message' => 'User berhasil dihapus']);
     }
 }

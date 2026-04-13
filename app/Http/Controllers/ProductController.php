@@ -212,18 +212,20 @@ class ProductController extends Controller
             ],
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'cost_price' => 'required|integer|min:0',
+            'cost_price' => 'required|numeric|min:0',
             'image' => 'nullable|image|max:2048',
-            'outlets' => 'required|array|min:1',
+
+            // PERUBAHAN: Menjadikan array outlets opsional
+            'outlets' => 'nullable|array',
             'outlets.*.outlet_id' => [
-                'required',
+                'required_with:outlets',
                 Rule::exists('outlets', 'id')->where(function ($q) use ($ownerId) {
                     $q->where('owner_id', $ownerId);
                 })
             ],
-            'outlets.*.price' => 'required|integer|min:0',
-            'outlets.*.stock' => 'required|integer|min:0',
-            'outlets.*.is_active' => 'required|boolean',
+            'outlets.*.price' => 'required_with:outlets|integer|min:0',
+            'outlets.*.stock' => 'required_with:outlets|integer|min:0',
+            'outlets.*.is_active' => 'required_with:outlets|boolean',
         ]);
 
         $data = $request->only([
@@ -234,7 +236,6 @@ class ProductController extends Controller
             'cost_price',
         ]);
 
-        // UPLOAD IMAGE
         if ($request->hasFile('image')) {
             $data['image'] = $this->uploadImage($request->file('image'), $request->name);
         }
@@ -243,17 +244,20 @@ class ProductController extends Controller
 
         $product = Product::create($data);
 
-        $syncData = collect($request->input('outlets', []))
-            ->keyBy('outlet_id')
-            ->map(fn ($item) => [
-                'price' => (int) $item['price'],
-                'stock' => (int) $item['stock'],
-                'is_active' => (bool) $item['is_active'],
-            ])
-            ->toArray();
+        // Hanya sync jika data array outlets dikirim (saat edit detail harga dari halaman lain)
+        if ($request->filled('outlets')) {
+            $syncData = collect($request->input('outlets', []))
+                ->keyBy('outlet_id')
+                ->map(fn ($item) => [
+                    'price' => (int) $item['price'],
+                    'stock' => (int) $item['stock'],
+                    'is_active' => (bool) $item['is_active'],
+                ])
+                ->toArray();
 
-        $product->outlets()->sync($syncData);
-        $this->forgetMenuCache(array_keys($syncData));
+            $product->outlets()->sync($syncData);
+            $this->forgetMenuCache(array_keys($syncData));
+        }
 
         return response()->json([
             'data' => $product->load(['category:id,name', 'outlets:id,name'])
@@ -297,9 +301,11 @@ class ProductController extends Controller
             ],
             'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
-            'cost_price' => 'sometimes|required|integer|min:0',
+            'cost_price' => 'sometimes|required|numeric|min:0',
             'image' => 'nullable|image|max:2048',
-            'outlets' => 'sometimes|array|min:1',
+
+            // PERUBAHAN: Menjadikan array outlets opsional
+            'outlets' => 'nullable|array',
             'outlets.*.outlet_id' => [
                 'required_with:outlets',
                 Rule::exists('outlets', 'id')->where(function ($q) use ($ownerId) {
@@ -321,11 +327,9 @@ class ProductController extends Controller
 
         // UPDATE IMAGE
         if ($request->hasFile('image')) {
-
             if ($product->image && Storage::disk('public')->exists($product->image)) {
                 Storage::disk('public')->delete($product->image);
             }
-
             $data['image'] = $this->uploadImage($request->file('image'), $request->name);
         }
 
