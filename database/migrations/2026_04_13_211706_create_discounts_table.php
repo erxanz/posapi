@@ -13,6 +13,10 @@ return new class extends Migration
     {
         Schema::create('discounts', function (Blueprint $table) {
             $table->id();
+
+            // PERBAIKAN 4: Tambahkan owner_id agar diskon hanya berlaku di cabang milik manager pembuatnya
+            $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
+
             $table->string('name');
             $table->enum('type', ['percentage', 'nominal']); // Persen atau Potongan Langsung
             $table->integer('value'); // Angka diskon (misal: 10 untuk 10% atau 15000 untuk Rp 15rb)

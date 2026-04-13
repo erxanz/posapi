@@ -14,27 +14,38 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
-            // ubah user_id jadi nullable karena bisa buat order tanpa login
+
+            // user_id nullable untuk QR Customer atau Kasir
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
-            // tambahan untuk QR customer
+
             $table->string('customer_name')->nullable();
             $table->string('notes')->nullable();
-            $table->foreignId('table_id');
+
+            // PERBAIKAN 1: table_id wajib nullable untuk menampung pesanan Takeaway
+            $table->foreignId('table_id')->nullable()->constrained()->nullOnDelete();
+
             $table->string('invoice_number')->unique();
 
             // total & penyesuaian order
             $table->integer('subtotal_price')->default(0);
-            $table->enum('discount_type', ['fixed', 'percent'])->nullable();
-            $table->decimal('discount_value', 12, 2)->nullable();
+
+            // PERBAIKAN 2: Enum disamakan dengan tabel discounts
+            $table->enum('discount_type', ['percentage', 'nominal'])->nullable();
+
+            // PERBAIKAN 3: Ubah decimal jadi integer (Standar mata uang Rupiah)
+            $table->integer('discount_value')->nullable();
             $table->integer('discount_amount')->default(0);
-            $table->enum('tax_type', ['fixed', 'percent'])->nullable();
-            $table->decimal('tax_value', 12, 2)->nullable();
+
+            $table->enum('tax_type', ['percentage', 'nominal'])->nullable();
+            $table->integer('tax_value')->nullable();
             $table->integer('tax_amount')->default(0);
+
             $table->integer('total_price')->default(0);
 
             $table->enum('status', ['pending', 'paid', 'cancelled'])->default('pending');
             $table->json('logs')->nullable();
             $table->timestamps();
+
             $table->index(['outlet_id', 'invoice_number', 'status']);
         });
     }
