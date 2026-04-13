@@ -8,7 +8,7 @@ use Illuminate\Http\JsonResponse;
 
 class HistoryTransactionController extends Controller
 {
-public function index(Request $request): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         $user = auth()->user();
 
