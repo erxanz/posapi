@@ -372,6 +372,21 @@ class OrderController extends Controller
                     'price' => $price,
                     'total_price' => $subtotal,
                 ]);
+
+                // --- TAMBAHAN LOGIKA STOK DIMULAI DARI SINI ---
+                $newStock = $stock - $qty;
+                $outlet->products()->updateExistingPivot($product->id, ['stock' => $newStock]);
+
+                \App\Models\StockHistory::create([
+                    'outlet_id' => $outlet->id,
+                    'product_id' => $product->id,
+                    'user_id' => $user->id,
+                    'type' => 'sale',
+                    'quantity' => -$qty,
+                    'final_stock' => $newStock,
+                    'reference' => 'Sales Order: ' . $order->invoice_number
+                ]);
+                // --- AKHIR TAMBAHAN LOGIKA STOK ---
             }
 
             $this->recalculateOrderTotals($order);

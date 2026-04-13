@@ -36,6 +36,9 @@ Route::prefix('v1')->group(function () {
     // ================= PROTECTED (SANCTUM) =================
     Route::middleware('auth:sanctum')->group(function () {
 
+        // ================= STOK (INVENTORY) =================
+        Route::post('/stocks/adjust', [\App\Http\Controllers\StockController::class, 'adjust'])->name('stocks.adjust');
+
         // ================= AUTH =================
         Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
         Route::get('/me', [AuthController::class, 'me'])->name('me');
