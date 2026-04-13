@@ -357,13 +357,14 @@ class OrderController extends Controller
                 $product = $outlet->products()
                     ->where('products.id', $item['product_id'])
                     ->wherePivot('is_active', true)
+                    ->lockForUpdate()
                     ->firstOrFail();
 
                 $stock = (int) $product->pivot->stock;
                 $qty = (int) $item['qty'];
 
                 if ($stock < $qty) {
-                    throw new \Exception("Stok {$product->name} tidak cukup");
+                    throw new \Exception("Stok {$product->name} tidak cukup (Sisa: {$stock})");
                 }
 
                 $price = (int) $product->pivot->price;

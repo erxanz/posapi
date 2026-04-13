@@ -12,11 +12,11 @@ class ShiftKaryawanController extends Controller
     {
         $validated = $request->validate([
             'outlet_id' => 'required|exists:outlets,id',
-            'opening_balance' => 'required|integer|min:0', // Validasi modal awal
+            'opening_balance' => 'required|integer|min:0',
         ]);
 
         $activeShift = ShiftKaryawan::where('user_id', auth()->id())
-            ->where('status', 'aktif')
+            ->where('status', 'active') // PERBAIKAN STATUS
             ->first();
 
         if ($activeShift) {
@@ -26,9 +26,9 @@ class ShiftKaryawanController extends Controller
         $shift = ShiftKaryawan::create([
             'user_id' => auth()->id(),
             'outlet_id' => $validated['outlet_id'],
-            'waktu_mulai' => now(),
+            'started_at' => now(), // PERBAIKAN KOLOM
             'opening_balance' => $validated['opening_balance'],
-            'status' => 'aktif',
+            'status' => 'active', // PERBAIKAN STATUS
         ]);
 
         return response()->json([
@@ -40,27 +40,30 @@ class ShiftKaryawanController extends Controller
     public function endShift(Request $request)
     {
         $validated = $request->validate([
-            'actual_closing_balance' => 'required|integer|min:0', // Uang fisik aktual yang dihitung kasir
+            'actual_closing_balance' => 'required|integer|min:0',
             'notes' => 'nullable|string'
         ]);
 
         $shift = ShiftKaryawan::where('user_id', auth()->id())
-            ->where('status', 'aktif')
+            ->where('status', 'active') // PERBAIKAN STATUS
             ->first();
 
         if (!$shift) {
             return response()->json(['message' => 'Tidak ada shift aktif'], 404);
         }
 
-        // Hitung total uang tunai (Cash) yang masuk selama shift ini dari tabel Payment
-        $cashSales = Payment::where('payment_method', 'cash')
-            ->where('status', 'paid')
+        // PERBAIKAN: Hitung total uang tunai (Cash) menggunakan method dan kalkulasi kembalian
+        $cashSales = Payment::where('method', 'cash')
             ->whereHas('order', function($query) use ($shift) {
                 $query->where('user_id', $shift->user_id)
                       ->where('outlet_id', $shift->outlet_id)
-                      ->where('created_at', '>=', $shift->waktu_mulai);
+                      ->where('status', 'paid')
+                      ->where('created_at', '>=', $shift->started_at); // PERBAIKAN KOLOM
             })
-            ->sum('amount');
+            ->get()
+            ->sum(function($payment) {
+                return $payment->amount_paid - $payment->change_amount;
+            });
 
         // Kalkulasi ekspektasi sistem dan selisih
         $systemBalance = $shift->opening_balance + $cashSales;
@@ -68,8 +71,8 @@ class ShiftKaryawanController extends Controller
 
         // Update data shift
         $shift->update([
-            'waktu_selesai' => now(),
-            'status' => 'selesai',
+            'ended_at' => now(), // PERBAIKAN KOLOM
+            'status' => 'closed', // PERBAIKAN STATUS
             'closing_balance_system' => $systemBalance,
             'closing_balance_actual' => $validated['actual_closing_balance'],
             'difference' => $difference,
