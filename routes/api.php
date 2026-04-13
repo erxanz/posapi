@@ -109,6 +109,8 @@ Route::prefix('v1')->group(function () {
             Route::post('/{id}/payments', [OrderController::class, 'pay']);
             Route::patch('/{id}/adjustments', [OrderController::class, 'updateAdjustments']);
 
+            Route::post('/{id}/void-items', [OrderController::class, 'voidItems']);
+
         });
 
         // ================= ORDER ITEM (KITCHEN ACTION) =================

@@ -312,15 +312,37 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
+        // HISTORY TRANSACTION sudah dibuat di loop payment, jadi tidak perlu dibuat lagi
+        foreach (Order::where('status', 'paid')->get() as $order) {
+            if (!$order->historyTransaction) {
+                DB::table('history_transactions')->insert([
+                    'outlet_id' => $order->outlet_id,
+                    'order_id' => $order->id,
+                    'invoice_number' => $order->invoice_number,
+                    'customer_name' => $order->customer_name,
+                    'subtotal_price' => (int) $order->subtotal_price,
+                    'discount_amount' => (int) $order->discount_amount,
+                    'tax_amount' => (int) $order->tax_amount,
+                    'total_price' => (int) $order->total_price,
+                    'status' => 'cancelled',
+                    'metadata' => json_encode([
+                        'seeded' => true,
+                        'payments_count' => 0,
+                    ]),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+
         // ================= SUMMARY =================
         $outletCount = Outlet::count();
-        $managerCount = User::where('role', 'manager')->count();
-        $karyawanCount = User::where('role', 'karyawan')->count();
+        $userCount = User::count();
         $categoryCount = Category::count();
         $productCount = Product::count();
         $tableCount = Table::count();
-        $stationCount = Station::count();
         $orderCount = Order::count();
         $paymentCount = DB::table('payments')->count();
+        $historyTransactionCount = DB::table('history_transactions')->count();
     }
 }

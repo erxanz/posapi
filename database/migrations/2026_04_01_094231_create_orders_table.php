@@ -33,6 +33,7 @@ return new class extends Migration
             $table->integer('total_price')->default(0);
 
             $table->enum('status', ['pending', 'paid', 'cancelled'])->default('pending');
+            $table->json('logs')->nullable();
             $table->timestamps();
             $table->index(['outlet_id', 'invoice_number', 'status']);
         });

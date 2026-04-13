@@ -16,13 +16,26 @@ class OrderController extends Controller
     /**
      * List order
      */
-    public function index()
+    public function index(Request $request)
     {
+        $query = Order::where('outlet_id', auth()->user()->outlet_id)
+            ->with(['items.product', 'table', 'user']); // Tambahkan 'user' agar nama kasir terbaca
+
+        // Filter berdasarkan pencarian No Invoice
+        if ($request->filled('search')) {
+            $query->where('invoice_number', 'like', '%' . $request->search . '%');
+        }
+
+        // Filter berdasarkan Status Transaksi
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // Tentukan jumlah data per halaman (Limit)
+        $limit = $request->input('limit', 10);
+
         return response()->json(
-            Order::where('outlet_id', auth()->user()->outlet_id)
-                ->with('items.product', 'table')
-                ->latest()
-                ->paginate(10)
+            $query->latest()->paginate($limit)
         );
     }
 
@@ -624,6 +637,99 @@ class OrderController extends Controller
                 ],
             ]
         );
+    }
+
+    /**
+     * VOID / CANCEL ITEM (Parsial)
+     */
+    public function voidItems(Request $request, $orderId)
+    {
+        $validated = $request->validate([
+            'reason' => 'required|string|max:255',
+            'items' => 'required|array',
+            'items.*.id' => 'required|exists:order_items,id',
+            'items.*.cancelled_qty' => 'required|integer|min:0'
+        ]);
+
+        $order = Order::where('id', $orderId)
+            ->where('outlet_id', auth()->user()->outlet_id)
+            ->with('items.product')
+            ->firstOrFail();
+
+        // Tidak bisa void jika order sudah dibatalkan full
+        if ($order->status === 'cancelled') {
+            return response()->json(['message' => 'Order sudah dibatalkan sepenuhnya'], 400);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $actionDetails = [];
+            $outlet = Outlet::find($order->outlet_id);
+
+            foreach ($validated['items'] as $inputItem) {
+                $item = $order->items->where('id', $inputItem['id'])->first();
+
+                if (!$item) continue;
+
+                $oldCancelledQty = (int) $item->cancelled_qty;
+                $newCancelledQty = (int) $inputItem['cancelled_qty'];
+
+                // Jika ada perubahan pada qty yang dibatalkan
+                if ($oldCancelledQty !== $newCancelledQty) {
+                    $diff = $newCancelledQty - $oldCancelledQty; // Jika positif berarti nambah void
+
+                    if ($diff > 0) {
+                        $actionDetails[] = "Void {$diff}x " . $item->product->name;
+                    } else {
+                        $actionDetails[] = "Restore " . abs($diff) . "x " . $item->product->name;
+                    }
+
+                    // 1. Update qty yang dibatalkan & sesuaikan total_price item
+                    $item->cancelled_qty = $newCancelledQty;
+                    $item->total_price = ($item->qty - $newCancelledQty) * $item->price;
+                    $item->save();
+
+                    // 2. Kembalikan / Kurangi Stok Outlet
+                    $outletProduct = $outlet->products()->where('products.id', $item->product_id)->first();
+                    if ($outletProduct) {
+                        $currentStock = $outletProduct->pivot->stock;
+                        $outlet->products()->updateExistingPivot($item->product_id, [
+                            'stock' => $currentStock + $diff
+                        ]);
+                    }
+                }
+            }
+
+            // Jika benar-benar ada yang berubah
+            if (count($actionDetails) > 0) {
+                // Hitung ulang Grand Total Order
+                $this->recalculateOrderTotals($order);
+
+                // Catat ke Log
+                $logs = $order->logs ?? [];
+                array_unshift($logs, [
+                    'date' => now()->format('d M Y H:i'),
+                    'action' => implode(', ', $actionDetails),
+                    'reason' => $validated['reason'],
+                    'by' => auth()->user()->name
+                ]);
+
+                $order->logs = $logs;
+                $order->save();
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Item berhasil di-void dan total diperbarui',
+                'order' => $order->fresh()->load('items.product', 'table', 'user')
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
     }
 
     /**

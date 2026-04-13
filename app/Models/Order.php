@@ -29,6 +29,7 @@ class Order extends Model
         'tax_amount',
         'total_price',
         'status',
+        'logs',
     ];
 
     protected function casts(): array
@@ -40,6 +41,7 @@ class Order extends Model
             'tax_value' => 'decimal:2',
             'tax_amount' => 'integer',
             'total_price' => 'integer',
+            'logs' => 'array',
         ];
     }
 
