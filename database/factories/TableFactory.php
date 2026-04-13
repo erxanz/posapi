@@ -19,7 +19,7 @@ class TableFactory extends Factory
     {
         return [
             'outlet_id' => null,
-            'name' => 'Meja ' . fake()->numberBetween(1, 99),
+            'name' => fake()->numberBetween(1, 99),
             'code' => 'T' . str_pad((string) fake()->numberBetween(1, 99), 2, '0', STR_PAD_LEFT),
             'capacity' => fake()->numberBetween(1, 8),
             'status' => fake()->randomElement(['available', 'occupied', 'reserved', 'maintenance']),
