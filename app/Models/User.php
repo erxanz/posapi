@@ -78,6 +78,11 @@ class User extends Authenticatable
         return $this->hasMany(Payment::class, 'paid_by');
     }
 
+    public function historyTransactions()
+    {
+        return $this->hasMany(HistoryTransaction::class, 'cashier_id');
+    }
+
     public function isDeveloper(): bool
     {
         return $this->role === 'developer';

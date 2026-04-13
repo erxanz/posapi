@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\HistoryTransaction;
 use App\Models\Order;
 use App\Models\Outlet;
 use App\Models\Payment;
@@ -434,6 +435,8 @@ class OrderController extends Controller
             if ($isPaid) {
                 $order->update(['status' => 'paid']);
 
+                $this->storeHistoryTransaction($order);
+
                 if ($order->table_id) {
                     $order->table()->update(['status' => 'available']);
                 }
@@ -569,6 +572,58 @@ class OrderController extends Controller
     private function generateInvoiceNumber(int $outletId): string
     {
         return 'INV-' . str_pad((string) $outletId, 2, '0', STR_PAD_LEFT) . '-' . now()->format('YmdHis') . '-' . strtoupper(substr((string) uniqid(), -4));
+    }
+
+    private function storeHistoryTransaction(Order $order): void
+    {
+        $order->loadMissing(['payments', 'items']);
+
+        $lastPayment = $order->payments->sortByDesc('id')->first();
+        $methods = $order->payments
+            ->pluck('method')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $paymentMethod = null;
+
+        if (count($methods) === 1) {
+            $paymentMethod = $methods[0];
+        } elseif (count($methods) > 1) {
+            $paymentMethod = 'split';
+        }
+
+        $paidAmount = (int) $order->payments->sum(function ($payment) {
+            return (int) $payment->amount_paid - (int) $payment->change_amount;
+        });
+
+        $changeAmount = (int) $order->payments->sum('change_amount');
+
+        HistoryTransaction::updateOrCreate(
+            ['order_id' => $order->id],
+            [
+                'outlet_id' => $order->outlet_id,
+                'payment_id' => $lastPayment?->id,
+                'invoice_number' => $order->invoice_number,
+                'customer_name' => $order->customer_name,
+                'subtotal_price' => (int) $order->subtotal_price,
+                'discount_amount' => (int) $order->discount_amount,
+                'tax_amount' => (int) $order->tax_amount,
+                'total_price' => (int) $order->total_price,
+                'paid_amount' => $paidAmount,
+                'change_amount' => $changeAmount,
+                'payment_method' => $paymentMethod,
+                'paid_at' => $lastPayment?->paid_at ?? now(),
+                'cashier_id' => $lastPayment?->paid_by,
+                'status' => 'paid',
+                'metadata' => [
+                    'payments_count' => $order->payments->count(),
+                    'methods' => $methods,
+                    'items_count' => $order->items->count(),
+                ],
+            ]
+        );
     }
 
     /**

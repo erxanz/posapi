@@ -64,6 +64,11 @@ class Order extends Model
         return $this->hasMany(Payment::class);
     }
 
+    public function historyTransaction()
+    {
+        return $this->hasOne(HistoryTransaction::class);
+    }
+
     // SCOPE
     public function scopeOpen($query)
     {

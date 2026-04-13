@@ -34,6 +34,11 @@ class Outlet extends Model
         return $this->hasMany(Order::class);
     }
 
+    public function historyTransactions()
+    {
+        return $this->hasMany(HistoryTransaction::class);
+    }
+
     public function products()
     {
         return $this->belongsToMany(Product::class)

@@ -250,14 +250,47 @@ class DatabaseSeeder extends Seeder
 
         // ================= PAYMENT =================
         foreach (Order::where('status', 'paid')->get() as $order) {
-            DB::table('payments')->insert([
+            $cashierId = fake()->boolean(70)
+                ? User::where('outlet_id', $order->outlet_id)->whereIn('role', ['manager', 'karyawan'])->inRandomOrder()->value('id')
+                : null;
+
+            $paidAmount = (int) $order->total_price + fake()->numberBetween(0, 50000);
+            $changeAmount = max(0, $paidAmount - (int) $order->total_price);
+
+            $paymentId = DB::table('payments')->insertGetId([
                 'order_id' => $order->id,
-                'amount_paid' => $order->total_price + fake()->numberBetween(0, 50000),
-                'change_amount' => fake()->numberBetween(0, 50000),
+                'amount_paid' => $paidAmount,
+                'change_amount' => $changeAmount,
                 'method' => fake()->randomElement(['cash', 'debit', 'credit', 'qris', 'ewallet']),
                 'reference_no' => fake()->optional()->bothify('REF-########'),
                 'paid_at' => now()->subMinutes(fake()->numberBetween(0, 120)),
-                'paid_by' => fake()->boolean(70) ? User::factory()->create()->id : null,
+                'paid_by' => $cashierId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $payment = DB::table('payments')->where('id', $paymentId)->first();
+
+            DB::table('history_transactions')->insert([
+                'outlet_id' => $order->outlet_id,
+                'order_id' => $order->id,
+                'payment_id' => $paymentId,
+                'invoice_number' => $order->invoice_number,
+                'customer_name' => $order->customer_name,
+                'subtotal_price' => (int) $order->subtotal_price,
+                'discount_amount' => (int) $order->discount_amount,
+                'tax_amount' => (int) $order->tax_amount,
+                'total_price' => (int) $order->total_price,
+                'paid_amount' => (int) $payment->amount_paid - (int) $payment->change_amount,
+                'change_amount' => (int) $payment->change_amount,
+                'payment_method' => $payment->method,
+                'paid_at' => $payment->paid_at,
+                'cashier_id' => $payment->paid_by,
+                'status' => 'paid',
+                'metadata' => json_encode([
+                    'seeded' => true,
+                    'payments_count' => 1,
+                ]),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);

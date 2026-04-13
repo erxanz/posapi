@@ -11,6 +11,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\TableController;
 use App\Http\Controllers\StationController;
+use App\Http\Controllers\HistoryTransactionController;
 
 Route::prefix('v1')->group(function () {
 
@@ -83,6 +84,10 @@ Route::prefix('v1')->group(function () {
 
         // ================= SHIFT KARYAWAN =================
         Route::apiResource('shift-karyawans', ShiftKaryawanController::class);
+
+        // ================= HISTORY TRANSACTION =================
+        Route::apiResource('history-transactions', HistoryTransactionController::class)
+            ->only(['index', 'show']);
 
 
         // ================= ORDER =================
