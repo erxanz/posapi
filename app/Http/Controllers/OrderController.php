@@ -297,15 +297,15 @@ class OrderController extends Controller
         }
     }
 
-    /**
-     * Checkout order (create order + order_items)
+/**
+     * Checkout order (create order + payment + history)
      */
     public function checkoutOrder(Request $request)
     {
         $user = auth()->user();
 
         $validated = $request->validate([
-            'outlet_id' => 'required|exists:outlets,id',
+            'outlet_id' => 'nullable|exists:outlets,id', // Dibuat nullable agar flutter tidak wajib kirim
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:255',
@@ -316,12 +316,16 @@ class OrderController extends Controller
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
+            // --- Tangkap data pembayaran dari Flutter ---
+            'payment_method' => 'required|string|max:50',
+            'amount_paid' => 'required|numeric|min:0',
         ]);
 
-        $outlet = Outlet::findOrFail($validated['outlet_id']);
+        $outletId = $validated['outlet_id'] ?? $user->outlet_id;
+        $outlet = Outlet::findOrFail($outletId);
 
         if (!$this->canAccessOutlet($outlet->id)) {
-            return response()->json(['message' => 'Forbidden'], 403);
+            return response()->json(['success' => false, 'message' => 'Forbidden'], 403);
         }
 
         $table = Table::where('id', $validated['table_id'])
@@ -333,6 +337,7 @@ class OrderController extends Controller
         try {
             $adjustments = $this->resolveAdjustmentInput($validated);
 
+            // 1. Buat Order langsung dengan status 'paid'
             $order = Order::create([
                 'outlet_id' => $outlet->id,
                 'user_id' => $user->id,
@@ -344,7 +349,7 @@ class OrderController extends Controller
                 'discount_value' => $adjustments['discount_value'],
                 'tax_type' => $adjustments['tax_type'],
                 'tax_value' => $adjustments['tax_value'],
-                'status' => 'pending',
+                'status' => 'paid', // Karena langsung dibayar
                 'total_price' => 0,
             ]);
 
@@ -373,7 +378,7 @@ class OrderController extends Controller
                     'total_price' => $subtotal,
                 ]);
 
-                // --- TAMBAHAN LOGIKA STOK DIMULAI DARI SINI ---
+                // Potong Stok
                 $newStock = $stock - $qty;
                 $outlet->products()->updateExistingPivot($product->id, ['stock' => $newStock]);
 
@@ -386,26 +391,43 @@ class OrderController extends Controller
                     'final_stock' => $newStock,
                     'reference' => 'Sales Order: ' . $order->invoice_number
                 ]);
-                // --- AKHIR TAMBAHAN LOGIKA STOK ---
             }
 
             $this->recalculateOrderTotals($order);
 
+            // 2. Buat Data Pembayaran (Payment)
+            $amountPaid = (int) $validated['amount_paid'];
+            $changeAmount = max(0, $amountPaid - $order->total_price);
+
+            Payment::create([
+                'order_id' => $order->id,
+                'amount_paid' => $amountPaid,
+                'change_amount' => $changeAmount,
+                'method' => strtolower($validated['payment_method']),
+                'paid_at' => now(),
+                'paid_by' => $user->id,
+            ]);
+
+            // 3. Masukkan ke tabel History Transactions!
+            $this->storeHistoryTransaction($order);
+
             $table->update([
-                'status' => 'occupied',
+                'status' => 'available', // Kosongkan meja kembali
             ]);
 
             DB::commit();
 
             return response()->json([
-                'message' => 'Checkout order berhasil dibuat',
-                'order' => $order->load('items.product', 'table'),
+                'success' => true, // Wajib untuk trigger UI Flutter
+                'message' => 'Checkout dan pembayaran berhasil',
+                'order' => $order->load('items.product', 'table', 'payments'),
             ], 201);
 
         } catch (\Throwable $e) {
             DB::rollBack();
 
             return response()->json([
+                'success' => false,
                 'message' => $e->getMessage(),
             ], 500);
         }
@@ -616,7 +638,7 @@ class OrderController extends Controller
 
     private function storeHistoryTransaction(Order $order): void
     {
-        $order->loadMissing(['payments', 'items']);
+        $order->load(['payments', 'items']);
 
         $lastPayment = $order->payments->sortByDesc('id')->first();
         $methods = $order->payments
