@@ -721,8 +721,21 @@ class OrderController extends Controller
                     $outletProduct = $outlet->products()->where('products.id', $item->product_id)->first();
                     if ($outletProduct) {
                         $currentStock = $outletProduct->pivot->stock;
+                        $newStock = $currentStock + $diff;
+
                         $outlet->products()->updateExistingPivot($item->product_id, [
-                            'stock' => $currentStock + $diff
+                            'stock' => $newStock
+                        ]);
+
+                        // Tambahkan log ke Stock History
+                        \App\Models\StockHistory::create([
+                            'outlet_id' => $order->outlet_id,
+                            'product_id' => $item->product_id,
+                            'user_id' => auth()->id(),
+                            'type' => 'void',
+                            'quantity' => $diff, // positif = balik ke stok, negatif = pengurangan
+                            'final_stock' => $newStock,
+                            'reference' => 'Void Order: ' . $order->invoice_number
                         ]);
                     }
                 }
