@@ -22,6 +22,8 @@ Route::prefix('v1')->group(function () {
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.forgot');
     Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');
 
+    Route::apiResource('discounts', DiscountController::class);
+
     // ================= PUBLIC API (QR) =================
     Route::prefix('public')->group(function () {
 
@@ -80,8 +82,6 @@ Route::prefix('v1')->group(function () {
 
         // ================= PRODUCT =================
         Route::apiResource('products', ProductController::class);
-
-        Route::apiResource('discounts', DiscountController::class);
 
         // ================= STATION =================
         Route::apiResource('stations', StationController::class);
