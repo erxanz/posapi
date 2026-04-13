@@ -8,12 +8,13 @@ use Illuminate\Http\JsonResponse;
 
 class HistoryTransactionController extends Controller
 {
-    public function index(Request $request): JsonResponse
+public function index(Request $request): JsonResponse
     {
         $user = auth()->user();
 
+        // TAMBAHKAN 'outlet', 'order.table', dan 'order.items.product' agar terbaca di Frontend
         $query = HistoryTransaction::query()
-            ->with(['order', 'payment', 'cashier'])
+            ->with(['order.table', 'order.items.product', 'payment', 'cashier', 'outlet'])
             ->latest('paid_at');
 
         if (!$user->isDeveloper()) {
@@ -30,7 +31,10 @@ class HistoryTransactionController extends Controller
             $query->where('invoice_number', 'like', '%' . $request->string('invoice_number') . '%');
         }
 
-        return response()->json($query->paginate(15));
+        // Ambil parameter limit dari frontend, default 15
+        $limit = $request->input('limit', 15);
+
+        return response()->json($query->paginate($limit));
     }
 
     public function store(Request $request): JsonResponse
