@@ -29,7 +29,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('station_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('station_id')->nullable();
             $table->integer('price')->default(0);
             $table->integer('stock')->default(0);
             $table->boolean('is_active')->default(true);

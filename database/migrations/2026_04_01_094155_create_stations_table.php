@@ -23,6 +23,10 @@ return new class extends Migration
         Schema::table('products', function (Blueprint $table) {
             $table->foreign('station_id')->references('id')->on('stations')->nullOnDelete();
         });
+
+        Schema::table('outlet_product', function (Blueprint $table) {
+            $table->foreign('station_id')->references('id')->on('stations')->nullOnDelete();
+        });
     }
 
     /**
@@ -31,6 +35,10 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('products', function (Blueprint $table) {
+            $table->dropForeign(['station_id']);
+        });
+
+        Schema::table('outlet_product', function (Blueprint $table) {
             $table->dropForeign(['station_id']);
         });
 
