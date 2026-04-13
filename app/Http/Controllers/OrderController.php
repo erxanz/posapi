@@ -600,6 +600,18 @@ class OrderController extends Controller
         $taxType = $validated['tax_type'] ?? null;
         $taxValue = isset($validated['tax_value']) ? (float) $validated['tax_value'] : null;
 
+        // Jika ada request diskon yang dikirim (tidak null)
+        if ($discountType !== null || $discountValue !== null) {
+            $user = auth()->user();
+
+            // Tolak jika tidak ada user (publik) ATAU user bukan manager/developer
+            if (!$user || !in_array($user->role, ['manager', 'developer'])) {
+                throw ValidationException::withMessages([
+                    'discount' => ['Akses ditolak: Hanya Manager yang dapat memberikan diskon.'],
+                ]);
+            }
+        }
+
         if ($discountType && $discountValue === null) {
             throw ValidationException::withMessages([
                 'discount_value' => ['discount_value wajib diisi jika discount_type dipilih'],
