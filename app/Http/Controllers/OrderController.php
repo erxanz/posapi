@@ -18,8 +18,20 @@ class OrderController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Order::where('outlet_id', auth()->user()->outlet_id)
-            ->with(['items.product', 'table', 'user']); // Tambahkan 'user' agar nama kasir terbaca
+        $user = auth()->user();
+
+        // Eager load relasi agar data produk, meja, kasir (user), dan outlet terbawa
+        $query = Order::with(['items.product', 'table', 'user', 'outlet']);
+
+        // Filter Hak Akses berdasarkan Role
+        if ($user->role === 'karyawan') {
+            $query->where('outlet_id', $user->outlet_id);
+        } elseif ($user->role === 'manager') {
+            // Manager melihat semua pesanan dari daftar outlet yang dia miliki
+            $outletIds = \App\Models\Outlet::where('owner_id', $user->id)->pluck('id');
+            $query->whereIn('outlet_id', $outletIds);
+        }
+        // Developer tidak dibatasi (bisa melihat semua pesanan)
 
         // Filter berdasarkan pencarian No Invoice
         if ($request->filled('search')) {
@@ -31,7 +43,7 @@ class OrderController extends Controller
             $query->where('status', $request->status);
         }
 
-        // Tentukan jumlah data per halaman (Limit)
+        // Limit Pagination
         $limit = $request->input('limit', 10);
 
         return response()->json(
