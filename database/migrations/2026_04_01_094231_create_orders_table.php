@@ -19,7 +19,7 @@ return new class extends Migration
             // tambahan untuk QR customer
             $table->string('customer_name')->nullable();
             $table->string('notes')->nullable();
-            $table->foreignId('table_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('table_id');
             $table->string('invoice_number')->unique();
 
             // total & penyesuaian order
