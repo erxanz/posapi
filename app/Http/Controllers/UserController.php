@@ -42,7 +42,7 @@ class UserController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
+                ->orWhere('email', 'like', "%{$search}%");
             });
         }
 
@@ -65,7 +65,7 @@ class UserController extends Controller
     {
         $authUser = auth()->user();
 
-        if (!$authUser->isDeveloper() && !$authUser->isManager()) {
+        if (!$authUser->isDeveloper() && (!$authUser->isManager())) {
             return response()->json(['message' => 'Akses ditolak'], 403);
         }
 
@@ -90,7 +90,10 @@ class UserController extends Controller
         $request->validate([
             'name' => 'required',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|min:6',
+
+            // PERBAIKAN: Password hanya wajib untuk Manager/Developer. Karyawan boleh kosong.
+            'password' => $role === 'karyawan' ? 'nullable|min:6' : 'required|min:6',
+
             'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number' => 'nullable|string|max:30',
             'pin' => [
@@ -112,7 +115,10 @@ class UserController extends Controller
         $user = User::create([
             'name' => $request->name,
             'email' => strtolower($request->email),
-            'password' => Hash::make($request->password),
+
+            // PERBAIKAN: Jika password kosong (karyawan), set default ke '12345678'
+            'password' => Hash::make($request->password ?: '12345678'),
+
             'image' => $imagePath,
             'phone_number' => $request->phone_number,
             'pin' => $request->pin,
