@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Models\Discount;
 use App\Models\HistoryTransaction;
 use App\Models\Order;
 use App\Models\Outlet;
 use App\Models\Payment;
 use App\Models\Table;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -56,6 +57,31 @@ class OrderController extends Controller
      */
     public function store(Request $request)
     {
+        $discountAmount = 0;
+        if ($request->filled('discount_id')) {
+            $promo = Discount::find($request->discount_id);
+
+            // Validasi: Apakah promo aktif, tanggal sesuai, dan subtotal memenuhi min_purchase?
+            if ($promo && $promo->is_active && now()->between($promo->start_date, $promo->end_date)) {
+                if ($total_price >= $promo->min_purchase) {
+                    if ($promo->type === 'percentage') {
+                        $discountAmount = ($total_price * $promo->value) / 100;
+                    } else {
+                        $discountAmount = $promo->value;
+                    }
+                }
+            }
+        }
+
+        // Simpan ke tabel orders
+        $order = Order::create([
+            'total_price' => $total_price,
+            'discount' => $discountAmount, // Snapshot nominal potongan
+            'final_price' => $total_price - $discountAmount,
+            'discount_id' => $request->discount_id, // Referensi aturan promo
+            // ... field lainnya ...
+        ]);
+
         return response()->json([
             'message' => 'Gunakan endpoint checkout untuk membuat order'
         ], 400);

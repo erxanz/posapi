@@ -1,17 +1,17 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\DiscountController;
+use App\Http\Controllers\HistoryTransactionController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\OutletController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ShiftKaryawanController;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\OutletController;
-use App\Http\Controllers\TableController;
 use App\Http\Controllers\StationController;
-use App\Http\Controllers\HistoryTransactionController;
+use App\Http\Controllers\TableController;
+use App\Http\Controllers\UserController;
+use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
 
@@ -80,6 +80,8 @@ Route::prefix('v1')->group(function () {
 
         // ================= PRODUCT =================
         Route::apiResource('products', ProductController::class);
+
+        Route::apiResource('discounts', DiscountController::class);
 
         // ================= STATION =================
         Route::apiResource('stations', StationController::class);
