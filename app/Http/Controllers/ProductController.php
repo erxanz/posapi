@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Outlet;
 use App\Models\Product;
+use App\Models\Table;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use App\Models\Table;
 use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
 {
@@ -26,26 +27,38 @@ class ProductController extends Controller
         $products = Cache::remember(
             "menu_outlet_{$outletId}",
             60,
-            fn () => Product::query()
+            fn () => Outlet::query()
+                ->findOrFail($outletId)
+                ->products()
                 ->select([
-                    'id',
-                    'category_id',
-                    'station_id',
-                    'name',
-                    'description',
-                    'price',
-                    'stock',
-                    'image',
-                    'is_active',
+                    'products.id',
+                    'products.category_id',
+                    'products.station_id',
+                    'products.name',
+                    'products.description',
+                    'products.image',
                 ])
-                ->where('outlet_id', $outletId)
-                ->where('is_active', true)
-                ->where('stock', '>', 0) // hanya tampilkan yang ada stok
+                ->wherePivot('is_active', true)
+                ->wherePivot('stock', '>', 0)
                 ->with([
                     'category:id,name'
                 ])
                 ->orderBy('name')
                 ->get()
+                ->map(function ($product) {
+                    return [
+                        'id' => $product->id,
+                        'category_id' => $product->category_id,
+                        'station_id' => $product->station_id,
+                        'name' => $product->name,
+                        'description' => $product->description,
+                        'image' => $product->image,
+                        'is_active' => (bool) $product->pivot->is_active,
+                        'price' => (int) $product->pivot->price,
+                        'stock' => (int) $product->pivot->stock,
+                        'category' => $product->category,
+                    ];
+                })
         );
 
         return response()->json([
@@ -60,35 +73,85 @@ class ProductController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
+        $limit = $request->integer('limit', 50);
+        $limit = max(10, min($limit, 100));
+        $ownerId = $this->resolveOwnerId($user);
+
+        if ($user->role === 'karyawan') {
+            if (!$user->outlet_id) {
+                return response()->json(['message' => 'User belum punya outlet'], 400);
+            }
+
+            $query = Outlet::query()
+                ->findOrFail($user->outlet_id)
+                ->products()
+                ->select([
+                    'products.id',
+                    'products.category_id',
+                    'products.station_id',
+                    'products.name',
+                    'products.description',
+                    'products.cost_price',
+                    'products.image',
+                ])
+                ->with(['category:id,name'])
+                ->orderByDesc('products.created_at');
+
+            if ($request->filled('category_id')) {
+                $query->where('products.category_id', $request->category_id);
+            }
+
+            if ($request->filled('search')) {
+                $keywords = array_filter(explode(' ', trim($request->search)));
+
+                $query->where(function ($q) use ($keywords) {
+                    foreach ($keywords as $word) {
+                        $q->where('products.name', 'like', "%{$word}%");
+                    }
+                });
+            }
+
+            $paginated = $query->paginate($limit);
+            $paginated->getCollection()->transform(function ($product) {
+                $product->price = (int) $product->pivot->price;
+                $product->stock = (int) $product->pivot->stock;
+                $product->is_active = (bool) $product->pivot->is_active;
+                unset($product->pivot);
+
+                return $product;
+            });
+
+            return response()->json([
+                'data' => $paginated
+            ]);
+        }
+
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner tidak ditemukan'], 400);
+        }
 
         $query = Product::query()
-            ->where('outlet_id', $user->outlet_id)
+            ->where('owner_id', $ownerId)
             ->select([
                 'id',
+                'owner_id',
                 'category_id',
                 'station_id',
                 'name',
                 'description',
-                'price',
                 'cost_price',
-                'stock',
                 'image',
-                'is_active',
             ])
             ->with([
-                'category:id,name'
+                'category:id,name',
+                'outlets:id,name'
             ])
             ->latest();
 
-        // FILTER CATEGORY (AMAN)
         if ($request->filled('category_id')) {
-            $query->whereHas('category', function ($q) use ($request, $user) {
-                $q->where('id', $request->category_id)
-                  ->where('outlet_id', $user->outlet_id);
-            });
+            $query->where('category_id', $request->category_id);
         }
 
-        // SEARCH (multi keyword, fleksibel)
         if ($request->filled('search')) {
             $keywords = array_filter(explode(' ', trim($request->search)));
 
@@ -99,10 +162,22 @@ class ProductController extends Controller
             });
         }
 
-        $limit = min($request->limit ?? 10, 100);
+        $paginated = $query->paginate($limit);
+        $paginated->getCollection()->transform(function ($product) {
+            $product->outlets->transform(function ($outlet) {
+                $outlet->price = (int) $outlet->pivot->price;
+                $outlet->stock = (int) $outlet->pivot->stock;
+                $outlet->is_active = (bool) $outlet->pivot->is_active;
+                unset($outlet->pivot);
+
+                return $outlet;
+            });
+
+            return $product;
+        });
 
         return response()->json([
-            'data' => $query->paginate($limit)
+            'data' => $paginated
         ]);
     }
 
@@ -112,32 +187,45 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         $user = auth()->user();
+        $ownerId = $this->resolveOwnerId($user);
 
-        if (!$user->outlet_id) {
-            return response()->json(['message' => 'User belum punya outlet'], 400);
+        if ($user->role === 'karyawan') {
+            return response()->json(['message' => 'Karyawan tidak diizinkan membuat produk'], 403);
         }
 
-        // VALIDASI AMAN (category sesuai outlet)
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner tidak ditemukan'], 400);
+        }
+
         $request->validate([
             'category_id' => [
                 'required',
-                Rule::exists('categories', 'id')->where(function ($q) use ($user) {
-                    $q->where('outlet_id', $user->outlet_id);
+                Rule::exists('categories', 'id')->where(function ($q) use ($ownerId) {
+                    $q->where('owner_id', $ownerId);
                 })
             ],
             'station_id' => [
                 'nullable',
-                Rule::exists('stations', 'id')->where(function ($q) use ($user) {
-                    $q->where('outlet_id', $user->outlet_id);
+                Rule::exists('stations', 'id')->where(function ($q) use ($ownerId) {
+                    $q->where('owner_id', $ownerId);
                 })
             ],
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'price' => 'required|integer|min:0',
-            'cost_price' => 'required|integer|min:0',
-            'stock' => 'required|integer|min:0',
+            'cost_price' => 'required|numeric|min:0',
             'image' => 'nullable|image|max:2048',
-            'is_active' => 'boolean'
+            
+            // PERUBAHAN: Menjadikan array outlets opsional
+            'outlets' => 'nullable|array',
+            'outlets.*.outlet_id' => [
+                'required_with:outlets',
+                Rule::exists('outlets', 'id')->where(function ($q) use ($ownerId) {
+                    $q->where('owner_id', $ownerId);
+                })
+            ],
+            'outlets.*.price' => 'required_with:outlets|integer|min:0',
+            'outlets.*.stock' => 'required_with:outlets|integer|min:0',
+            'outlets.*.is_active' => 'required_with:outlets|boolean',
         ]);
 
         $data = $request->only([
@@ -145,26 +233,34 @@ class ProductController extends Controller
             'station_id',
             'name',
             'description',
-            'price',
             'cost_price',
-            'stock',
-            'is_active'
         ]);
 
-        // UPLOAD IMAGE
         if ($request->hasFile('image')) {
             $data['image'] = $this->uploadImage($request->file('image'), $request->name);
         }
 
-        $data['outlet_id'] = $user->outlet_id;
+        $data['owner_id'] = $ownerId;
 
         $product = Product::create($data);
 
-        // CLEAR CACHE
-        Cache::forget("menu_outlet_{$user->outlet_id}");
+        // Hanya sync jika data array outlets dikirim (saat edit detail harga dari halaman lain)
+        if ($request->filled('outlets')) {
+            $syncData = collect($request->input('outlets', []))
+                ->keyBy('outlet_id')
+                ->map(fn ($item) => [
+                    'price' => (int) $item['price'],
+                    'stock' => (int) $item['stock'],
+                    'is_active' => (bool) $item['is_active'],
+                ])
+                ->toArray();
+
+            $product->outlets()->sync($syncData);
+            $this->forgetMenuCache(array_keys($syncData));
+        }
 
         return response()->json([
-            'data' => $product->load('category:id,name')
+            'data' => $product->load(['category:id,name', 'outlets:id,name'])
         ], 201);
     }
 
@@ -176,7 +272,7 @@ class ProductController extends Controller
         $this->authorizeProduct($product);
 
         return response()->json([
-            'data' => $product->load('category:id,name')
+            'data' => $product->load(['category:id,name', 'outlets:id,name'])
         ], 200);
     }
 
@@ -186,29 +282,39 @@ class ProductController extends Controller
     public function update(Request $request, Product $product)
     {
         $user = auth()->user();
+        $ownerId = $this->resolveOwnerId($user);
 
         $this->authorizeProduct($product);
 
         $request->validate([
             'category_id' => [
-                'required',
-                Rule::exists('categories', 'id')->where(function ($q) use ($user) {
-                    $q->where('outlet_id', $user->outlet_id);
+                'sometimes',
+                Rule::exists('categories', 'id')->where(function ($q) use ($ownerId) {
+                    $q->where('owner_id', $ownerId);
                 })
             ],
             'station_id' => [
                 'nullable',
-                Rule::exists('stations', 'id')->where(function ($q) use ($user) {
-                    $q->where('outlet_id', $user->outlet_id);
+                Rule::exists('stations', 'id')->where(function ($q) use ($ownerId) {
+                    $q->where('owner_id', $ownerId);
                 })
             ],
-            'name' => 'required|string|max:255',
+            'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
-            'price' => 'required|integer|min:0',
-            'cost_price' => 'required|integer|min:0',
-            'stock' => 'required|integer|min:0',
+            'cost_price' => 'sometimes|required|numeric|min:0',
             'image' => 'nullable|image|max:2048',
-            'is_active' => 'boolean'
+            
+            // PERUBAHAN: Menjadikan array outlets opsional
+            'outlets' => 'nullable|array',
+            'outlets.*.outlet_id' => [
+                'required_with:outlets',
+                Rule::exists('outlets', 'id')->where(function ($q) use ($ownerId) {
+                    $q->where('owner_id', $ownerId);
+                })
+            ],
+            'outlets.*.price' => 'required_with:outlets|integer|min:0',
+            'outlets.*.stock' => 'required_with:outlets|integer|min:0',
+            'outlets.*.is_active' => 'required_with:outlets|boolean',
         ]);
 
         $data = $request->only([
@@ -216,29 +322,41 @@ class ProductController extends Controller
             'station_id',
             'name',
             'description',
-            'price',
             'cost_price',
-            'stock',
-            'is_active'
         ]);
 
         // UPDATE IMAGE
         if ($request->hasFile('image')) {
-
             if ($product->image && Storage::disk('public')->exists($product->image)) {
                 Storage::disk('public')->delete($product->image);
             }
-
             $data['image'] = $this->uploadImage($request->file('image'), $request->name);
         }
 
         $product->update($data);
 
-        // CLEAR CACHE
-        Cache::forget("menu_outlet_{$user->outlet_id}");
+        $outletIds = [];
+
+        if ($request->filled('outlets')) {
+            $syncData = collect($request->input('outlets', []))
+                ->keyBy('outlet_id')
+                ->map(fn ($item) => [
+                    'price' => (int) $item['price'],
+                    'stock' => (int) $item['stock'],
+                    'is_active' => (bool) $item['is_active'],
+                ])
+                ->toArray();
+
+            $product->outlets()->sync($syncData);
+            $outletIds = array_keys($syncData);
+        } else {
+            $outletIds = $product->outlets()->pluck('outlets.id')->all();
+        }
+
+        $this->forgetMenuCache($outletIds);
 
         return response()->json([
-            'data' => $product->load('category:id,name')
+            'data' => $product->load(['category:id,name', 'outlets:id,name'])
         ], 200);
     }
 
@@ -247,9 +365,9 @@ class ProductController extends Controller
      */
     public function destroy(Product $product)
     {
-        $user = auth()->user();
-
         $this->authorizeProduct($product);
+
+        $outletIds = $product->outlets()->pluck('outlets.id')->all();
 
         if ($product->image && Storage::disk('public')->exists($product->image)) {
             Storage::disk('public')->delete($product->image);
@@ -257,8 +375,7 @@ class ProductController extends Controller
 
         $product->delete();
 
-        // CLEAR CACHE
-        Cache::forget("menu_outlet_{$user->outlet_id}");
+        $this->forgetMenuCache($outletIds);
 
         return response()->json([
             'message' => 'Product deleted successfully'
@@ -270,8 +387,34 @@ class ProductController extends Controller
      */
     private function authorizeProduct(Product $product): void
     {
-        if ($product->outlet_id !== auth()->user()->outlet_id) {
+        $ownerId = $this->resolveOwnerId(auth()->user());
+
+        if (!$ownerId || (int) $product->owner_id !== (int) $ownerId) {
             abort(403, 'Forbidden');
+        }
+    }
+
+    private function resolveOwnerId($user): ?int
+    {
+        if ($user->role === 'developer') {
+            return request()->integer('owner_id') ?: $user->id;
+        }
+
+        if ($user->role === 'manager') {
+            return $user->id;
+        }
+
+        if ($user->outlet_id) {
+            return Outlet::query()->whereKey($user->outlet_id)->value('owner_id');
+        }
+
+        return null;
+    }
+
+    private function forgetMenuCache(array $outletIds): void
+    {
+        foreach (array_unique($outletIds) as $outletId) {
+            Cache::forget("menu_outlet_{$outletId}");
         }
     }
 
