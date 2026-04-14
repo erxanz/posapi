@@ -40,7 +40,7 @@ return new class extends Migration
         });
 
         Schema::table('orders', function (Blueprint $table) {
-            $table->foreign('table_id')->references('id')->on('tables')->cascadeOnDelete();
+            $table->foreign('table_id')->references('id')->on('tables')->nullOnDelete();
         });
     }
 

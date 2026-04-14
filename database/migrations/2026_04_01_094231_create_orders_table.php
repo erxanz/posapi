@@ -21,9 +21,8 @@ return new class extends Migration
             $table->string('customer_name')->nullable();
             $table->string('notes')->nullable();
 
-            // PERBAIKAN 1: table_id wajib nullable untuk menampung pesanan Takeaway
-            $table->unsignedBigInteger('table_id')->nullable();
-            $table->foreign('table_id')->references('id')->on('tables')->nullOnDelete();
+            // table_id dibuat nullable karena order bisa takeaway / tanpa meja
+            $table->foreignId('table_id')->nullable();
 
             $table->string('invoice_number')->unique();
 
