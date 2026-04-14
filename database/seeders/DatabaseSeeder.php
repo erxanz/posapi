@@ -72,7 +72,7 @@ class DatabaseSeeder extends Seeder
             for ($tableNo = 1; $tableNo <= 8; $tableNo++) {
                 Table::factory()->create([
                     'outlet_id' => $outlet->id,
-                    'name' => 'Meja ' . str_pad((string) $tableNo, 2, '0', STR_PAD_LEFT),
+                    'name' => str_pad((string) $tableNo, 2, '0', STR_PAD_LEFT),
                     'code' => 'T' . str_pad((string) $tableNo, 2, '0', STR_PAD_LEFT),
                     'capacity' => 4,
                     'status' => 'available',
