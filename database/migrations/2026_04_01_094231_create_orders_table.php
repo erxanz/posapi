@@ -22,7 +22,7 @@ return new class extends Migration
             $table->string('notes')->nullable();
 
             // PERBAIKAN 1: table_id wajib nullable untuk menampung pesanan Takeaway
-            $table->foreignId('table_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('table_id')->nullable()->constrained('tables');
 
             $table->string('invoice_number')->unique();
 
