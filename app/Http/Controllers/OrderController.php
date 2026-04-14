@@ -57,6 +57,7 @@ class OrderController extends Controller
      */
     public function store(Request $request)
     {
+        $total_price = $request->input('total_price', 0);
         $discountAmount = 0;
         if ($request->filled('discount_id')) {
             $promo = Discount::find($request->discount_id);
@@ -75,11 +76,10 @@ class OrderController extends Controller
 
         // Simpan ke tabel orders
         $order = Order::create([
-            'total_price' => $total_price,
-            'discount' => $discountAmount, // Snapshot nominal potongan
-            'final_price' => $total_price - $discountAmount,
-            'discount_id' => $request->discount_id, // Referensi aturan promo
-            // ... field lainnya ...
+            'subtotal_price' => $total_price,
+            'discount_amount' => $discountAmount,
+            'total_price' => $total_price - $discountAmount,
+            'discount_id' => $request->discount_id,
         ]);
 
         return response()->json([
@@ -168,10 +168,10 @@ class OrderController extends Controller
         $subtotal = (int) $order->items()->sum('total_price');
 
         $discountType = $overrides['discount_type'] ?? $order->discount_type;
-        $discountValue = isset($overrides['discount_value']) ? (float) $overrides['discount_value'] : (float) ($order->discount_value ?? 0);
+        $discountValue = isset($overrides['discount_value']) ? (int) $overrides['discount_value'] : (int) ($order->discount_value ?? 0);
 
         $taxType = $overrides['tax_type'] ?? $order->tax_type;
-        $taxValue = isset($overrides['tax_value']) ? (float) $overrides['tax_value'] : (float) ($order->tax_value ?? 0);
+        $taxValue = isset($overrides['tax_value']) ? (int) $overrides['tax_value'] : (int) ($order->tax_value ?? 0);
 
         $discountAmount = $this->computeAdjustmentAmount($discountType, $discountValue, $subtotal);
         $baseAfterDiscount = max(0, $subtotal - $discountAmount);
@@ -190,19 +190,19 @@ class OrderController extends Controller
         ]);
     }
 
-    private function computeAdjustmentAmount(?string $type, float $value, int $baseAmount): int
+    private function computeAdjustmentAmount(?string $type, int $value, int $baseAmount): int
     {
         if (!$type || $baseAmount <= 0 || $value <= 0) {
             return 0;
         }
 
-        if ($type === 'percent') {
+        if ($type === 'percentage') {
             $percent = min(100, max(0, $value));
 
             return (int) round(($baseAmount * $percent) / 100);
         }
 
-        return min($baseAmount, max(0, (int) round($value)));
+        return min($baseAmount, max(0, $value));
     }
 
     /**
@@ -248,11 +248,11 @@ class OrderController extends Controller
         $validated = $request->validate([
             'outlet_id' => 'required|exists:outlets,id',
             'table_id' => 'required|exists:tables,id',
-            'customer_name' => 'nullable|string|max:100',
-            'discount_type' => 'nullable|in:fixed,percent',
-            'discount_value' => 'nullable|numeric|min:0',
-            'tax_type' => 'nullable|in:fixed,percent',
-            'tax_value' => 'nullable|numeric|min:0',
+'customer_name' => 'nullable|string|max:100',
+            'discount_type' => 'nullable|in:percentage,nominal',
+            'discount_value' => 'nullable|integer|min:0',
+            'tax_type' => 'nullable|in:percentage,nominal',
+            'tax_value' => 'nullable|integer|min:0',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1'
@@ -334,11 +334,11 @@ class OrderController extends Controller
             'outlet_id' => 'nullable|exists:outlets,id', // Dibuat nullable agar flutter tidak wajib kirim
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
-            'notes' => 'nullable|string|max:255',
-            'discount_type' => 'nullable|in:fixed,percent',
-            'discount_value' => 'nullable|numeric|min:0',
-            'tax_type' => 'nullable|in:fixed,percent',
-            'tax_value' => 'nullable|numeric|min:0',
+'notes' => 'nullable|string|max:255',
+            'discount_type' => 'nullable|in:percentage,nominal',
+            'discount_value' => 'nullable|integer|min:0',
+            'tax_type' => 'nullable|in:percentage,nominal',
+            'tax_value' => 'nullable|integer|min:0',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
@@ -579,10 +579,10 @@ class OrderController extends Controller
     public function updateAdjustments(Request $request, $orderId)
     {
         $validated = $request->validate([
-            'discount_type' => 'nullable|in:fixed,percent',
-            'discount_value' => 'nullable|numeric|min:0',
-            'tax_type' => 'nullable|in:fixed,percent',
-            'tax_value' => 'nullable|numeric|min:0',
+'discount_type' => 'nullable|in:percentage,nominal',
+            'discount_value' => 'nullable|integer|min:0',
+            'tax_type' => 'nullable|in:percentage,nominal',
+            'tax_value' => 'nullable|integer|min:0',
         ]);
 
         $order = Order::where('id', $orderId)
@@ -597,9 +597,9 @@ class OrderController extends Controller
 
         $this->recalculateOrderTotals($order, [
             'discount_type' => $adjustments['discount_type'],
-            'discount_value' => $adjustments['discount_type'] ? (float) $adjustments['discount_value'] : 0,
+            'discount_value' => $adjustments['discount_type'] ? (int) $adjustments['discount_value'] : 0,
             'tax_type' => $adjustments['tax_type'],
-            'tax_value' => $adjustments['tax_type'] ? (float) $adjustments['tax_value'] : 0,
+            'tax_value' => $adjustments['tax_type'] ? (int) $adjustments['tax_value'] : 0,
         ]);
 
         return response()->json([
@@ -622,9 +622,9 @@ class OrderController extends Controller
     private function resolveAdjustmentInput(array $validated): array
     {
         $discountType = $validated['discount_type'] ?? null;
-        $discountValue = isset($validated['discount_value']) ? (float) $validated['discount_value'] : null;
+        $discountValue = isset($validated['discount_value']) ? (int) $validated['discount_value'] : null;
         $taxType = $validated['tax_type'] ?? null;
-        $taxValue = isset($validated['tax_value']) ? (float) $validated['tax_value'] : null;
+        $taxValue = isset($validated['tax_value']) ? (int) $validated['tax_value'] : null;
 
         // Jika ada request diskon yang dikirim (tidak null)
         if ($discountType !== null || $discountValue !== null) {
@@ -650,13 +650,13 @@ class OrderController extends Controller
             ]);
         }
 
-        if ($discountType === 'percent' && $discountValue > 100) {
+        if ($discountType === 'percentage' && $discountValue > 100) {
             throw ValidationException::withMessages([
                 'discount_value' => ['discount_value persen maksimal 100'],
             ]);
         }
 
-        if ($taxType === 'percent' && $taxValue > 100) {
+        if ($taxType === 'percentage' && $taxValue > 100) {
             throw ValidationException::withMessages([
                 'tax_value' => ['tax_value persen maksimal 100'],
             ]);
@@ -664,9 +664,9 @@ class OrderController extends Controller
 
         return [
             'discount_type' => $discountType,
-            'discount_value' => $discountType ? round((float) $discountValue, 2) : null,
+            'discount_value' => $discountType ? (int) $discountValue : null,
             'tax_type' => $taxType,
-            'tax_value' => $taxType ? round((float) $taxValue, 2) : null,
+            'tax_value' => $taxType ? (int) $taxValue : null,
         ];
     }
 
@@ -695,9 +695,7 @@ class OrderController extends Controller
             $paymentMethod = 'split';
         }
 
-        $paidAmount = (int) $order->payments->sum(function ($payment) {
-            return (int) $payment->amount_paid - (int) $payment->change_amount;
-        });
+        $paidAmount = (int) $order->payments->sum(fn ($payment) => (int) $payment->amount_paid - (int) $payment->change_amount);
 
         $changeAmount = (int) $order->payments->sum('change_amount');
 
@@ -705,7 +703,7 @@ class OrderController extends Controller
             ['order_id' => $order->id],
             [
                 'outlet_id' => $order->outlet_id,
-                'payment_id' => $lastPayment?->id,
+'payment_id' => $lastPayment?->id ?? null,
                 'invoice_number' => $order->invoice_number,
                 'customer_name' => $order->customer_name,
                 'subtotal_price' => (int) $order->subtotal_price,
@@ -716,7 +714,7 @@ class OrderController extends Controller
                 'change_amount' => $changeAmount,
                 'payment_method' => $paymentMethod,
                 'paid_at' => $lastPayment?->paid_at ?? now(),
-                'cashier_id' => $lastPayment?->paid_by,
+'cashier_id' => $lastPayment?->paid_by ?? null,
                 'status' => 'paid',
                 'metadata' => [
                     'payments_count' => $order->payments->count(),
