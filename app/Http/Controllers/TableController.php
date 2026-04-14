@@ -12,12 +12,23 @@ class TableController extends Controller
         $user = auth()->user();
         $query = Table::with('outlet');
 
-        if ($user->role !== 'developer') {
+        // 1. FILTER BERDASARKAN ROLE
+        if ($user->role === 'karyawan') {
+            // Karyawan hanya melihat meja di cabangnya sendiri
             $query->where('outlet_id', $user->outlet_id);
-        } elseif ($request->filled('outlet_id')) {
+        } elseif ($user->role === 'manager') {
+            // Manager melihat meja dari SEMUA cabang yang dia miliki
+            $outletIds = \App\Models\Outlet::where('owner_id', $user->id)->pluck('id');
+            $query->whereIn('outlet_id', $outletIds);
+        }
+        // Jika Developer, tidak ada batasan (bisa lihat semua)
+
+        // 2. FILTER DARI DROPDOWN VUE (Pilih Outlet Tertentu)
+        if ($request->filled('outlet_id')) {
             $query->where('outlet_id', $request->outlet_id);
         }
 
+        // 3. FITUR PENCARIAN
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
