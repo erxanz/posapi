@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Discount;
 use App\Models\HistoryTransaction;
 use App\Models\Order;
 use App\Models\Outlet;
@@ -57,34 +56,117 @@ class OrderController extends Controller
      */
     public function store(Request $request)
     {
-        $total_price = $request->input('total_price', 0);
-        $discountAmount = 0;
-        if ($request->filled('discount_id')) {
-            $promo = Discount::find($request->discount_id);
+        $user = auth()->user();
 
-            // Validasi: Apakah promo aktif, tanggal sesuai, dan subtotal memenuhi min_purchase?
-            if ($promo && $promo->is_active && now()->between($promo->start_date, $promo->end_date)) {
-                if ($total_price >= $promo->min_purchase) {
-                    if ($promo->type === 'percentage') {
-                        $discountAmount = ($total_price * $promo->value) / 100;
-                    } else {
-                        $discountAmount = $promo->value;
+        // 1. Validasi Input
+        $request->validate([
+            'table_id' => 'nullable|exists:tables,id',
+            'customer_name' => 'nullable|string|max:255',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.product_id' => 'required|exists:products,id',
+            'items.*.qty' => 'required|integer|min:1',
+            'discount_id' => 'nullable|exists:discounts,id', // <-- VALIDASI ID PROMO
+        ]);
+
+        $outletId = $user->outlet_id;
+
+        DB::beginTransaction();
+
+        try {
+            $subtotalPrice = 0;
+            $orderItemsData = [];
+
+            // 2. Hitung Subtotal dan Cek Stok
+            foreach ($request->items as $item) {
+                // ... (Logika pengecekan stok Anda yang sudah ada tetap dipertahankan) ...
+
+                // Asumsi Anda sudah mendapatkan harga produk ($price)
+                $itemTotal = $price * $item['qty'];
+                $subtotalPrice += $itemTotal;
+
+                $orderItemsData[] = [
+                    'product_id' => $item['product_id'],
+                    'qty' => $item['qty'],
+                    'price' => $price,
+                    // ...
+                ];
+            }
+
+            // 3. LOGIKA KALKULASI DISKON
+            $discountAmount = 0;
+            $discountType = null;
+            $discountValue = null;
+
+            if ($request->filled('discount_id')) {
+                // Cari data promo berdasarkan ID yang dikirim dari kasir
+                $promo = \App\Models\Discount::find($request->discount_id);
+
+                // Pastikan promo ada, masih aktif, dan masih dalam periode tanggal berlakunya
+                if ($promo && $promo->is_active && now()->between($promo->start_date, $promo->end_date)) {
+
+                    // Cek Syarat Minimal Pembelian
+                    if ($subtotalPrice >= $promo->min_purchase) {
+
+                        $discountType = $promo->type;
+                        $discountValue = $promo->value;
+
+                        // Hitung nominal potongan
+                        if ($promo->type === 'percentage') {
+                            $discountAmount = ($subtotalPrice * $promo->value) / 100;
+                        } else {
+                            $discountAmount = $promo->value;
+                        }
+
+                        // Pastikan diskon tidak membuat total harga jadi minus
+                        if ($discountAmount > $subtotalPrice) {
+                            $discountAmount = $subtotalPrice;
+                        }
                     }
                 }
             }
+
+            // 4. Hitung Pajak (Jika Ada)
+            $taxAmount = 0;
+            // ... (Logika perhitungan pajak Anda) ...
+
+            // 5. Hitung Grand Total
+            $totalPrice = $subtotalPrice - $discountAmount + $taxAmount;
+
+            // 6. Simpan Data Order ke Database
+            $order = \App\Models\Order::create([
+                'outlet_id' => $outletId,
+                'user_id' => $user->id,
+                'table_id' => $request->table_id,
+                'invoice_number' => $this->generateInvoiceNumber($outletId),
+                'customer_name' => $request->customer_name,
+                'notes' => $request->notes,
+
+                'subtotal_price' => $subtotalPrice,
+                'discount_id' => $request->discount_id, // Simpan referensi ke master promo
+                'discount_type' => $discountType,
+                'discount_value' => $discountValue,
+                'discount_amount' => $discountAmount, // Simpan nominal potongan aslinya
+                'tax_amount' => $taxAmount,
+                'total_price' => $totalPrice,
+
+                'status' => 'pending',
+            ]);
+
+            // 7. Simpan Detail Item
+            // ... (Logika menyimpan order_items Anda) ...
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Pesanan berhasil dibuat',
+                'data' => $order->load('items.product', 'table')
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Gagal memproses pesanan: ' . $e->getMessage()], 500);
         }
-
-        // Simpan ke tabel orders
-        $order = Order::create([
-            'subtotal_price' => $total_price,
-            'discount_amount' => $discountAmount,
-            'total_price' => $total_price - $discountAmount,
-            'discount_id' => $request->discount_id,
-        ]);
-
-        return response()->json([
-            'message' => 'Gunakan endpoint checkout untuk membuat order'
-        ], 400);
     }
 
     /**
@@ -703,7 +785,7 @@ class OrderController extends Controller
             ['order_id' => $order->id],
             [
                 'outlet_id' => $order->outlet_id,
-'payment_id' => $lastPayment?->id ?? null,
+                'payment_id' => $lastPayment?->id ?? null,
                 'invoice_number' => $order->invoice_number,
                 'customer_name' => $order->customer_name,
                 'subtotal_price' => (int) $order->subtotal_price,
