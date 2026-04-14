@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ShiftKaryawan;
 use App\Models\Payment;
+use App\Models\ShiftKaryawan;
 use Illuminate\Http\Request;
 
 class ShiftKaryawanController extends Controller
@@ -16,19 +16,29 @@ class ShiftKaryawanController extends Controller
         ]);
 
         $activeShift = ShiftKaryawan::where('user_id', auth()->id())
-            ->where('status', 'active') // PERBAIKAN STATUS
+            ->where('status', 'active')
             ->first();
 
         if ($activeShift) {
             return response()->json(['message' => 'Anda masih memiliki shift aktif'], 400);
         }
 
+        // Auto shift_ke: next for today/outlet/user
+        $today = now()->toDateString();
+        $lastShift = ShiftKaryawan::where('user_id', auth()->id())
+            ->where('outlet_id', $validated['outlet_id'])
+            ->whereDate('started_at', $today)
+            ->max('shift_ke') ?? 0;
+        $shiftKe = $lastShift + 1;
+
         $shift = ShiftKaryawan::create([
             'user_id' => auth()->id(),
             'outlet_id' => $validated['outlet_id'],
-            'started_at' => now(), // PERBAIKAN KOLOM
+            'shift_ke' => $shiftKe,
+            'uang_awal' => $validated['uang_awal'] ?? 0,
+            'started_at' => now(),
             'opening_balance' => $validated['opening_balance'],
-            'status' => 'active', // PERBAIKAN STATUS
+            'status' => 'active',
         ]);
 
         return response()->json([
@@ -45,21 +55,21 @@ class ShiftKaryawanController extends Controller
         ]);
 
         $shift = ShiftKaryawan::where('user_id', auth()->id())
-            ->where('status', 'active') // PERBAIKAN STATUS
+            ->where('status', 'active')
             ->first();
 
         if (!$shift) {
             return response()->json(['message' => 'Tidak ada shift aktif'], 404);
         }
 
-        // PERBAIKAN: Hitung total uang tunai (Cash) menggunakan method dan kalkulasi kembalian
         $cashSales = Payment::where('method', 'cash')
             ->whereHas('order', function($query) use ($shift) {
                 $query->where('user_id', $shift->user_id)
                       ->where('outlet_id', $shift->outlet_id)
                       ->where('status', 'paid')
-                      ->where('created_at', '>=', $shift->started_at); // PERBAIKAN KOLOM
+                      ->where('created_at', '>=', $shift->started_at);
             })
+            ->where('paid_by', $shift->user_id)
             ->get()
             ->sum(function($payment) {
                 return $payment->amount_paid - $payment->change_amount;
