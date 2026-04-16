@@ -4,84 +4,87 @@ namespace App\Http\Controllers;
 
 use App\Models\Shift;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ShiftController extends Controller
 {
-    // Tampilkan daftar jadwal shift beserta karyawannya
     public function index(Request $request)
     {
-        $query = Shift::with('users:id,name');
+        try {
+            $query = Shift::with('users:id,name');
 
-        if ($request->has('outlet_id')) {
-            $query->where('outlet_id', $request->outlet_id);
+            if ($request->filled('outlet_id')) {
+                $query->where('outlet_id', $request->outlet_id);
+            }
+
+            return response()->json([
+                'data' => $query->latest()->get()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Database error: Pastikan tabel shift_user sudah di-migrate.', 'error' => $e->getMessage()], 500);
         }
-
-        $shifts = $query->get();
-
-        return response()->json(['data' => $shifts]);
     }
 
-    // Manager membuat jadwal shift baru
     public function store(Request $request)
     {
         $request->validate([
             'outlet_id'  => 'required|exists:outlets,id',
             'name'       => 'required|string',
-            'start_time' => 'required|date_format:H:i',
-            'end_time'   => 'required|date_format:H:i',
-            'user_ids'   => 'array', // Array ID Karyawan yang di-assign
-            'user_ids.*' => 'exists:users,id'
+            'start_time' => 'required',
+            'end_time'   => 'required',
+            'user_ids'   => 'nullable|array',
         ]);
 
-        // Buat Master Shift
-        $shift = Shift::create($request->only('outlet_id', 'name', 'start_time', 'end_time'));
+        DB::beginTransaction();
+        try {
+            $shift = Shift::create($request->only('outlet_id', 'name', 'start_time', 'end_time'));
 
-        // Assign karyawan ke dalam shift tersebut secara otomatis!
-        if ($request->has('user_ids')) {
-            $shift->users()->sync($request->user_ids);
+            if ($request->has('user_ids') && is_array($request->user_ids)) {
+                $shift->users()->sync($request->user_ids);
+            }
+
+            DB::commit();
+            return response()->json(['message' => 'Jadwal Shift berhasil dibuat', 'data' => $shift], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Gagal menyimpan', 'error' => $e->getMessage()], 500);
         }
-
-        return response()->json([
-            'message' => 'Jadwal Shift berhasil dibuat',
-            'data' => $shift->load('users:id,name')
-        ]);
     }
 
-    // Manager update shift (Misal: ganti jam atau tambah/kurangi karyawan)
-    public function update(Request $request, Shift $shift)
+    public function update(Request $request, $id)
     {
-        $validated = $request->validate([
-            'name'       => 'sometimes|string',
-            'start_time' => 'sometimes|date_format:H:i',
-            'end_time'   => 'sometimes|date_format:H:i',
-            'user_ids'   => 'sometimes|array',
-            'user_ids.*' => 'exists:users,id'
+        $request->validate([
+            'outlet_id'  => 'required|exists:outlets,id',
+            'name'       => 'required|string',
+            'start_time' => 'required',
+            'end_time'   => 'required',
+            'user_ids'   => 'nullable|array',
         ]);
 
-        $shift->update($validated);
+        $shift = Shift::findOrFail($id);
 
-        if ($request->has('user_ids')) {
-            // sync() otomatis menghapus karyawan yang uncheck dan menambah yang dicentang
-            $shift->users()->sync($request->user_ids);
+        DB::beginTransaction();
+        try {
+            $shift->update($request->only('outlet_id', 'name', 'start_time', 'end_time'));
+
+            if ($request->has('user_ids') && is_array($request->user_ids)) {
+                $shift->users()->sync($request->user_ids);
+            } else {
+                $shift->users()->detach(); // Kosongkan karyawan jika checkbox dihapus semua
+            }
+
+            DB::commit();
+            return response()->json(['message' => 'Jadwal Shift berhasil diperbarui']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Gagal update', 'error' => $e->getMessage()], 500);
         }
-
-        return response()->json([
-            'message' => 'Jadwal Shift berhasil diupdate'
-        ]);
     }
 
-    // Manager hapus shift
-    public function destroy(Shift $shift)
+    public function destroy($id)
     {
-        // Lepaskan semua relasi user dulu (biar aman kalau pakai pivot table)
-        $shift->users()->detach();
-
-        // Hapus shift
+        $shift = Shift::findOrFail($id);
         $shift->delete();
-
-        return response()->json([
-            'message' => 'Jadwal Shift berhasil dihapus'
-        ]);
+        return response()->json(['message' => 'Jadwal Shift berhasil dihapus']);
     }
 }
-

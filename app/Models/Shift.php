@@ -7,14 +7,18 @@ use Illuminate\Database\Eloquent\Model;
 
 class Shift extends Model
 {
-    /** @use HasFactory<\Database\Factories\ShiftFactory> */
     use HasFactory;
 
-    protected $guarded = [];
+    protected $guarded = ['id'];
 
-    // Relasis ke tabel user karyawan
+    // Relasi penting agar tidak error 500 saat ditarik oleh Controller
     public function users()
     {
         return $this->belongsToMany(User::class, 'shift_user');
+    }
+
+    public function outlet()
+    {
+        return $this->belongsTo(Outlet::class);
     }
 }
