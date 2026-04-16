@@ -268,6 +268,7 @@
                     </div>
                 </div>
             </details>
+        </div>
 
         <!-- Tables Meja - CLOSED by default -->
         <div class="section-card">
