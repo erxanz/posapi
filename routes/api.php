@@ -54,15 +54,6 @@ Route::prefix('v1')->group(function () {
         Route::get('/outlets/{outlet}/products', [OutletController::class, 'getProducts']);
         Route::post('/outlets/{outlet}/sync-products', [OutletController::class, 'syncProducts']);
 
-        // ================= USER (KARYAWAN) =================
-        Route::prefix('users/karyawan')->group(function () {
-            Route::post('/', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
-            Route::get('/', [UserController::class, 'listKaryawan'])->name('users.karyawan.list');
-            Route::get('/{karyawan}', [UserController::class, 'showKaryawan'])->name('users.karyawan.show');
-            Route::put('/{karyawan}', [UserController::class, 'updateKaryawan'])->name('users.karyawan.update');
-            Route::delete('/{karyawan}', [UserController::class, 'deleteKaryawan'])->name('users.karyawan.delete');
-        });
-
         // ================= USER (DEVELOPER) =================
         Route::prefix('users')->group(function () {
             Route::post('/', [UserController::class, 'createUser'])->name('users.create');
