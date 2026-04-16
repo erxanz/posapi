@@ -20,4 +20,9 @@ class Shift extends Model
     {
         return $this->belongsTo(Outlet::class);
     }
+
+    public function users()
+    {
+        return $this->belongsToMany(User::class, 'shift_user');
+    }
 }
