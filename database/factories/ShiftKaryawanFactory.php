@@ -17,21 +17,25 @@ class ShiftKaryawanFactory extends Factory
      */
     public function definition(): array
     {
-        $status = fake()->randomElement(['draft', 'active', 'closed']);
-        $startedAt = match ($status) {
-            'active' => now()->subMinutes(fake()->numberBetween(5, 240)),
-            'closed' => now()->subHours(fake()->numberBetween(1, 8)),
-            default => null,
-        };
-
         return [
             'outlet_id' => null,
             'user_id' => null,
-            'shift_ke' => fake()->randomElement([1, 2]),
-            'uang_awal' => fake()->numberBetween(0, 500000),
-            'started_at' => $startedAt,
-            'ended_at' => $status === 'closed' ? now() : null,
-            'status' => $status,
+            'shift_ke' => fake()->numberBetween(1, 3),
+            'uang_awal' => fake()->numberBetween(100000, 500000),
+            'started_at' => now()->subHours(fake()->numberBetween(1, 12))->subMinutes(fake()->numberBetween(0, 59)),
+            'ended_at' => null,
+            'opening_balance' => fake()->numberBetween(100000, 500000),
+            'status' => 'active',
         ];
+    }
+
+    public function closed()
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => 'closed',
+            'ended_at' => now(),
+            'closing_balance_system' => $attributes['opening_balance'] + fake()->numberBetween(0, 100000),
+            'closing_balance_actual' => $attributes['opening_balance'] + fake()->numberBetween(-50000, 150000),
+        ]);
     }
 }

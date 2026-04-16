@@ -2,18 +2,19 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use App\Models\User;
-use App\Models\Outlet;
 use App\Models\Category;
-use App\Models\Product;
-use App\Models\Table;
-use App\Models\Station;
-use App\Models\Order;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\DB;
 use App\Models\Discount;
+use App\Models\Order;
+use App\Models\Outlet;
+use App\Models\Product;
+use App\Models\ShiftKaryawan;
+use App\Models\Station;
+use App\Models\Table;
 use App\Models\Tax;
+use App\Models\User;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -235,19 +236,10 @@ class DatabaseSeeder extends Seeder
         // ================= SHIFT KARYAWAN =================
         foreach (User::where('role', 'karyawan')->get() as $karyawan) {
             $shiftCount = fake()->numberBetween(1, 3);
-            for ($s = 1; $s <= $shiftCount; $s++) {
-                DB::table('shift_karyawans')->insert([
-                    'outlet_id' => $karyawan->outlet_id,
-                    'user_id' => $karyawan->id,
-                    'shift_ke' => $s,
-                    'uang_awal' => fake()->numberBetween(100000, 500000),
-                    'started_at' => now()->subHours($s * 8)->subMinutes(fake()->numberBetween(0, 59)),
-                    'ended_at' => null,
-                    'status' => 'active',
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
+            ShiftKaryawan::factory()->count($shiftCount)->create([
+                'outlet_id' => $karyawan->outlet_id,
+                'user_id' => $karyawan->id,
+            ]);
         }
 
         // ================= PAYMENT =================
