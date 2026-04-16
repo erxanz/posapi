@@ -227,7 +227,7 @@
                     <h2 class="section-title" style="margin: 0;">Tables (Meja)</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-chair" style="color: #64748b; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-percent"
+                        <i class="fa-solid fa-chevron-down"
                             style="color: #64748b; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
@@ -270,29 +270,6 @@
             </details>
         </div>
 
-        <!-- Tables Meja - CLOSED by default -->
-        <div class="section-card">
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Tables Meja</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-box-open" style="color: #f59e0b; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #f59e0b; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-resource">API RES</span>
-                        <code class="api-path">/api/v1/tables</code>
-                        <span class="api-method-list">GET, POST, GET {id}, PUT, DELETE</span>
-                        <span class="note">Auth Required</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
         <!-- Products & Categories Section - CLOSED by default -->
         <div class="section-card">
             <details>
@@ -329,7 +306,7 @@
                     style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">Discounts product</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-box-open" style="color: #f59e0b; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-percent" style="color: #0bf53e; font-size: 1.125rem;"></i>
                         <i class="fa-solid fa-chevron-down"
                             style="color: #f59e0b; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
