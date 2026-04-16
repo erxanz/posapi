@@ -89,10 +89,10 @@ Route::prefix('v1')->group(function () {
         // Khusus untuk Dashboard Manager Vue (CRUD)
         Route::apiResource('shift-karyawans', ShiftKaryawanController::class)->only(['index', 'destroy', 'show']);
 
-Route::get('/shifts', [ShiftController::class, 'index']);
-Route::post('/shifts', [ShiftController::class, 'store']);
-Route::put('/shifts/{shift}', [ShiftController::class, 'update']);
-Route::delete('/shifts/{shift}', [ShiftController::class, 'destroy']);
+        Route::get('/shifts', [ShiftController::class, 'index']);
+        Route::post('/shifts', [ShiftController::class, 'store']);
+        Route::put('/shifts/{shift}', [ShiftController::class, 'update']);
+        Route::delete('/shifts/{shift}', [ShiftController::class, 'destroy']);
 
         // ================= HISTORY TRANSACTION =================
         Route::apiResource('history-transactions', HistoryTransactionController::class)
