@@ -9,13 +9,12 @@ class Shift extends Model
 {
     use HasFactory;
 
-    protected $guarded = ['id'];
-
-    // Relasi penting agar tidak error 500 saat ditarik oleh Controller
-    public function users()
-    {
-        return $this->belongsToMany(User::class, 'shift_user');
-    }
+    protected $fillable = [
+        'outlet_id',
+        'name',
+        'start_time',
+        'end_time'
+    ];
 
     public function outlet()
     {
