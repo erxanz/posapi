@@ -11,80 +11,128 @@ class ShiftController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = Shift::with('users:id,name');
+            $query = Shift::with(['users:id,name', 'outlet:id,name']);
 
             if ($request->filled('outlet_id')) {
                 $query->where('outlet_id', $request->outlet_id);
             }
 
+            $shifts = $query->latest()->get();
+
             return response()->json([
-                'data' => $query->latest()->get()
-            ]);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Database error: Pastikan tabel shift_user sudah di-migrate.', 'error' => $e->getMessage()], 500);
+                'data' => $shifts
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil data shift',
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'outlet_id'  => 'required|exists:outlets,id',
-            'name'       => 'required|string',
-            'start_time' => 'required',
-            'end_time'   => 'required',
+            'name'       => 'required|string|max:255',
+            'start_time' => 'required|date_format:H:i',
+            'end_time'   => 'required|date_format:H:i|after:start_time',
             'user_ids'   => 'nullable|array',
+            'user_ids.*' => 'exists:users,id',
         ]);
 
         DB::beginTransaction();
         try {
-            $shift = Shift::create($request->only('outlet_id', 'name', 'start_time', 'end_time'));
+            $shift = Shift::create([
+                'outlet_id'  => $validated['outlet_id'],
+                'name'       => $validated['name'],
+                'start_time' => $validated['start_time'],
+                'end_time'   => $validated['end_time'],
+            ]);
 
-            if ($request->has('user_ids') && is_array($request->user_ids)) {
-                $shift->users()->sync($request->user_ids);
-            }
+            $shift->users()->sync($request->input('user_ids', []));
 
             DB::commit();
-            return response()->json(['message' => 'Jadwal Shift berhasil dibuat', 'data' => $shift], 201);
-        } catch (\Exception $e) {
+
+            // Load relasi biar langsung kepakai di Vue
+            $shift->load(['users:id,name', 'outlet:id,name']);
+
+            return response()->json([
+                'message' => 'Jadwal Shift berhasil dibuat',
+                'data'    => $shift
+            ], 201);
+
+        } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Gagal menyimpan', 'error' => $e->getMessage()], 500);
+
+            return response()->json([
+                'message' => 'Gagal menyimpan',
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
 
     public function update(Request $request, $id)
     {
-        $request->validate([
+        $validated = $request->validate([
             'outlet_id'  => 'required|exists:outlets,id',
-            'name'       => 'required|string',
-            'start_time' => 'required',
-            'end_time'   => 'required',
+            'name'       => 'required|string|max:255',
+            'start_time' => 'required|date_format:H:i',
+            'end_time'   => 'required|date_format:H:i|after:start_time',
             'user_ids'   => 'nullable|array',
+            'user_ids.*' => 'exists:users,id',
         ]);
 
         $shift = Shift::findOrFail($id);
 
         DB::beginTransaction();
         try {
-            $shift->update($request->only('outlet_id', 'name', 'start_time', 'end_time'));
+            $shift->update([
+                'outlet_id'  => $validated['outlet_id'],
+                'name'       => $validated['name'],
+                'start_time' => $validated['start_time'],
+                'end_time'   => $validated['end_time'],
+            ]);
 
-            if ($request->has('user_ids') && is_array($request->user_ids)) {
-                $shift->users()->sync($request->user_ids);
-            } else {
-                $shift->users()->detach(); // Kosongkan karyawan jika checkbox dihapus semua
-            }
+            // Fix utama: tidak perlu detach manual lagi
+            $shift->users()->sync($request->input('user_ids', []));
 
             DB::commit();
-            return response()->json(['message' => 'Jadwal Shift berhasil diperbarui']);
-        } catch (\Exception $e) {
+
+            $shift->load(['users:id,name', 'outlet:id,name']);
+
+            return response()->json([
+                'message' => 'Jadwal Shift berhasil diperbarui',
+                'data'    => $shift
+            ], 200);
+
+        } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Gagal update', 'error' => $e->getMessage()], 500);
+
+            return response()->json([
+                'message' => 'Gagal update',
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
 
     public function destroy($id)
     {
-        $shift = Shift::findOrFail($id);
-        $shift->delete();
-        return response()->json(['message' => 'Jadwal Shift berhasil dihapus']);
+        try {
+            $shift = Shift::findOrFail($id);
+            $shift->users()->detach(); // optional tapi aman
+            $shift->delete();
+
+            return response()->json([
+                'message' => 'Jadwal Shift berhasil dihapus'
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal menghapus',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
     }
 }
