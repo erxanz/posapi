@@ -12,6 +12,8 @@ use App\Models\Station;
 use App\Models\Order;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
+use App\Models\Discount;
+use App\Models\Tax;
 
 class DatabaseSeeder extends Seeder
 {
@@ -334,6 +336,10 @@ class DatabaseSeeder extends Seeder
                 ]);
             }
         }
+
+        // Seed Discounts and Taxes
+        Discount::factory(10)->create();
+        Tax::factory(5)->create();
 
         // ================= SUMMARY =================
         $outletCount = Outlet::count();

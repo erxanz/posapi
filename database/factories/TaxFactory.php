@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Tax;
+use App\Models\Outlet;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -21,7 +22,7 @@ class TaxFactory extends Factory
             'name' => fake()->words(2, true),
             'rate' => fake()->randomFloat(4, 0, 25),
             'type' => fake()->randomElement(['percentage', 'fixed']),
-            'outlet_id' => \App\Models\Outlet::factory(),
+            'outlet_id' => fn () => Outlet::inRandomOrder()->first()?->id ?? 1,
             'active' => fake()->boolean(90),
         ];
     }

@@ -25,7 +25,7 @@ class DiscountFactory extends Factory
         $type = fake()->randomElement($types);
 
         return [
-            'owner_id' => User::factory(),
+            'owner_id' => fn () => User::whereIn('role', ['manager', 'developer'])->inRandomOrder()->first()?->id ?? 1,
             'name' => fake()->words(3, true),
             'type' => $type,
             'value' => $type === 'percentage' ? fake()->numberBetween(5, 50) : fake()->numberBetween(5000, 50000),
