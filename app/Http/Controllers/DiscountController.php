@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Discount;
+use App\Models\Outlet;
 use Illuminate\Http\Request;
 
 class DiscountController extends Controller
@@ -10,12 +11,32 @@ class DiscountController extends Controller
     public function index() {
         $user = auth()->user();
 
-        // Developer bisa melihat semua
+        // 1. DEVELOPER (Bisa melihat semua diskon)
         if ($user->role === 'developer') {
             return response()->json(Discount::latest()->get());
         }
 
-        // Manager hanya melihat promo milik cabangnya sendiri
+        // 2. KARYAWAN / KASIR FLUTTER (Hanya melihat diskon yang AKTIF milik Manager-nya)
+        if ($user->role === 'karyawan') {
+            // Cari outlet tempat karyawan ini bekerja
+            $outlet = Outlet::find($user->outlet_id);
+
+            if (!$outlet) {
+                return response()->json([]);
+            }
+
+            // Ambil diskon buatan manager (owner_id) yang aktif dan tanggalnya valid
+            $discounts = Discount::where('owner_id', $outlet->owner_id)
+                ->where('is_active', true)
+                ->whereDate('start_date', '<=', now())
+                ->whereDate('end_date', '>=', now())
+                ->latest()
+                ->get();
+
+            return response()->json($discounts);
+        }
+
+        // 3. MANAGER (Melihat semua diskon yang ia buat, aktif maupun tidak)
         return response()->json(Discount::where('owner_id', $user->id)->latest()->get());
     }
 
@@ -30,7 +51,6 @@ class DiscountController extends Controller
             'is_active' => 'required|boolean'
         ]);
 
-        // PERBAIKAN: Otomatis assign owner_id (Manager yang sedang login)
         $data['owner_id'] = auth()->id();
 
         $discount = Discount::create($data);
