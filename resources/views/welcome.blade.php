@@ -227,7 +227,7 @@
                     <h2 class="section-title" style="margin: 0;">Tables (Meja)</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-chair" style="color: #64748b; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
+                        <i class="fa-solid fa-percent"
                             style="color: #64748b; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
