@@ -39,7 +39,8 @@
     <main class="main-container">
         <!-- Auth Section - OPEN by default -->
         <div class="section-card">
-            <details open>
+            {{-- <details open> --}}
+            <details>
                 <summary
                     style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">Authentication</h2>
