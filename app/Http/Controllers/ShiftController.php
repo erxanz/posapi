@@ -10,7 +10,14 @@ class ShiftController extends Controller
     // Tampilkan daftar jadwal shift beserta karyawannya
     public function index(Request $request)
     {
-        $shifts = Shift::with('users:id,name')->where('outlet_id', $request->outlet_id)->get();
+        $query = Shift::with('users:id,name');
+
+        if ($request->has('outlet_id')) {
+            $query->where('outlet_id', $request->outlet_id);
+        }
+
+        $shifts = $query->get();
+
         return response()->json(['data' => $shifts]);
     }
 
@@ -34,20 +41,47 @@ class ShiftController extends Controller
             $shift->users()->sync($request->user_ids);
         }
 
-        return response()->json(['message' => 'Jadwal Shift berhasil dibuat', 'data' => $shift]);
+        return response()->json([
+            'message' => 'Jadwal Shift berhasil dibuat',
+            'data' => $shift->load('users:id,name')
+        ]);
     }
 
     // Manager update shift (Misal: ganti jam atau tambah/kurangi karyawan)
     public function update(Request $request, Shift $shift)
     {
-        $shift->update($request->only('name', 'start_time', 'end_time'));
+        $validated = $request->validate([
+            'name'       => 'sometimes|string',
+            'start_time' => 'sometimes|date_format:H:i',
+            'end_time'   => 'sometimes|date_format:H:i',
+            'user_ids'   => 'sometimes|array',
+            'user_ids.*' => 'exists:users,id'
+        ]);
+
+        $shift->update($validated);
 
         if ($request->has('user_ids')) {
             // sync() otomatis menghapus karyawan yang uncheck dan menambah yang dicentang
             $shift->users()->sync($request->user_ids);
         }
 
-        return response()->json(['message' => 'Jadwal Shift berhasil diupdate']);
+        return response()->json([
+            'message' => 'Jadwal Shift berhasil diupdate'
+        ]);
+    }
+
+    // Manager hapus shift
+    public function destroy(Shift $shift)
+    {
+        // Lepaskan semua relasi user dulu (biar aman kalau pakai pivot table)
+        $shift->users()->detach();
+
+        // Hapus shift
+        $shift->delete();
+
+        return response()->json([
+            'message' => 'Jadwal Shift berhasil dihapus'
+        ]);
     }
 }
 
