@@ -97,4 +97,10 @@ class User extends Authenticatable
     {
         return $this->role === 'karyawan';
     }
+
+    // Relasi ke tabel karyawan
+    public function shifts()
+    {
+        return $this->belongsToMany(Shift::class, 'shift_user');
+    }
 }
