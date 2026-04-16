@@ -54,9 +54,6 @@ Route::prefix('v1')->group(function () {
         Route::get('/outlets/{outlet}/products', [OutletController::class, 'getProducts']);
         Route::post('/outlets/{outlet}/sync-products', [OutletController::class, 'syncProducts']);
 
-        // ================= TABLE =================
-        Route::apiResource('tables', TableController::class);
-
         // ================= USER (KARYAWAN) =================
         Route::prefix('users/karyawan')->group(function () {
             Route::post('/', [UserController::class, 'createKaryawan'])->name('users.karyawan.create');
@@ -74,6 +71,9 @@ Route::prefix('v1')->group(function () {
             Route::put('/{id}', [UserController::class, 'updateUser'])->name('users.update');
             Route::delete('/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
         });
+
+        // ================= TABLE =================
+        Route::apiResource('tables', TableController::class);
 
         // ================= CATEGORY =================
         Route::apiResource('categories', CategoryController::class);
