@@ -31,7 +31,6 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
 
             $table->timestamps();
-            $table->softDeletes();
 
             // INDEX & CONSTRAINT
             $table->unique(['outlet_id', 'name']); // nama unik per outlet

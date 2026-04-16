@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 use App\Models\Outlet;
 use App\Models\Order;
@@ -12,7 +11,6 @@ use App\Models\Order;
 class Table extends Model
 {
     use HasFactory;
-    use SoftDeletes;
 
     protected $fillable = [
         'outlet_id',
