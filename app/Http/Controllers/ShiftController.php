@@ -13,92 +13,106 @@ class ShiftController extends Controller
     {
         try {
             $user = auth()->user();
-            $query = Shift::with('users:id,name');
+            $query = Shift::with(['users:id,name', 'outlet:id,name']);
 
-            // ==========================================
-            // 1. FILTER RBAC (ROLE-BASED ACCESS CONTROL)
-            // ==========================================
-            if ($user->role === 'manager') {
-                // Manager hanya boleh melihat jadwal di outlet miliknya
+            // FITUR RBAC: Filter data berdasarkan siapa yang login
+            if ($user && $user->role === 'manager') {
                 $outletIds = Outlet::where('user_id', $user->id)
                                    ->orWhere('owner_id', $user->id)
                                    ->pluck('id');
-
                 $query->whereIn('outlet_id', $outletIds);
-            } elseif ($user->role === 'karyawan') {
-                // Karyawan hanya melihat jadwal di tempat dia ditempatkan
+            } elseif ($user && $user->role === 'karyawan') {
                 $query->where('outlet_id', $user->outlet_id);
             }
-            // Jika Developer, lewati filter ini (Bisa melihat semua jadwal)
 
-            // ==========================================
-            // 2. FILTER DROPDOWN OUTLET VUE
-            // ==========================================
             if ($request->filled('outlet_id')) {
                 $query->where('outlet_id', $request->outlet_id);
             }
 
+            $shifts = $query->latest()->get();
+
             return response()->json([
-                'data' => $query->latest()->get()
-            ]);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Database error.', 'error' => $e->getMessage()], 500);
+                'data' => $shifts
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil data shift',
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'outlet_id'  => 'required|exists:outlets,id',
-            'name'       => 'required|string',
-            'start_time' => 'required',
-            'end_time'   => 'required',
+            'name'       => 'required|string|max:255',
+            'start_time' => 'required|date_format:H:i',
+            'end_time'   => 'required|date_format:H:i', // Dihapus: |after:start_time agar bisa shift malam (lintas hari)
             'user_ids'   => 'nullable|array',
+            'user_ids.*' => 'exists:users,id',
         ]);
 
-        // Cek Keamanan: Pastikan Manager tidak bisa membuat jadwal untuk Outlet orang lain
+        // CEK KEAMANAN: Pastikan manager tidak menginput ke outlet orang lain
         $user = auth()->user();
-        if ($user->role === 'manager') {
-            $isOwner = Outlet::where('id', $request->outlet_id)
+        if ($user && $user->role === 'manager') {
+            $isOwner = Outlet::where('id', $validated['outlet_id'])
                              ->where(function($q) use ($user) {
                                  $q->where('user_id', $user->id)->orWhere('owner_id', $user->id);
                              })->exists();
             if (!$isOwner) {
-                return response()->json(['message' => 'Anda tidak memiliki akses ke outlet ini.'], 403);
+                return response()->json(['message' => 'Akses ditolak. Anda tidak memiliki outlet ini.'], 403);
             }
         }
 
         DB::beginTransaction();
         try {
-            $shift = Shift::create($request->only('outlet_id', 'name', 'start_time', 'end_time'));
+            $shift = Shift::create([
+                'outlet_id'  => $validated['outlet_id'],
+                'name'       => $validated['name'],
+                'start_time' => $validated['start_time'],
+                'end_time'   => $validated['end_time'],
+            ]);
 
-            if ($request->has('user_ids') && is_array($request->user_ids)) {
-                $shift->users()->sync($request->user_ids);
-            }
+            $shift->users()->sync($request->input('user_ids', []));
 
             DB::commit();
-            return response()->json(['message' => 'Jadwal Shift berhasil dibuat', 'data' => $shift], 201);
-        } catch (\Exception $e) {
+
+            // Load relasi biar langsung kepakai di Vue
+            $shift->load(['users:id,name', 'outlet:id,name']);
+
+            return response()->json([
+                'message' => 'Jadwal Shift berhasil dibuat',
+                'data'    => $shift
+            ], 201);
+
+        } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Gagal menyimpan', 'error' => $e->getMessage()], 500);
+
+            return response()->json([
+                'message' => 'Gagal menyimpan',
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
 
     public function update(Request $request, $id)
     {
-        $request->validate([
+        $validated = $request->validate([
             'outlet_id'  => 'required|exists:outlets,id',
-            'name'       => 'required|string',
-            'start_time' => 'required',
-            'end_time'   => 'required',
+            'name'       => 'required|string|max:255',
+            'start_time' => 'required|date_format:H:i',
+            'end_time'   => 'required|date_format:H:i',
             'user_ids'   => 'nullable|array',
+            'user_ids.*' => 'exists:users,id',
         ]);
 
         $shift = Shift::findOrFail($id);
 
-        // Cek Keamanan RBAC
+        // CEK KEAMANAN RBAC
         $user = auth()->user();
-        if ($user->role === 'manager') {
+        if ($user && $user->role === 'manager') {
             $isOwner = Outlet::where('id', $shift->outlet_id)
                              ->where(function($q) use ($user) {
                                  $q->where('user_id', $user->id)->orWhere('owner_id', $user->id);
@@ -110,39 +124,64 @@ class ShiftController extends Controller
 
         DB::beginTransaction();
         try {
-            $shift->update($request->only('outlet_id', 'name', 'start_time', 'end_time'));
+            $shift->update([
+                'outlet_id'  => $validated['outlet_id'],
+                'name'       => $validated['name'],
+                'start_time' => $validated['start_time'],
+                'end_time'   => $validated['end_time'],
+            ]);
 
-            if ($request->has('user_ids') && is_array($request->user_ids)) {
-                $shift->users()->sync($request->user_ids);
-            } else {
-                $shift->users()->detach();
-            }
+            // Fix utama: tidak perlu detach manual lagi
+            $shift->users()->sync($request->input('user_ids', []));
 
             DB::commit();
-            return response()->json(['message' => 'Jadwal Shift berhasil diperbarui']);
-        } catch (\Exception $e) {
+
+            $shift->load(['users:id,name', 'outlet:id,name']);
+
+            return response()->json([
+                'message' => 'Jadwal Shift berhasil diperbarui',
+                'data'    => $shift
+            ], 200);
+
+        } catch (\Throwable $e) {
             DB::rollBack();
-            return response()->json(['message' => 'Gagal update', 'error' => $e->getMessage()], 500);
+
+            return response()->json([
+                'message' => 'Gagal update',
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
 
     public function destroy($id)
     {
-        $shift = Shift::findOrFail($id);
+        try {
+            $shift = Shift::findOrFail($id);
 
-        // Cek Keamanan RBAC
-        $user = auth()->user();
-        if ($user->role === 'manager') {
-            $isOwner = Outlet::where('id', $shift->outlet_id)
-                        ->where(function($q) use ($user) {
-                            $q->where('user_id', $user->id)->orWhere('owner_id', $user->id);
-                        })->exists();
-            if (!$isOwner) {
-                return response()->json(['message' => 'Akses ditolak.'], 403);
+            // CEK KEAMANAN RBAC
+            $user = auth()->user();
+            if ($user && $user->role === 'manager') {
+                $isOwner = Outlet::where('id', $shift->outlet_id)
+                                ->where(function($q) use ($user) {
+                                    $q->where('user_id', $user->id)->orWhere('owner_id', $user->id);
+                                })->exists();
+                if (!$isOwner) {
+                    return response()->json(['message' => 'Akses ditolak.'], 403);
+                }
             }
-        }
 
-        $shift->delete();
-        return response()->json(['message' => 'Jadwal Shift berhasil dihapus']);
+            $shift->users()->detach(); // optional tapi aman
+            $shift->delete();
+
+            return response()->json([
+                'message' => 'Jadwal Shift berhasil dihapus'
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal menghapus',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
     }
 }
