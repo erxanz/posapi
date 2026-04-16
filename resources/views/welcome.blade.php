@@ -425,7 +425,7 @@
         </div>
 
         <!-- Database Schema Section - CLOSED by default -->
-        <div class="section-card">
+        {{-- <div class="section-card">
             <details>
                 <summary
                     style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
@@ -1002,7 +1002,7 @@
                     </div>
                 </div>
             </details>
-        </div>
+        </div> --}}
     </main>
 
     <script>
