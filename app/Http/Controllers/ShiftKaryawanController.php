@@ -8,6 +8,38 @@ use Illuminate\Http\Request;
 
 class ShiftKaryawanController extends Controller
 {
+    // ==========================================
+    // 1. CRUD UNTUK DASHBOARD MANAGER / ADMIN
+    // ==========================================
+    public function index(Request $request)
+    {
+        $user = auth()->user();
+        $query = ShiftKaryawan::with(['user', 'outlet']);
+
+        // Filter berdasarkan Role (Manager hanya melihat outlet miliknya)
+        if ($user->role === 'manager') {
+            $outletIds = \App\Models\Outlet::where('owner_id', $user->id)->pluck('id');
+            $query->whereIn('outlet_id', $outletIds);
+        }
+
+        // Filter dari dropdown Vue (opsional)
+        if ($request->filled('outlet_id')) {
+            $query->where('outlet_id', $request->outlet_id);
+        }
+
+        return response()->json($query->latest()->paginate($request->limit ?? 15));
+    }
+
+    public function destroy($id)
+    {
+        $shift = ShiftKaryawan::findOrFail($id);
+        $shift->delete();
+        return response()->json(['message' => 'Data shift berhasil dihapus.']);
+    }
+
+    // ==========================================
+    // 2. FUNGSI UNTUK APLIKASI KASIR (FLUTTER)
+    // ==========================================
     public function startShift(Request $request)
     {
         $validated = $request->validate([
@@ -23,21 +55,20 @@ class ShiftKaryawanController extends Controller
             return response()->json(['message' => 'Anda masih memiliki shift aktif'], 400);
         }
 
-        // Auto shift_ke: next for today/outlet/user
         $today = now()->toDateString();
         $lastShift = ShiftKaryawan::where('user_id', auth()->id())
             ->where('outlet_id', $validated['outlet_id'])
             ->whereDate('started_at', $today)
             ->max('shift_ke') ?? 0;
+
         $shiftKe = $lastShift + 1;
 
         $shift = ShiftKaryawan::create([
             'user_id' => auth()->id(),
             'outlet_id' => $validated['outlet_id'],
             'shift_ke' => $shiftKe,
-            'uang_awal' => $validated['uang_awal'] ?? 0,
-            'started_at' => now(),
             'opening_balance' => $validated['opening_balance'],
+            'started_at' => now(),
             'status' => 'active',
         ]);
 
@@ -62,6 +93,7 @@ class ShiftKaryawanController extends Controller
             return response()->json(['message' => 'Tidak ada shift aktif'], 404);
         }
 
+        // Ambil penjualan CASH saja untuk drawer
         $cashSales = Payment::where('method', 'cash')
             ->whereHas('order', function($query) use ($shift) {
                 $query->where('user_id', $shift->user_id)
@@ -81,8 +113,8 @@ class ShiftKaryawanController extends Controller
 
         // Update data shift
         $shift->update([
-            'ended_at' => now(), // PERBAIKAN KOLOM
-            'status' => 'closed', // PERBAIKAN STATUS
+            'ended_at' => now(),
+            'status' => 'closed',
             'closing_balance_system' => $systemBalance,
             'closing_balance_actual' => $validated['actual_closing_balance'],
             'difference' => $difference,

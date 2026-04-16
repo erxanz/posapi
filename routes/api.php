@@ -81,7 +81,12 @@ Route::prefix('v1')->group(function () {
         Route::get('/stations/{id}/products', [StationController::class, 'products'])->name('stations.products');
 
         // ================= SHIFT KARYAWAN =================
-        Route::apiResource('shift-karyawans', ShiftKaryawanController::class);
+        // Khusus untuk Flutter (Action Kasir)
+        Route::post('shift-karyawans/start', [ShiftKaryawanController::class, 'startShift']);
+        Route::post('shift-karyawans/end', [ShiftKaryawanController::class, 'endShift']);
+
+        // Khusus untuk Dashboard Manager Vue (CRUD)
+        Route::apiResource('shift-karyawans', ShiftKaryawanController::class)->only(['index', 'destroy', 'show']);
 
         // ================= HISTORY TRANSACTION =================
         Route::apiResource('history-transactions', HistoryTransactionController::class)
