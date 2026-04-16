@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\ShiftKaryawan;
+use App\Models\Shift;
 use App\Models\Station;
 use App\Models\Table;
 use App\Models\Tax;
@@ -66,6 +67,14 @@ class DatabaseSeeder extends Seeder
                 ]);
                 $counter++;
             }
+
+            // ================= CREATE MASTER SHIFTS =================
+            Shift::factory()->pagi()->create([
+                'outlet_id' => $outlet->id,
+            ]);
+            Shift::factory()->malam()->create([
+                'outlet_id' => $outlet->id,
+            ]);
         }
 
         // ================= CATEGORY & PRODUCT =================
@@ -235,7 +244,7 @@ class DatabaseSeeder extends Seeder
 
         // ================= SHIFT KARYAWAN =================
         foreach (User::where('role', 'karyawan')->get() as $karyawan) {
-            $shiftCount = fake()->numberBetween(1, 3);
+            $shiftCount = 60; // 2 shifts per day x 30 days for sebulan data
             ShiftKaryawan::factory()->count($shiftCount)->create([
                 'outlet_id' => $karyawan->outlet_id,
                 'user_id' => $karyawan->id,

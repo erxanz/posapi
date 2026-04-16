@@ -9,6 +9,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OutletController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ShiftKaryawanController;
+use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\StationController;
 use App\Http\Controllers\TableController;
 use App\Http\Controllers\UserController;
@@ -87,6 +88,10 @@ Route::prefix('v1')->group(function () {
 
         // Khusus untuk Dashboard Manager Vue (CRUD)
         Route::apiResource('shift-karyawans', ShiftKaryawanController::class)->only(['index', 'destroy', 'show']);
+
+        Route::get('/shifts', [ShiftController::class, 'index']);
+        Route::post('/shifts', [ShiftController::class, 'store']);
+        Route::put('/shifts/{id}', [ShiftController::class, 'update']);
 
         // ================= HISTORY TRANSACTION =================
         Route::apiResource('history-transactions', HistoryTransactionController::class)
