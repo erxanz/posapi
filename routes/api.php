@@ -91,13 +91,11 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/shifts', [ShiftController::class, 'index']);
         Route::post('/shifts', [ShiftController::class, 'store']);
-        Route::put('/shifts/{shift}', [ShiftController::class, 'update']);
-        Route::delete('/shifts/{shift}', [ShiftController::class, 'destroy']);
+        Route::put('/shifts/{id}', [ShiftController::class, 'update']);
+        Route::delete('/shifts/{id}', [ShiftController::class, 'destroy']);
 
         // ================= HISTORY TRANSACTION =================
-        Route::apiResource('history-transactions', HistoryTransactionController::class)
-            ->only(['index', 'show']);
-
+        Route::apiResource('history-transactions', HistoryTransactionController::class)->only(['index', 'show']);
 
         // ================= ORDER =================
         Route::prefix('orders')->group(function () {
