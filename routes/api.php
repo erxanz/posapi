@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DiscountController;
+use App\Http\Controllers\TaxController;
 use App\Http\Controllers\HistoryTransactionController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OutletController;
@@ -73,6 +74,7 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('products', ProductController::class);
 
         Route::apiResource('discounts', DiscountController::class);
+        Route::apiResource('taxes', TaxController::class);
 
         // ================= STATION =================
         Route::apiResource('stations', StationController::class);
