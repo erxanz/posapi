@@ -3,7 +3,6 @@
 namespace Database\Factories;
 
 use App\Models\Tax;
-use App\Models\Outlet;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -11,6 +10,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class TaxFactory extends Factory
 {
+    protected $model = Tax::class;
+
     /**
      * Define the model's default state.
      *
@@ -22,7 +23,7 @@ class TaxFactory extends Factory
             'name' => fake()->words(2, true),
             'rate' => fake()->randomFloat(4, 0, 25),
             'type' => fake()->randomElement(['percentage', 'fixed']),
-            'outlet_id' => fn () => Outlet::inRandomOrder()->first()?->id ?? 1,
+            'outlet_id' => fn () => \App\Models\Outlet::inRandomOrder()->first()?->id ?? \App\Models\Outlet::factory()->create()->id,
             'active' => fake()->boolean(90),
         ];
     }

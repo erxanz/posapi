@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Category;
-use App\Models\Discount;
 use App\Models\Order;
 use App\Models\Outlet;
 use App\Models\Product;
@@ -11,7 +10,6 @@ use App\Models\ShiftKaryawan;
 use App\Models\Shift;
 use App\Models\Station;
 use App\Models\Table;
-use App\Models\Tax;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -172,6 +170,18 @@ class DatabaseSeeder extends Seeder
                 }
             }
 
+            // ================= DISCOUNTS & TAXES PER OUTLET =================
+            \App\Models\Discount::factory()
+                ->count(3)
+                ->create(['owner_id' => $outlet->owner_id]);
+            \App\Models\Discount::factory()
+                ->lunchSpecial()
+                ->create(['owner_id' => $outlet->owner_id]);
+
+            \App\Models\Tax::factory()
+                ->count(2)
+                ->create(['outlet_id' => $outlet->id]);
+
             // ================= SAMPLE ORDER =================
             $tables = Table::where('outlet_id', $outlet->id)->orderBy('id')->get();
             $products = $outlet->products()->orderBy('products.id')->get();
@@ -186,19 +196,20 @@ class DatabaseSeeder extends Seeder
                 $selectedUser = $users[$o % $users->count()];
                 $selectedTable = $tables[$o % $tables->count()];
 
-                $order = Order::factory()->create([
-                    'outlet_id' => $outlet->id,
-                    'user_id' => $selectedUser->id,
-                    'table_id' => $selectedTable->id,
-                    'customer_name' => 'Customer ' . $outlet->id . '-' . ($o + 1),
-                    'notes' => null,
-                    'invoice_number' => 'INV-' . str_pad((string) $outlet->id, 2, '0', STR_PAD_LEFT) . '-' . str_pad((string) ($o + 1), 4, '0', STR_PAD_LEFT),
-                    'subtotal_price' => 0,
-                    'discount_amount' => 0,
-                    'tax_amount' => 0,
-                    'status' => $status,
-                    'total_price' => 0,
-                ]);
+                $order = Order::factory()
+                    ->{$status}() // pending() atau paid()
+                    ->full()
+                    ->create([
+                        'outlet_id' => $outlet->id,
+                        'user_id' => $selectedUser->id,
+                        'table_id' => $selectedTable->id,
+                        'customer_name' => 'Customer ' . $outlet->id . '-' . ($o + 1),
+                        'notes' => null,
+                        'invoice_number' => 'INV-' . str_pad((string) $outlet->id, 2, '0', STR_PAD_LEFT) . '-' . str_pad((string) ($o + 1), 4, '0', STR_PAD_LEFT),
+                    ]);
+
+                // Recalculate totals with discount/tax
+                $order->recalculateTotals();
 
                 $pickedProducts = $products->slice($o * 2, 2);
                 if ($pickedProducts->isEmpty()) {
@@ -225,9 +236,9 @@ class DatabaseSeeder extends Seeder
                     $total += $subtotal;
                 }
 
+                // Subtotal already recalculated with discount/tax, update only if needed
                 $order->update([
                     'subtotal_price' => $total,
-                    'total_price' => $total,
                 ]);
 
                 // order pending -> meja occupied, order paid -> meja available
@@ -311,32 +322,26 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // HISTORY TRANSACTION sudah dibuat di loop payment, jadi tidak perlu dibuat lagi
-        foreach (Order::where('status', 'paid')->get() as $order) {
-            if (!$order->historyTransaction) {
-                DB::table('history_transactions')->insert([
-                    'outlet_id' => $order->outlet_id,
-                    'order_id' => $order->id,
-                    'invoice_number' => $order->invoice_number,
-                    'customer_name' => $order->customer_name,
-                    'subtotal_price' => (int) $order->subtotal_price,
-                    'discount_amount' => (int) $order->discount_amount,
-                    'tax_amount' => (int) $order->tax_amount,
-                    'total_price' => (int) $order->total_price,
-                    'status' => 'cancelled',
-                    'metadata' => json_encode([
-                        'seeded' => true,
-                        'payments_count' => 0,
-                    ]),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
+        // Create history for cancelled orders (no payment)
+        foreach (Order::where('status', 'cancelled')->get() as $order) {
+            DB::table('history_transactions')->insert([
+                'outlet_id' => $order->outlet_id,
+                'order_id' => $order->id,
+                'invoice_number' => $order->invoice_number,
+                'customer_name' => $order->customer_name,
+                'subtotal_price' => (int) $order->subtotal_price,
+                'discount_amount' => (int) $order->discount_amount,
+                'tax_amount' => (int) $order->tax_amount,
+                'total_price' => (int) $order->total_price,
+                'status' => 'cancelled',
+                'metadata' => json_encode([
+                    'seeded' => true,
+                    'payments_count' => 0,
+                ]),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
         }
-
-        // Seed Discounts and Taxes
-        Discount::factory(10)->create();
-        Tax::factory(5)->create();
 
         // ================= SUMMARY =================
         $outletCount = Outlet::count();

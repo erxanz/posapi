@@ -2,20 +2,11 @@
 
 namespace Database\Factories;
 
-use App\Models\Order;
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * @extends Factory<Order>
- */
 class OrderFactory extends Factory
 {
-    /**
-     * Define the model's default state.
-     *
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
         $subtotal = fake()->numberBetween(10000, 250000);
@@ -47,5 +38,43 @@ class OrderFactory extends Factory
         return $this->state(fn () => [
             'status' => 'paid',
         ]);
+    }
+
+    public function withDiscount(): static
+    {
+        return $this->state(function (array $attributes) {
+            $discount = fake()->numberBetween(5000, 50000);
+
+            return [
+                'discount_amount' => $discount,
+                'total_price' => $attributes['subtotal_price'] - $discount,
+            ];
+        });
+    }
+
+    public function withTax(): static
+    {
+        return $this->state(function (array $attributes) {
+            $tax = fake()->numberBetween(1000, 20000);
+
+            return [
+                'tax_amount' => $tax,
+                'total_price' => $attributes['subtotal_price'] + $tax,
+            ];
+        });
+    }
+
+    public function full(): static
+    {
+        return $this->state(function (array $attributes) {
+            $discount = fake()->numberBetween(5000, 30000);
+            $tax = fake()->numberBetween(2000, 10000);
+
+            return [
+                'discount_amount' => $discount,
+                'tax_amount' => $tax,
+                'total_price' => $attributes['subtotal_price'] - $discount + $tax,
+            ];
+        });
     }
 }
