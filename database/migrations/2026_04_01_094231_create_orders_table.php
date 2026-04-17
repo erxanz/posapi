@@ -23,7 +23,7 @@ return new class extends Migration
             $table->string('notes')->nullable();
 
             // FIX relasi table
-            $table->foreignId('table_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('table_id')->nullable()->constrained('tables')->nullOnDelete();
 
             $table->string('invoice_number')->unique();
 
