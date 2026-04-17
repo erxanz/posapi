@@ -37,6 +37,10 @@ return new class extends Migration
             $table->index('outlet_id');
             $table->index('status');
         });
+
+        Schema::table('orders', function (Blueprint $table) {
+            $table->foreign('table_id')->references('id')->on('tables')->nullOnDelete();
+        });
     }
 
     /**
