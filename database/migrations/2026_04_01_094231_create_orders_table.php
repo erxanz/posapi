@@ -31,7 +31,7 @@ return new class extends Migration
             $table->integer('subtotal_price')->default(0);
 
             // DISCOUNT
-            // $table->foreignId('discount_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('discount_id')->nullable()->constrained()->nullOnDelete();
             $table->integer('discount_amount')->default(0);
 
             // optional (diskon manual)

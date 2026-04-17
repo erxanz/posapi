@@ -32,11 +32,6 @@ return new class extends Migration
             $table->index(['owner_id', 'is_active', 'start_date', 'end_date']);
             $table->index('type');
         });
-
-        // Tambahkan relasi ke tabel orders agar laporan lebih rapi
-        Schema::table('orders', function (Blueprint $table) {
-            $table->foreignId('discount_id')->nullable()->constrained('discounts')->nullOnDelete();
-        });
     }
 
     /**
