@@ -28,14 +28,24 @@ class OrderFactory extends Factory
             'notes' => fake()->optional()->sentence(),
             'invoice_number' => 'INV-' . strtoupper(Str::random(10)),
             'subtotal_price' => $subtotal,
-            'discount_type' => null,
-            'discount_value' => null,
             'discount_amount' => 0,
-            'tax_type' => null,
-            'tax_value' => null,
             'tax_amount' => 0,
             'total_price' => $subtotal,
             'status' => fake()->randomElement(['pending', 'paid', 'cancelled']),
         ];
+    }
+
+    public function pending(): static
+    {
+        return $this->state(fn () => [
+            'status' => 'pending',
+        ]);
+    }
+
+    public function paid(): static
+    {
+        return $this->state(fn () => [
+            'status' => 'paid',
+        ]);
     }
 }
