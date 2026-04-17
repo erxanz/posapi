@@ -106,7 +106,7 @@
                 <div style="padding: 0 1rem 1rem 1rem;">
                     <div class="endpoint-row">
                         <span class="badge badge-get">GET</span>
-                        <code class="api-path">/api/v1/public/menu/{outletId}/{tableId}</code>
+                        <code class="api-path">/api/v1/public/menu/{token}</code>
                         <span class="note">Public</span>
                     </div>
                     <div class="endpoint-row">

@@ -16,13 +16,21 @@ class ProductController extends Controller
     /**
      * PUBLIC MENU (QR) - OPTIMIZED
      */
-    public function publicMenu($outletId, $tableId)
+    public function publicMenu($token)
     {
         $table = Table::query()
             ->select(['id', 'name', 'outlet_id', 'is_active'])
-            ->where('id', $tableId)
-            ->where('outlet_id', $outletId)
-            ->firstOrFail();
+            ->where('qr_token', $token)
+            ->where('is_active', true)
+            ->first();
+
+        if (!$table) {
+            return response()->json([
+                'message' => 'QR tidak valid'
+            ], 404);
+        }
+
+        $outletId = $table->outlet_id;
 
         $products = Cache::remember(
             "menu_outlet_{$outletId}",
@@ -40,9 +48,7 @@ class ProductController extends Controller
                 ])
                 ->wherePivot('is_active', true)
                 ->wherePivot('stock', '>', 0)
-                ->with([
-                    'category:id,name'
-                ])
+                ->with(['category:id,name'])
                 ->orderBy('name')
                 ->get()
                 ->map(function ($product) {
@@ -60,6 +66,11 @@ class ProductController extends Controller
                     ];
                 })
         );
+
+        // AUTO SET MEJA JADI OCCUPIED
+        if ($table->status === 'available') {
+            $table->update(['status' => 'occupied']);
+        }
 
         return response()->json([
             'table' => $table,

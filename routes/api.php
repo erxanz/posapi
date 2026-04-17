@@ -27,8 +27,8 @@ Route::prefix('v1')->group(function () {
     // ================= PUBLIC API (QR) =================
     Route::prefix('public')->group(function () {
 
-        Route::get('/menu/{outletId}/{tableId}', [ProductController::class, 'publicMenu'])
-            ->name('public.menu');
+        // Route::get('/menu/{outletId}/{tableId}', [ProductController::class, 'publicMenu'])->name('public.menu');
+        Route::get('/menu/{token}', [ProductController::class, 'publicMenu'])->name('public.menu');
 
         Route::post('/order', [OrderController::class, 'publicOrder'])
             ->name('public.order');
