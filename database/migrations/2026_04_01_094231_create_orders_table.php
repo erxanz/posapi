@@ -13,37 +13,46 @@ return new class extends Migration
     {
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
+
             $table->foreignId('outlet_id')->constrained()->cascadeOnDelete();
 
-            // user_id nullable untuk QR Customer atau Kasir
+            // user bisa null (QR / kasir)
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
 
             $table->string('customer_name')->nullable();
             $table->string('notes')->nullable();
 
-            // table_id dibuat nullable karena order bisa takeaway / tanpa meja
-            $table->foreignId('table_id')->nullable();
+            // FIX relasi table
+            $table->foreignId('table_id')->nullable()->constrained()->nullOnDelete();
 
             $table->string('invoice_number')->unique();
 
-            // total & penyesuaian order
+            // PRICE
             $table->integer('subtotal_price')->default(0);
 
-            // PERBAIKAN 2: Enum disamakan dengan tabel discounts
-            $table->enum('discount_type', ['percentage', 'nominal'])->nullable();
-
-            // PERBAIKAN 3: Ubah decimal jadi integer (Standar mata uang Rupiah)
-            $table->integer('discount_value')->nullable();
+            // DISCOUNT
+            $table->foreignId('discount_id')->nullable()->constrained()->nullOnDelete();
             $table->integer('discount_amount')->default(0);
 
-            $table->enum('tax_type', ['percentage', 'nominal'])->nullable();
-            $table->integer('tax_value')->nullable();
+            // optional (diskon manual)
+            $table->enum('manual_discount_type', ['percentage', 'nominal'])->nullable();
+            $table->integer('manual_discount_value')->nullable();
+
+            // TAX (FIXED)
+            $table->foreignId('tax_id')->nullable()->constrained()->nullOnDelete();
             $table->integer('tax_amount')->default(0);
 
+            // OPTIONAL untuk multi tax (PPN + service charge, dll)
+            $table->json('tax_breakdown')->nullable();
+
+            // TOTAL
             $table->integer('total_price')->default(0);
 
+            // STATUS
             $table->enum('status', ['pending', 'paid', 'cancelled'])->default('pending');
+
             $table->json('logs')->nullable();
+
             $table->timestamps();
 
             $table->index(['outlet_id', 'invoice_number', 'status']);

@@ -2,16 +2,28 @@
 
 namespace App\Models;
 
-use App\Models\OrderItem;
-use App\Models\Payment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Models\Table;
 use App\Models\User;
+use App\Models\Discount;
+use App\Models\Tax;
+use App\Models\Outlet;
+use App\Models\HistoryTransaction;
 
 class Order extends Model
 {
     use HasFactory;
+
+    // Constants
+    public const STATUS_PENDING = 'pending';
+    public const STATUS_PAID = 'paid';
+    public const STATUS_CANCELLED = 'cancelled';
+
+    public const DISCOUNT_TYPE_PERCENTAGE = 'percentage';
+    public const DISCOUNT_TYPE_NOMINAL = 'nominal';
 
     protected $fillable = [
         'outlet_id',
@@ -20,32 +32,37 @@ class Order extends Model
         'customer_name',
         'notes',
         'invoice_number',
+
+        // price
         'subtotal_price',
-        'discount_type',
-        'discount_value',
+
+        // discount
+        'discount_id',
         'discount_amount',
-        'tax_type',
-        'tax_value',
+        'manual_discount_type',
+        'manual_discount_value',
+
+        // tax
+        'tax_id',
         'tax_amount',
+
+        // total
         'total_price',
+
         'status',
         'logs',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'subtotal_price' => 'integer',
-            'discount_value' => 'decimal:2',
-            'discount_amount' => 'integer',
-            'tax_value' => 'decimal:2',
-            'tax_amount' => 'integer',
-            'total_price' => 'integer',
-            'logs' => 'array',
-        ];
-    }
+    protected $casts = [
+        'subtotal_price' => 'integer',
+        'discount_amount' => 'integer',
+        'manual_discount_value' => 'integer',
+        'tax_amount' => 'integer',
+        'total_price' => 'integer',
+        'logs' => 'array',
+    ];
 
-    // RELASI
+    // Relations
     public function items()
     {
         return $this->hasMany(OrderItem::class);
@@ -71,14 +88,93 @@ class Order extends Model
         return $this->hasOne(HistoryTransaction::class);
     }
 
-    // SCOPE
-    public function scopeOpen($query)
+    public function discount()
     {
-        return $query->where('status', 'pending');
+        return $this->belongsTo(Discount::class);
     }
 
+    public function tax()
+    {
+        return $this->belongsTo(Tax::class);
+    }
+
+    public function outlet()
+    {
+        return $this->belongsTo(Outlet::class);
+    }
+
+    // Scopes
     public function scopePending($query)
     {
-        return $query->where('status', 'pending');
+        return $query->where('status', self::STATUS_PENDING);
+    }
+
+    public function scopePaid($query)
+    {
+        return $query->where('status', self::STATUS_PAID);
+    }
+
+    public function scopeCancelled($query)
+    {
+        return $query->where('status', self::STATUS_CANCELLED);
+    }
+
+    // Helpers
+    public function isPaid(): bool
+    {
+        return $this->status === self::STATUS_PAID;
+    }
+
+    public function isPending(): bool
+    {
+        return $this->status === self::STATUS_PENDING;
+    }
+
+    /**
+     * Recalculate totals based on items, manual discount, tax
+     */
+    public function recalculateTotals(array $overrides = []): void
+    {
+        $subtotal = (int) $this->items()->sum('total_price');
+
+        $manualDiscountType = $overrides['manual_discount_type'] ?? $this->manual_discount_type;
+        $manualDiscountValue = $overrides['manual_discount_value'] ?? ($this->manual_discount_value ?? 0);
+
+        $taxId = $overrides['tax_id'] ?? $this->tax_id;
+        $tax = $taxId ? Tax::where('id', $taxId)->where('active', true)->first() : null;
+
+        // Discount
+        $discountAmount = $this->computeAdjustmentAmount($manualDiscountType, (int) $manualDiscountValue, $subtotal);
+
+        // Tax
+        $baseAfterDiscount = max(0, $subtotal - $discountAmount);
+        $taxAmount = $tax ? $this->computeAdjustmentAmount($tax->type, (float) $tax->rate * 100, $baseAfterDiscount) : 0;
+
+        $total = max(0, $baseAfterDiscount + $taxAmount);
+
+        $this->update([
+            'subtotal_price' => $subtotal,
+            'manual_discount_type' => $manualDiscountType,
+            'manual_discount_value' => $manualDiscountType ? (int) $manualDiscountValue : null,
+            'discount_amount' => $discountAmount,
+            'tax_id' => $taxId,
+            'tax_amount' => $taxAmount,
+            'total_price' => $total,
+        ]);
+    }
+
+    private function computeAdjustmentAmount(?string $type, float $value, int $baseAmount): int
+    {
+        if (!$type || $baseAmount <= 0 || $value <= 0) {
+            return 0;
+        }
+
+        if ($type === self::DISCOUNT_TYPE_PERCENTAGE) {
+            $percent = min(100, max(0, $value));
+            return (int) round(($baseAmount * $percent) / 100);
+        }
+
+        return min($baseAmount, max(0, (int) $value));
     }
 }
+
