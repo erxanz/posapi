@@ -13,7 +13,9 @@ use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\StationController;
 use App\Http\Controllers\TableController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\ReportController;
 use Illuminate\Support\Facades\Route;
+
 
 Route::prefix('v1')->group(function () {
 
@@ -96,6 +98,8 @@ Route::prefix('v1')->group(function () {
 
         // ================= HISTORY TRANSACTION =================
         Route::apiResource('history-transactions', HistoryTransactionController::class)->only(['index', 'show']);
+
+        Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
 
         // ================= ORDER =================
         Route::prefix('orders')->group(function () {
