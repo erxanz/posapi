@@ -38,8 +38,9 @@ return new class extends Migration
             $table->index('status');
         });
 
+        // Tambahkan relasi ke tabel orders agar laporan lebih rapi
         Schema::table('orders', function (Blueprint $table) {
-            $table->foreign('table_id')->references('id')->on('tables')->nullOnDelete();
+            $table->foreignId('table_id')->nullable()->constrained()->nullOnDelete();
         });
     }
 
