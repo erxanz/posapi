@@ -17,9 +17,9 @@ class TaxController extends Controller
 
         $taxes = Tax::with('outlet')
             ->when($user->role === 'manager', function ($query) use ($user) {
-                // Tampilkan tax hanya dari outlet milik manager tersebut
+                // PERBAIKAN: Gunakan 'owner_id', BUKAN 'manager_id'
                 $query->whereHas('outlet', function ($q) use ($user) {
-                    $q->where('user_id', $user->id); // Sesuaikan dengan kolom foreign key di tabel outlets
+                    $q->where('owner_id', $user->id);
                 });
             })
             ->when($user->role === 'karyawan', function ($query) use ($user) {
@@ -43,18 +43,17 @@ class TaxController extends Controller
                 'required',
                 'string',
                 'max:255',
-                // Validasi agar nama tidak boleh sama di dalam outlet_id yang sama
+                // PERBAIKAN: Validasi agar nama tidak duplikat di satu cabang
                 Rule::unique('taxes')->where(function ($query) use ($request) {
                     return $query->where('outlet_id', $request->outlet_id);
                 })
             ],
-            // Hapus max:100 agar bisa menampung tipe fixed nominal besar (misal Rp 5000)
+            // PERBAIKAN: Hapus max:100 agar bisa memasukkan nominal seperti Rp 5000
             'rate' => ['required', 'numeric', 'min:0'],
             'type' => ['required', 'in:percentage,fixed'],
-            'outlet_id' => ['nullable', 'exists:outlets,id'],
+            'outlet_id' => ['required', 'exists:outlets,id'],
             'active' => ['boolean'],
         ], [
-            // Pesan error kustom jika duplikat
             'name.unique' => 'Pajak / Biaya dengan nama ini sudah ada di cabang tersebut.'
         ]);
 
@@ -83,14 +82,14 @@ class TaxController extends Controller
                 'sometimes',
                 'string',
                 'max:255',
-                // Validasi unique dengan mengecualikan ID tax yang sedang diedit
+                // PERBAIKAN: Abaikan validasi unique jika nama tidak diubah
                 Rule::unique('taxes')->where(function ($query) use ($request, $tax) {
                     return $query->where('outlet_id', $request->outlet_id ?? $tax->outlet_id);
                 })->ignore($tax->id)
             ],
             'rate' => ['sometimes', 'numeric', 'min:0'],
             'type' => ['sometimes', 'in:percentage,fixed'],
-            'outlet_id' => ['sometimes', 'nullable', 'exists:outlets,id'],
+            'outlet_id' => ['sometimes', 'required', 'exists:outlets,id'],
             'active' => ['sometimes', 'boolean'],
         ], [
             'name.unique' => 'Pajak / Biaya dengan nama ini sudah ada di cabang tersebut.'
