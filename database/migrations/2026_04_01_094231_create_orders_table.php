@@ -35,7 +35,6 @@ return new class extends Migration
             $table->integer('manual_discount_value')->nullable();
 
             // TAX (FIXED)
-            $table->foreignId('tax_id')->nullable()->constrained()->nullOnDelete();
             $table->integer('tax_amount')->default(0);
 
             // OPTIONAL untuk multi tax (PPN + service charge, dll)

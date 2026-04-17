@@ -21,6 +21,11 @@ return new class extends Migration
             $table->unique(['outlet_id', 'name']);
             $table->timestamps();
         });
+
+        // Tambahkan relasi ke tabel orders agar laporan lebih rapi
+        Schema::table('orders', function (Blueprint $table) {
+            $table->foreignId('tax_id')->nullable()->constrained()->nullOnDelete();
+        });
     }
 
     /**
