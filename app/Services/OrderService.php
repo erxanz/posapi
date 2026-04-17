@@ -9,10 +9,7 @@ use App\Models\HistoryTransaction;
 use App\Models\Outlet;
 use App\Models\Table;
 use App\Models\StockHistory;
-use App\Models\Tax;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use App\Models\User;
 
 class OrderService
@@ -26,11 +23,22 @@ class OrderService
      */
     public function createCheckoutOrder(array $validated, ?int $outletId = null): array
     {
+        // 1. Ambil outlet_id dari validasi (jika dikirim)
+        $outletId ??= $validated['outlet_id'] ?? null;
+
+        // 2. Jika masih null (misal akun Manager/Dev), cari outlet berdasarkan Meja yang dipilih
+        if (!$outletId && !empty($validated['table_id'])) {
+            $outletId = Table::find($validated['table_id'])?->outlet_id;
+        }
+
+        // 3. Fallback terakhir ke outlet_id karyawan yang sedang login
         $outletId ??= $this->user->outlet_id;
+
         $outlet = Outlet::findOrFail($outletId);
 
+        // Validasi akses manager / developer
         if (!$this->canAccessOutlet($outlet->id)) {
-            throw new \Exception('Forbidden');
+            throw new \Exception('Forbidden: Anda tidak memiliki akses ke Cabang ini.');
         }
 
         $table = Table::where('id', $validated['table_id'])
@@ -48,16 +56,22 @@ class OrderService
                 'notes' => $validated['notes'] ?? null,
                 'invoice_number' => $this->generateInvoiceNumber($outlet->id),
                 'status' => Order::STATUS_PAID,
-                'total_price' => 0, // Will be recalculated
+                'total_price' => 0,
             ]);
 
             $this->createOrderItems($order, $validated['items'], $outlet);
-            $this->handleAdjustments($order, $validated); // tax_id etc if provided
 
+            // Simpan data diskon & pajak
+            $this->handleAdjustments($order, $validated);
+
+            // Kalkulasi otomatis subtotal, total, diskon & pajak
             $order->recalculateTotals();
 
             $payment = $this->createPayment($order, $validated['amount_paid'], $validated['payment_method']);
+
+            // Simpan ke riwayat transaksi secara otomatis menggunakan total yang baru dihitung
             $this->storeHistoryTransaction($order);
+
             $table->update(['status' => 'available']);
 
             DB::commit();
@@ -92,7 +106,7 @@ class OrderService
                 'status' => Order::STATUS_PENDING,
             ]);
 
-            $this->createOrderItems($order, $validated['items'], $outlet, checkStock: false);
+            $this->createOrderItems($order, $validated['items'], $outlet, false);
             $this->handleAdjustments($order, $validated);
             $order->recalculateTotals();
 
@@ -219,11 +233,18 @@ class OrderService
 
     private function handleAdjustments(Order $order, array $data): void
     {
-        // Set manual_discount_*, tax_id from data if provided
         $updates = [];
-        if (isset($data['manual_discount_type'])) $updates['manual_discount_type'] = $data['manual_discount_type'];
-        if (isset($data['manual_discount_value'])) $updates['manual_discount_value'] = $data['manual_discount_value'];
-        if (isset($data['tax_id'])) $updates['tax_id'] = $data['tax_id'];
+
+        // FIX: Mapping nama variabel payload ke nama kolom sesungguhnya di tabel orders
+        if (isset($data['manual_discount_type'])) {
+            $updates['discount_type'] = $data['manual_discount_type'];
+        }
+        if (isset($data['manual_discount_value'])) {
+            $updates['discount_value'] = $data['manual_discount_value'];
+        }
+        if (isset($data['tax_id'])) {
+            $updates['tax_id'] = $data['tax_id'];
+        }
 
         if (!empty($updates)) {
             $order->update($updates);
@@ -246,8 +267,7 @@ class OrderService
     private function storeHistoryTransaction(Order $order): void
     {
         $order->load(['payments', 'items']);
-        // Implementation same as original storeHistoryTransaction...
-        // (copy logic here, using model constants)
+
         $lastPayment = $order->payments->sortByDesc('id')->first();
         $methods = $order->payments->pluck('method')->unique()->values()->all();
         $paymentMethod = count($methods) === 1 ? $methods[0] : (count($methods) > 1 ? 'split' : null);
@@ -288,6 +308,12 @@ class OrderService
     private function canAccessOutlet(int $outletId): bool
     {
         if ($this->user->role === 'developer') return true;
+
+        // FIX: Izinkan Manager mengakses jika dia adalah owner outlet tsb
+        if ($this->user->role === 'manager') {
+            return Outlet::where('id', $outletId)->where('owner_id', $this->user->id)->exists();
+        }
+
         return (int) $this->user->outlet_id === $outletId;
     }
 
@@ -296,4 +322,3 @@ class OrderService
         return $this->canAccessOutlet($order->outlet_id);
     }
 }
-
