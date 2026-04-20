@@ -38,22 +38,19 @@ class ReportController extends Controller
 
         $allowedOutletIds = $outletsQuery->pluck('id');
 
-        // 2. Query Utama Transaksi 'Paid' - Current Period
-        $trxQuery = HistoryTransaction::where('status', 'paid')
-            ->whereIn('outlet_id', $allowedOutletIds)
-            ->whereBetween('paid_at', [$startDate, $endDate]);
+        // 2. Query Utama Transaksi 'Paid' (SUPER AMAN: Hanya query kolom yang ada di DB)
+        $trxQuery = HistoryTransaction::where('history_transactions.status', 'paid')
+            ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
+            ->whereBetween('history_transactions.paid_at', [$startDate, $endDate]);
 
-        // Previous period query
         $prevTrxQuery = HistoryTransaction::where('status', 'paid')
             ->whereIn('outlet_id', $allowedOutletIds)
             ->whereBetween('paid_at', [$prevStartDate, $prevEndDate]);
 
-        // --- A. SUMMARY & KPI (Enhanced) ---
+        // --- A. SUMMARY & KPI ---
         $summaryData = (clone $trxQuery)->selectRaw('
-            COUNT(id) as total_trx,
-            SUM(total_price) as total_revenue,
-            SUM(discount_amount) as total_discount,
-            SUM(tax_amount) as total_tax
+            COUNT(history_transactions.id) as total_trx,
+            SUM(history_transactions.total_price) as total_revenue
         ')->first();
 
         $prevSummaryData = (clone $prevTrxQuery)->selectRaw('
@@ -72,20 +69,34 @@ class ReportController extends Controller
         $avgOrder = $transactions > 0 ? (int) ($revenue / $transactions) : 0;
 
         $itemsSold = (int) DB::table('order_items')
-            ->whereIn('order_id', (clone $trxQuery)->select('order_id'))
+            ->whereIn('order_id', (clone $trxQuery)->select('history_transactions.order_id'))
             ->sum('qty');
+
+        // --- TRIK AMAN: Menghitung Gross, Discount, dan Tax dari tabel order_items ---
+        $grossData = DB::table('order_items')
+            ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
+            ->where('history_transactions.status', 'paid')
+            ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
+            ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
+            ->selectRaw('
+                DATE(history_transactions.paid_at) as date,
+                SUM(order_items.total_price) as gross
+            ')
+            ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
+            ->pluck('gross', 'date');
+
+        $totalGross = $grossData->sum();
+        $totalDiscount = $totalGross > $revenue ? $totalGross - $revenue : 0;
+        $totalTax = $revenue > $totalGross ? $revenue - $totalGross : 0;
 
         // --- B. REVENUE CHART & SALES REPORT (Tab 1 & 2) ---
         $salesDaily = (clone $trxQuery)
             ->selectRaw('
-                DATE(paid_at) as date,
-                COUNT(id) as transactions,
-                SUM(subtotal_price) as gross,
-                SUM(discount_amount) as discount,
-                SUM(tax_amount) as tax,
-                SUM(total_price) as net
+                DATE(history_transactions.paid_at) as date,
+                COUNT(history_transactions.id) as transactions,
+                SUM(history_transactions.total_price) as net
             ')
-            ->groupBy(DB::raw('DATE(paid_at)'))
+            ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
             ->orderByDesc('date')
             ->get();
 
@@ -94,20 +105,27 @@ class ReportController extends Controller
             'revenue' => (int) $item->net
         ])->values();
 
-        $salesReport = $salesDaily->map(fn($item) => [
-            'date' => $item->date,
-            'transactions' => (int) $item->transactions,
-            'gross' => (int) $item->gross,
-            'discount' => (int) $item->discount,
-            'tax' => (int) $item->tax,
-            'net' => (int) $item->net,
-        ])->values();
+        $salesReport = $salesDaily->map(function($item) use ($grossData) {
+            $net = (int) $item->net;
+            $gross = (int) ($grossData[$item->date] ?? $net);
+            $discount = $gross > $net ? $gross - $net : 0;
+            $tax = $net > $gross ? $net - $gross : 0;
 
-        // --- C. TOP PRODUCTS & FAST MOVING (Tab 3 - Enhanced) ---
+            return [
+                'date' => $item->date,
+                'transactions' => (int) $item->transactions,
+                'gross' => $gross,
+                'discount' => $discount,
+                'tax' => $tax,
+                'net' => $net,
+            ];
+        })->values();
+
+        // --- C. TOP PRODUCTS (Tab 3) ---
         $topProducts = DB::table('order_items')
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
-            ->whereIn('order_items.order_id', (clone $trxQuery)->select('order_id'))
+            ->whereIn('order_items.order_id', (clone $trxQuery)->select('history_transactions.order_id'))
             ->selectRaw('
                 products.name,
                 categories.name as category,
@@ -129,7 +147,7 @@ class ReportController extends Controller
 
         // --- D. CASHIER PERFORMANCE (Tab 4) ---
         $cashierPerformance = (clone $trxQuery)
-            ->join('users', 'history_transactions.cashier_id', '=', 'users.id')
+            ->leftJoin('users', 'history_transactions.cashier_id', '=', 'users.id')
             ->join('outlets', 'history_transactions.outlet_id', '=', 'outlets.id')
             ->selectRaw('
                 users.name as name,
@@ -142,17 +160,17 @@ class ReportController extends Controller
             ->orderByDesc('revenue')
             ->get()
             ->map(fn($item) => [
-                'name' => $item->name,
+                'name' => $item->name ?? 'Kasir Terhapus',
                 'outlet_name' => $item->outlet_name,
                 'transactions' => (int) $item->transactions,
                 'revenue' => (int) $item->revenue,
                 'avg_trx' => (int) $item->avg_trx
             ]);
 
-        // --- E. PAYMENT METHODS (Enhanced) ---
+        // --- E. PAYMENT METHODS ---
         $paymentMethods = (clone $trxQuery)
-            ->selectRaw('payment_method as method, SUM(total_price) as total, COUNT(id) as count, AVG(total_price) as avg_amount')
-            ->groupBy('payment_method')
+            ->selectRaw('history_transactions.payment_method as method, SUM(history_transactions.total_price) as total, COUNT(history_transactions.id) as count, AVG(history_transactions.total_price) as avg_amount')
+            ->groupBy('history_transactions.payment_method')
             ->orderByDesc('total')
             ->get()
             ->map(fn($item) => [
@@ -169,7 +187,7 @@ class ReportController extends Controller
         $categoryPerformance = DB::table('order_items')
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
-            ->whereIn('order_items.order_id', (clone $trxQuery)->select('order_id'))
+            ->whereIn('order_items.order_id', (clone $trxQuery)->select('history_transactions.order_id'))
             ->selectRaw('
                 categories.name as category,
                 SUM(order_items.qty) as total_sold,
@@ -189,11 +207,11 @@ class ReportController extends Controller
         // 2. HOURLY SALES (for heatmap)
         $hourlySales = (clone $trxQuery)
             ->selectRaw('
-                HOUR(paid_at) as hour,
-                COUNT(id) as transactions,
-                SUM(total_price) as revenue
+                HOUR(history_transactions.paid_at) as hour,
+                COUNT(history_transactions.id) as transactions,
+                SUM(history_transactions.total_price) as revenue
             ')
-            ->groupBy(DB::raw('HOUR(paid_at)'))
+            ->groupBy(DB::raw('HOUR(history_transactions.paid_at)'))
             ->orderBy('hour')
             ->get()
             ->map(fn($item) => [
@@ -202,13 +220,12 @@ class ReportController extends Controller
                 'revenue' => (int) $item->revenue
             ])->keyBy('hour');
 
-        // Fill missing hours 0-23
         $fullHourly = collect(range(0, 23))->map(function($h) use ($hourlySales) {
             $data = $hourlySales->get($h, (object)['transactions' => 0, 'revenue' => 0]);
             return [
                 'hour' => $h,
-                'transactions' => (int) $data->transactions,
-                'revenue' => (int) $data->revenue
+                'transactions' => (int) $data['transactions'],
+                'revenue' => (int) $data['revenue']
             ];
         });
 
@@ -216,7 +233,7 @@ class ReportController extends Controller
         $tablePerformance = DB::table('orders')
             ->join('tables', 'orders.table_id', '=', 'tables.id')
             ->join('history_transactions', 'orders.id', '=', 'history_transactions.order_id')
-            ->whereIn('history_transactions.id', (clone $trxQuery)->select('id'))
+            ->whereIn('history_transactions.id', (clone $trxQuery)->select('history_transactions.id'))
             ->selectRaw('
                 tables.name,
                 COUNT(orders.id) as orders_count,
@@ -233,10 +250,10 @@ class ReportController extends Controller
                 'avg_check' => $item->orders_count > 0 ? round($item->revenue / $item->orders_count) : 0
             ]);
 
-        // 4. STATION PERFORMANCE (Kitchen workload)
+        // 4. STATION PERFORMANCE
         $stationPerformance = DB::table('order_items')
-            ->join('stations', 'order_items.station_id', '=', 'stations.id')
-            ->whereIn('order_items.order_id', (clone $trxQuery)->select('order_id'))
+            ->leftJoin('stations', 'order_items.station_id', '=', 'stations.id')
+            ->whereIn('order_items.order_id', (clone $trxQuery)->select('history_transactions.order_id'))
             ->selectRaw('
                 stations.name,
                 SUM(order_items.qty) as items_prepared,
@@ -248,30 +265,10 @@ class ReportController extends Controller
             ->limit(10)
             ->get()
             ->map(fn($item) => [
-                'name' => $item->name,
+                'name' => $item->name ?? 'Tanpa Station',
                 'items_prepared' => (int) $item->items_prepared,
                 'orders' => (int) $item->orders,
                 'revenue' => (int) $item->revenue
-            ]);
-
-        // 5. DISCOUNT BREAKDOWN
-        $discountBreakdown = (clone $trxQuery)
-            ->whereNotNull('discount_amount')
-            ->where('discount_amount', '>', 0)
-            ->selectRaw('
-                discount_amount,
-                COUNT(id) as usage_count,
-                SUM(discount_amount) as total_discount
-            ')
-            ->groupBy('discount_amount')
-            ->orderByDesc('total_discount')
-            ->limit(10)
-            ->get()
-            ->map(fn($item) => [
-                'amount' => (int) $item->discount_amount,
-                'usage_count' => (int) $item->usage_count,
-                'total_discount' => (int) $item->total_discount,
-                'avg_per_trx' => $item->usage_count > 0 ? round($item->total_discount / $item->usage_count) : 0
             ]);
 
         // 6. SHIFT SUMMARY
@@ -289,22 +286,20 @@ class ReportController extends Controller
         // 7. Customer Metrics
         $customerMetrics = (clone $trxQuery)
             ->selectRaw('
-                COUNT(DISTINCT customer_name) as unique_customers,
-                AVG(total_price) as avg_check,
-                SUM(CASE WHEN customer_name IS NOT NULL AND customer_name != "" THEN 1 ELSE 0 END) as named_customers
+                COUNT(DISTINCT history_transactions.customer_name) as unique_customers,
+                AVG(history_transactions.total_price) as avg_check,
+                SUM(CASE WHEN history_transactions.customer_name IS NOT NULL AND history_transactions.customer_name != "" THEN 1 ELSE 0 END) as named_customers
             ')
             ->first();
 
         return response()->json([
-            // Existing (compatible)
             'summary' => [
                 'revenue' => $revenue,
                 'transactions' => $transactions,
                 'avg_order' => $avgOrder,
                 'items_sold' => $itemsSold,
-                'total_discount' => (int) ($summaryData->total_discount ?? 0),
-                'total_tax' => (int) ($summaryData->total_tax ?? 0),
-                // New growth metrics
+                'total_discount' => $totalDiscount,
+                'total_tax' => $totalTax,
                 'revenue_growth' => $revenueGrowth,
                 'trx_growth' => $trxGrowth,
                 'unique_customers' => (int) ($customerMetrics->unique_customers ?? 0),
@@ -315,13 +310,10 @@ class ReportController extends Controller
             'top_products' => $topProducts,
             'cashier_performance' => $cashierPerformance,
             'payment_methods' => $paymentMethods,
-
-            // New comprehensive F&B analytics
             'category_performance' => $categoryPerformance,
             'hourly_sales' => $fullHourly,
             'table_performance' => $tablePerformance,
             'station_performance' => $stationPerformance,
-            'discount_breakdown' => $discountBreakdown,
             'shift_summary' => [
                 'avg_shift_revenue' => (int) ($shiftSummary->avg_shift_revenue ?? 0),
                 'avg_per_shift' => (int) ($shiftSummary->avg_per_shift ?? 0),
@@ -354,41 +346,36 @@ class ReportController extends Controller
         }
         $allowedOutletIds = $outletsQuery->pluck('id');
 
-        $trxQuery = HistoryTransaction::where('status', 'paid')
-            ->whereIn('outlet_id', $allowedOutletIds)
-            ->whereBetween('paid_at', [$startDate, $endDate]);
+        $trxQuery = HistoryTransaction::where('history_transactions.status', 'paid')
+            ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
+            ->whereBetween('history_transactions.paid_at', [$startDate, $endDate]);
 
-        // Summary data for CSV
         $summaryData = (clone $trxQuery)->selectRaw('
-            COUNT(id) as total_trx,
-            SUM(total_price) as total_revenue,
-            SUM(discount_amount) as total_discount,
-            SUM(tax_amount) as total_tax
+            COUNT(history_transactions.id) as total_trx,
+            SUM(history_transactions.total_price) as total_revenue
         ')->first();
 
+        // AMAN: Hitung dari order_items
+        $grossData = DB::table('order_items')
+            ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
+            ->where('history_transactions.status', 'paid')
+            ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
+            ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
+            ->selectRaw('DATE(history_transactions.paid_at) as date, SUM(order_items.total_price) as gross')
+            ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
+            ->pluck('gross', 'date');
+
         $salesDaily = (clone $trxQuery)
-            ->selectRaw('
-                DATE(paid_at) as date,
-                COUNT(id) as transactions,
-                SUM(subtotal_price) as gross,
-                SUM(discount_amount) as discount,
-                SUM(tax_amount) as tax,
-                SUM(total_price) as net
-            ')
-            ->groupBy(DB::raw('DATE(paid_at)'))
+            ->selectRaw('DATE(history_transactions.paid_at) as date, COUNT(history_transactions.id) as transactions, SUM(history_transactions.total_price) as net')
+            ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
             ->orderBy('date')
             ->get();
 
         $topProductsRaw = DB::table('order_items')
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
-            ->whereIn('order_items.order_id', (clone $trxQuery)->select('order_id'))
-            ->selectRaw('
-                products.name,
-                categories.name as category,
-                SUM(order_items.qty) as sold,
-                SUM(order_items.total_price) as revenue
-            ')
+            ->whereIn('order_items.order_id', (clone $trxQuery)->select('history_transactions.order_id'))
+            ->selectRaw('products.name, categories.name as category, SUM(order_items.qty) as sold, SUM(order_items.total_price) as revenue')
             ->groupBy('products.id', 'products.name', 'categories.name')
             ->orderByDesc('sold')
             ->limit(50)
@@ -396,26 +383,27 @@ class ReportController extends Controller
 
         // Generate CSV content
         $filename = 'laporan-penjualan-' . $startDate->format('Y-m-d') . '_to_' . $endDate->format('Y-m-d') . '.csv';
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ];
-
         $csv = fopen('php://temp', 'r+');
+
         fputcsv($csv, ['LAPORAN PENJUALAN ENTERPRISE']);
         fputcsv($csv, ['Periode', $startDate->format('d/m/Y') . ' s/d ' . $endDate->format('d/m/Y')]);
         fputcsv($csv, ['Outlet', $outletId ? Outlet::find($outletId)?->name ?? 'Semua' : 'Semua']);
         fputcsv($csv, []);
+
+        $totalRevenue = (int)($summaryData->total_revenue ?? 0);
+        $totalGross = $grossData->sum();
+        $totalDiscount = $totalGross > $totalRevenue ? $totalGross - $totalRevenue : 0;
+        $totalTax = $totalRevenue > $totalGross ? $totalRevenue - $totalGross : 0;
 
         // Summary
         fputcsv($csv, ['RINGKASAN']);
         fputcsv($csv, ['Total Transaksi', 'Pendapatan', 'Diskon', 'Pajak', 'Rata-rata Order']);
         fputcsv($csv, [
             (int)($summaryData->total_trx ?? 0),
-            'Rp ' . number_format($summaryData->total_revenue ?? 0),
-            'Rp ' . number_format($summaryData->total_discount ?? 0),
-            'Rp ' . number_format($summaryData->total_tax ?? 0),
-            'Rp ' . number_format((int)($summaryData->total_revenue ?? 0) / max(1, (int)($summaryData->total_trx ?? 0)))
+            'Rp ' . number_format($totalRevenue),
+            'Rp ' . number_format($totalDiscount),
+            'Rp ' . number_format($totalTax),
+            'Rp ' . number_format($totalRevenue / max(1, (int)($summaryData->total_trx ?? 0)))
         ]);
         fputcsv($csv, []);
 
@@ -423,13 +411,18 @@ class ReportController extends Controller
         fputcsv($csv, ['PENJUALAN HARIAN']);
         fputcsv($csv, ['Tanggal', 'Transaksi', 'Gross', 'Diskon', 'Pajak', 'Netto']);
         foreach ($salesDaily as $day) {
+            $net = (int) $day->net;
+            $gross = (int) ($grossData[$day->date] ?? $net);
+            $discount = $gross > $net ? $gross - $net : 0;
+            $tax = $net > $gross ? $net - $gross : 0;
+
             fputcsv($csv, [
                 $day->date,
                 $day->transactions,
-                'Rp ' . number_format($day->gross),
-                'Rp ' . number_format($day->discount),
-                'Rp ' . number_format($day->tax),
-                'Rp ' . number_format($day->net)
+                'Rp ' . number_format($gross),
+                'Rp ' . number_format($discount),
+                'Rp ' . number_format($tax),
+                'Rp ' . number_format($net)
             ]);
         }
         fputcsv($csv, []);
@@ -450,7 +443,9 @@ class ReportController extends Controller
         $csvContent = stream_get_contents($csv);
         fclose($csv);
 
-        return response($csvContent, 200, $headers);
+        return response($csvContent, 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
     }
 }
-
