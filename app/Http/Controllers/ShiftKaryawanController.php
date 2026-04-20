@@ -44,40 +44,49 @@ class ShiftKaryawanController extends Controller
     {
         $validated = $request->validate([
             'outlet_id' => 'required|exists:outlets,id',
-            'shift_id' => 'required|exists:shifts,id', // Tambahkan validasi shift_id
+            // 'shift_id' dihapus dari sini karena Flutter tidak mengirimkannya lagi
             'opening_balance' => 'required|integer|min:0',
         ]);
 
         $user = auth()->user();
+        $currentTime = now()->format('H:i:s'); // Ambil jam saat ini, misal: 08:30:00
 
-        // 1. CEK JADWAL: Pastikan manajer sudah meng-assign user ini ke shift_id yang dikirim
-        $isAssigned = $user->shifts()->where('shifts.id', $validated['shift_id'])->exists();
-        if (!$isAssigned) {
-            return response()->json(['message' => 'Akses ditolak. Anda tidak ditugaskan pada jadwal shift ini.'], 403);
+        // 1. CARI JADWAL OTOMATIS: Cek tabel shift_user dan cocokkan dengan jam sekarang
+        $currentAssignedShift = $user->shifts()
+            ->whereTime('start_time', '<=', $currentTime)
+            ->whereTime('end_time', '>=', $currentTime)
+            ->first();
+
+        // Jika sistem tidak menemukan jadwal yang cocok di jam ini pada tabel shift_user
+        if (!$currentAssignedShift) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki jadwal shift pada jam ini.'
+            ], 403);
         }
 
-        // 2. CEK SHIFT AKTIF: Pastikan tidak ada shift lain yang sedang berjalan
-        $activeShift = ShiftKaryawan::where('user_id', $user->id)
+        // 2. Cek apakah karyawan masih punya sesi kasir yang belum ditutup
+        $activeSession = ShiftKaryawan::where('user_id', $user->id)
             ->where('status', 'active')
             ->first();
 
-        if ($activeShift) {
-            return response()->json(['message' => 'Anda masih memiliki shift aktif'], 400);
+        if ($activeSession) {
+            return response()->json(['message' => 'Anda masih memiliki shift aktif yang belum ditutup'], 400);
         }
 
-        // 3. BUAT SESI KASIR
-        $shift = ShiftKaryawan::create([
+        // 3. Buat sesi kasir menggunakan ID shift yang ditemukan secara otomatis
+        $shiftKaryawan = ShiftKaryawan::create([
             'user_id' => $user->id,
             'outlet_id' => $validated['outlet_id'],
-            'shift_id' => $validated['shift_id'], // Simpan referensi jadwalnya
+            'shift_id' => $currentAssignedShift->id, // Diambil otomatis dari sistem
+            'uang_awal' => $validated['opening_balance'], // Alias untuk opening_balance jika masih dipakai
             'opening_balance' => $validated['opening_balance'],
             'started_at' => now(),
             'status' => 'active',
         ]);
 
         return response()->json([
-            'message' => 'Shift berhasil dimulai',
-            'data' => $shift
+            'message' => 'Shift berhasil dimulai otomatis sesuai jadwal',
+            'data' => $shiftKaryawan
         ], 201);
     }
 

@@ -291,13 +291,17 @@ class DatabaseSeeder extends Seeder
 
         // ================= SHIFT KARYAWAN =================
         foreach (User::where('role', 'karyawan')->get() as $karyawan) {
-            ShiftKaryawan::factory()
-                ->count(60)
-                ->closed()
-                ->create([
-                    'outlet_id' => $karyawan->outlet_id,
-                    'user_id' => $karyawan->id,
-                ]);
+            $outletShifts = Shift::where('outlet_id', $karyawan->outlet_id)->get();
+            foreach ($outletShifts as $shift) {
+                ShiftKaryawan::factory()
+                    ->count(30)
+                    ->closed()
+                    ->create([
+                        'outlet_id' => $karyawan->outlet_id,
+                        'user_id' => $karyawan->id,
+                        'shift_id' => $shift->id,
+                    ]);
+            }
         }
 
         // ================= SHIFT USER PIVOT (shift_user table) - 1 bulan data =================
@@ -321,6 +325,7 @@ class DatabaseSeeder extends Seeder
                 DB::table('shift_karyawans')->insert([
                     'outlet_id' => $karyawan->outlet_id,
                     'user_id' => $karyawan->id,
+                    'shift_id' => $randomShift->id,
                     'uang_awal' => $faker->numberBetween(100000, 500000),
                     'started_at' => $date->copy()->setTime(
                         (int) explode(':', $randomShift->start_time)[0],

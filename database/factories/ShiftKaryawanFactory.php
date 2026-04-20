@@ -26,6 +26,7 @@ class ShiftKaryawanFactory extends Factory
         return [
             'outlet_id' => null,
             'user_id' => null,
+            'shift_id' => null,
             'uang_awal' => fake()->numberBetween(100000, 500000),
             'started_at' => $startedAt,
             'ended_at' => null,
@@ -36,12 +37,13 @@ class ShiftKaryawanFactory extends Factory
 
     public function closed()
     {
-        $shiftKe = $this->faker->randomElement([1, 2]);
+        $shiftKe = fake()->randomElement([1, 2]);
         $endHour = $shiftKe === 1 ? 15 : 22;
         $endMinutesOffset = fake()->numberBetween(0, 30);
-        $endedAt = $this->faker->dateTimeBetween('-30 days', 'now')->setTime($endHour, $endMinutesOffset);
+        $endedAt = fake()->dateTimeBetween('-30 days', 'now')->setTime($endHour, $endMinutesOffset);
 
         return $this->state(fn (array $attributes) => [
+            'shift_id' => null,
             'status' => 'closed',
             'ended_at' => $endedAt,
             'closing_balance_system' => $attributes['opening_balance'] + fake()->numberBetween(0, 100000),
