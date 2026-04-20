@@ -12,6 +12,7 @@ class ShiftKaryawan extends Model
     protected $fillable = [
         'outlet_id',
         'user_id',
+        'shift_id', // WAJIB DITAMBAHKAN
         'uang_awal',
         'started_at',
         'ended_at',
@@ -41,5 +42,11 @@ class ShiftKaryawan extends Model
     public function outlet()
     {
         return $this->belongsTo(Outlet::class);
+    }
+
+    // Tambahkan relasi ini di bagian bawah
+    public function shift()
+    {
+        return $this->belongsTo(Shift::class);
     }
 }
