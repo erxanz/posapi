@@ -16,7 +16,7 @@ return new class extends Migration
         $table->foreignId('outlet_id')->nullable()->constrained()->nullOnDelete();
         $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
         // Tambahkan relasi ke master shift
-        $table->foreignId('shift_id')->nullable()->constrained('shifts')->nullOnDelete();
+        $table->foreignId('shift_id')->nullable()->constrained()->nullOnDelete();
         $table->unsignedBigInteger('uang_awal')->default(0);
         $table->timestamp('started_at')->nullable();
         $table->timestamp('ended_at')->nullable();
