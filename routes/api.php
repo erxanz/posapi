@@ -100,6 +100,7 @@ Route::prefix('v1')->group(function () {
         Route::apiResource('history-transactions', HistoryTransactionController::class)->only(['index', 'show']);
 
         Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+        Route::get('/reports/export', [ReportController::class, 'export'])->name('reports.export');
 
         // ================= ORDER =================
         Route::prefix('orders')->group(function () {
