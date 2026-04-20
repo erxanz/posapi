@@ -13,7 +13,8 @@ class HistoryTransactionController extends Controller
     {
         $user = auth()->user();
 
-        // TAMBAHKAN RELASI 'order.items.product' dan 'order.logs' DI SINI
+        // Gunakan eager load ringan untuk list agar respons Flutter lebih cepat.
+        // Detail item produk tetap di endpoint show.
         $query = HistoryTransaction::query()
             ->with([
                 'outlet:id,name',
@@ -21,8 +22,6 @@ class HistoryTransactionController extends Controller
                 'payment:id,order_id,method,amount_paid,change_amount,paid_at',
                 'order:id,table_id,customer_name',
                 'order.table:id,name',
-                'order.items.product', // Memastikan item terbawa di tampilan list
-                'order.logs'           // Memastikan logs terbawa di tampilan list
             ])
             ->latest('paid_at');
 
@@ -57,29 +56,22 @@ class HistoryTransactionController extends Controller
             $query->whereDate('paid_at', '<=', $request->date('end_date'));
         }
 
-        // Cari customer_name di HistoryTransaction DAN di Order
         if ($request->filled('customer_name')) {
             $customerName = $request->string('customer_name')->toString();
-            $query->where(function ($q) use ($customerName) {
-                $q->where('customer_name', 'like', '%' . $customerName . '%')
-                  ->orWhereHas('order', function ($orderQuery) use ($customerName) {
-                      $orderQuery->where('customer_name', 'like', '%' . $customerName . '%');
-                  });
+            $query->whereHas('order', function ($orderQuery) use ($customerName) {
+                $orderQuery->where('customer_name', 'like', '%' . $customerName . '%');
             });
         }
 
+        // Batasi limit supaya payload tetap aman untuk mobile.
         $limit = max(1, min(100, (int) $request->input('limit', 15)));
+
         $paginator = $query->paginate($limit);
 
-        // Normalisasi agar Flutter & Vue lebih mudah membaca datanya
+        // Normalisasi agar Flutter tidak perlu fallback ke order.customer_name.
         $paginator->getCollection()->transform(function (HistoryTransaction $trx) {
             if (!$trx->customer_name && $trx->relationLoaded('order')) {
                 $trx->customer_name = $trx->order?->customer_name;
-            }
-
-            // Decode JSON agar Flutter dan Vue menerima format Array
-            if (is_string($trx->order_items_summary)) {
-                $trx->order_items_summary = json_decode($trx->order_items_summary, true);
             }
 
             return $trx;
@@ -99,38 +91,20 @@ class HistoryTransactionController extends Controller
     {
         $user = auth()->user();
 
-        // Cek Izin Manager ke Outlet miliknya
-        if ($user->isKaryawan()) {
-            if ((int) $historyTransaction->outlet_id !== (int) $user->outlet_id) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
-        } elseif ($user->isManager()) {
-            $ownsOutlet = Outlet::where('id', $historyTransaction->outlet_id)
-                                ->where('owner_id', $user->id)
-                                ->exists();
-            if (!$ownsOutlet) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
+        if (!$user->isDeveloper() && (int) $historyTransaction->outlet_id !== (int) $user->outlet_id) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $historyTransaction->load([
-            'order.items.product',
-            'order.logs',
-            'order.table',
-            'payment',
-            'cashier',
-            'outlet'
-        ]);
-
-        if (!$historyTransaction->customer_name && $historyTransaction->relationLoaded('order')) {
-            $historyTransaction->customer_name = $historyTransaction->order?->customer_name;
-        }
-
-        if (is_string($historyTransaction->order_items_summary)) {
-            $historyTransaction->order_items_summary = json_decode($historyTransaction->order_items_summary, true);
-        }
-
-        return response()->json($historyTransaction);
+         // PERBAIKAN: Tambahkan 'order.table' dan 'outlet' agar Flutter tidak menerima nilai null
+        return response()->json(
+            $historyTransaction->load([
+                'order.items.product',
+                'order.table',
+                'payment',
+                'cashier',
+                'outlet'
+            ])
+        );
     }
 
     public function update(Request $request, HistoryTransaction $historyTransaction): JsonResponse
