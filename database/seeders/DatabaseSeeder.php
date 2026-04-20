@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use App\Models\Category;
+use App\Models\Discount;
+use App\Models\HistoryTransaction;
 use App\Models\Order;
 use App\Models\Outlet;
 use App\Models\Product;
@@ -10,10 +12,12 @@ use App\Models\ShiftKaryawan;
 use App\Models\Shift;
 use App\Models\Station;
 use App\Models\Table;
+use App\Models\Tax;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Faker;
 
 class DatabaseSeeder extends Seeder
 {
@@ -108,7 +112,7 @@ class DatabaseSeeder extends Seeder
                 'Bar',
                 'Kasir',
             ])->map(function ($name) use ($outlet) {
-                return Station::create([
+                return Station::factory()->create([
                     'name' => $name,
                     'owner_id' => $outlet->owner_id,
                 ]);
@@ -171,14 +175,14 @@ class DatabaseSeeder extends Seeder
             }
 
             // ================= DISCOUNTS & TAXES PER OUTLET =================
-            \App\Models\Discount::factory()
+            Discount::factory()
                 ->count(3)
                 ->create(['owner_id' => $outlet->owner_id]);
-            \App\Models\Discount::factory()
+            Discount::factory()
                 ->lunchSpecial()
                 ->create(['owner_id' => $outlet->owner_id]);
 
-            \App\Models\Tax::factory()
+            Tax::factory()
                 ->count(2)
                 ->create(['outlet_id' => $outlet->id]);
 
@@ -249,13 +253,41 @@ class DatabaseSeeder extends Seeder
         }
         // ================= END LOOP =================
 
+        // ================= ADDITIONAL FACTORY SEEDING =================
+        foreach (Outlet::all() as $outlet) {
+            // Additional orders using factory
+            $users = User::where('outlet_id', $outlet->id)->whereIn('role', ['manager', 'karyawan'])->get();
+            $tables = Table::where('outlet_id', $outlet->id)->get();
+
+            Order::factory()
+                ->count(3)
+                ->full()
+                ->paid()
+                ->create([
+                    'outlet_id' => $outlet->id,
+                    'user_id' => $users->random()->id,
+                    'table_id' => $tables->random()->id,
+                ]);
+
+            // Additional discounts using factory states
+            Discount::factory()->happyHour()->create(['owner_id' => $outlet->owner_id]);
+            Discount::factory()->buy1Get1()->create(['owner_id' => $outlet->owner_id]);
+
+            // Additional history transactions - SKIP to avoid order_id null constraint
+            // HistoryTransaction::factory()->count(5)->create([
+            //     'outlet_id' => $outlet->id,
+            // ]);
+        }
+
         // ================= SHIFT KARYAWAN =================
         foreach (User::where('role', 'karyawan')->get() as $karyawan) {
-            $shiftCount = 60; // 2 shifts per day x 30 days for sebulan data
-            ShiftKaryawan::factory()->count($shiftCount)->create([
-                'outlet_id' => $karyawan->outlet_id,
-                'user_id' => $karyawan->id,
-            ]);
+            ShiftKaryawan::factory()
+                ->count(60)
+                ->closed()
+                ->create([
+                    'outlet_id' => $karyawan->outlet_id,
+                    'user_id' => $karyawan->id,
+                ]);
         }
 
         // ================= PAYMENT =================
