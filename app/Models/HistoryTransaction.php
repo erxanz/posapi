@@ -27,7 +27,9 @@ class HistoryTransaction extends Model
         'cashier_id',
         'status',
         'metadata',
+        'order_items_summary',
     ];
+
 
     protected function casts(): array
     {
@@ -52,6 +54,17 @@ class HistoryTransaction extends Model
     {
         return $this->belongsTo(Order::class);
     }
+
+    public function orderItems()
+    {
+        return $this->hasManyThrough(OrderItem::class, Order::class);
+    }
+
+    public function items()
+    {
+        return $this->order->orderItems ?? collect();
+    }
+
 
     public function payment()
     {
