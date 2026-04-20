@@ -56,17 +56,14 @@ class ShiftKaryawanController extends Controller
         }
 
         $today = now()->toDateString();
-        $lastShift = ShiftKaryawan::where('user_id', auth()->id())
+        $shiftCount = ShiftKaryawan::where('user_id', auth()->id())
             ->where('outlet_id', $validated['outlet_id'])
             ->whereDate('started_at', $today)
-            ->max('shift_ke') ?? 0;
-
-        $shiftKe = $lastShift + 1;
+            ->count();
 
         $shift = ShiftKaryawan::create([
             'user_id' => auth()->id(),
             'outlet_id' => $validated['outlet_id'],
-            'shift_ke' => $shiftKe,
             'opening_balance' => $validated['opening_balance'],
             'started_at' => now(),
             'status' => 'active',

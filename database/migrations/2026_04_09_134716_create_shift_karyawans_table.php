@@ -8,22 +8,22 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     */
+    */
     public function up(): void
     {
-        Schema::create('shift_karyawans', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('outlet_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
-            $table->unsignedTinyInteger('shift_ke')->default(1);
-            $table->unsignedBigInteger('uang_awal')->default(0);
-            $table->timestamp('started_at')->nullable();
-            $table->timestamp('ended_at')->nullable();
-            $table->enum('status', ['draft', 'active', 'closed'])->default('draft');
-            $table->timestamps();
-
-            $table->index(['outlet_id', 'user_id', 'shift_ke', 'status']);
-        });
+            Schema::create('shift_karyawans', function (Blueprint $table) {
+        $table->id();
+        $table->foreignId('outlet_id')->nullable()->constrained()->nullOnDelete();
+        $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+        // Tambahkan relasi ke master shift
+        $table->foreignId('shift_id')->nullable()->constrained('shifts')->nullOnDelete();
+        $table->unsignedBigInteger('uang_awal')->default(0);
+        $table->timestamp('started_at')->nullable();
+        $table->timestamp('ended_at')->nullable();
+        $table->enum('status', ['draft', 'active', 'closed'])->default('draft');
+        $table->timestamps();
+        $table->index(['outlet_id', 'user_id', 'shift_id', 'status']);
+    });
     }
 
     /**

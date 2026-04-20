@@ -12,7 +12,6 @@ class ShiftKaryawan extends Model
     protected $fillable = [
         'outlet_id',
         'user_id',
-        'shift_ke',
         'uang_awal',
         'started_at',
         'ended_at',
@@ -31,7 +30,6 @@ class ShiftKaryawan extends Model
         'closing_balance_system' => 'integer',
         'closing_balance_actual' => 'integer',
         'difference' => 'integer',
-        'shift_ke' => 'integer',
         'uang_awal' => 'integer',
     ];
 

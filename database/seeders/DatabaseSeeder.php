@@ -14,6 +14,7 @@ use App\Models\Station;
 use App\Models\Table;
 use App\Models\Tax;
 use App\Models\User;
+use Database\Factories\ShiftUserFactory;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -297,6 +298,44 @@ class DatabaseSeeder extends Seeder
                     'outlet_id' => $karyawan->outlet_id,
                     'user_id' => $karyawan->id,
                 ]);
+        }
+
+        // ================= SHIFT USER PIVOT (shift_user table) - 1 bulan data =================
+        $faker = fake();
+        $shifts = Shift::all();
+        $karyawans = User::where('role', 'karyawan')->get();
+
+        foreach ($karyawans as $karyawan) {
+            $outletShifts = $shifts->where('outlet_id', $karyawan->outlet_id);
+            foreach ($outletShifts as $shift) {
+                DB::table('shift_user')->updateOrInsert(
+                    ['shift_id' => $shift->id, 'user_id' => $karyawan->id],
+                    ['created_at' => now()->subMonths(1)->addDays($faker->numberBetween(1, 30)), 'updated_at' => now()]
+                );
+            }
+
+            // Generate 30 days data for this karyawan-shift combo
+            for ($day = 0; $day < 30; $day++) {
+                $date = now()->subMonths(1)->addDays($day);
+                $randomShift = $outletShifts->random();
+                DB::table('shift_karyawans')->insert([
+                    'outlet_id' => $karyawan->outlet_id,
+                    'user_id' => $karyawan->id,
+                    'uang_awal' => $faker->numberBetween(100000, 500000),
+                    'started_at' => $date->copy()->setTime(
+                        (int) explode(':', $randomShift->start_time)[0],
+                        (int) explode(':', $randomShift->start_time)[1]
+                    ),
+                    'ended_at' => $date->copy()->setTime(
+                        (int) explode(':', $randomShift->end_time)[0],
+                        (int) explode(':', $randomShift->end_time)[1]
+                    ),
+                    'opening_balance' => $faker->numberBetween(100000, 500000),
+                    'status' => 'closed',
+                    'created_at' => $date,
+                    'updated_at' => $date,
+                ]);
+            }
         }
 
         // ================= PAYMENT =================
