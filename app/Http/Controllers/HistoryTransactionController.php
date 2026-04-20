@@ -56,10 +56,14 @@ class HistoryTransactionController extends Controller
             $query->whereDate('paid_at', '<=', $request->date('end_date'));
         }
 
+        // PERBAIKAN 1: Cari customer_name di HistoryTransaction DAN di Order
         if ($request->filled('customer_name')) {
             $customerName = $request->string('customer_name')->toString();
-            $query->whereHas('order', function ($orderQuery) use ($customerName) {
-                $orderQuery->where('customer_name', 'like', '%' . $customerName . '%');
+            $query->where(function ($q) use ($customerName) {
+                $q->where('customer_name', 'like', '%' . $customerName . '%')
+                  ->orWhereHas('order', function ($orderQuery) use ($customerName) {
+                      $orderQuery->where('customer_name', 'like', '%' . $customerName . '%');
+                  });
             });
         }
 
@@ -68,10 +72,15 @@ class HistoryTransactionController extends Controller
 
         $paginator = $query->paginate($limit);
 
-        // Normalisasi agar Flutter tidak perlu fallback ke order.customer_name.
+        // Normalisasi agar Flutter & Vue lebih mudah membaca datanya
         $paginator->getCollection()->transform(function (HistoryTransaction $trx) {
             if (!$trx->customer_name && $trx->relationLoaded('order')) {
                 $trx->customer_name = $trx->order?->customer_name;
+            }
+
+            // PERBAIKAN 2: Decode JSON agar Flutter dan Vue menerima format Array, bukan String biasa
+            if (is_string($trx->order_items_summary)) {
+                $trx->order_items_summary = json_decode($trx->order_items_summary, true);
             }
 
             return $trx;
@@ -91,20 +100,39 @@ class HistoryTransactionController extends Controller
     {
         $user = auth()->user();
 
-        if (!$user->isDeveloper() && (int) $historyTransaction->outlet_id !== (int) $user->outlet_id) {
-            return response()->json(['message' => 'Forbidden'], 403);
+        // PERBAIKAN 3: Perbaikan Role Guard. Manager dicek ke outlet miliknya, bukan outlet_id profilnya.
+        if ($user->isKaryawan()) {
+            if ((int) $historyTransaction->outlet_id !== (int) $user->outlet_id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        } elseif ($user->isManager()) {
+            $ownsOutlet = Outlet::where('id', $historyTransaction->outlet_id)
+                                ->where('owner_id', $user->id)
+                                ->exists();
+            if (!$ownsOutlet) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
         }
 
-         // PERBAIKAN: Tambahkan 'order.table' dan 'outlet' agar Flutter tidak menerima nilai null
-        return response()->json(
-            $historyTransaction->load([
-                'order.items.product',
-                'order.table',
-                'payment',
-                'cashier',
-                'outlet'
-            ])
-        );
+        $historyTransaction->load([
+            'order.items.product',
+            'order.table',
+            'payment',
+            'cashier',
+            'outlet'
+        ]);
+
+        // Standarisasi field untuk detail modal
+        if (!$historyTransaction->customer_name && $historyTransaction->relationLoaded('order')) {
+            $historyTransaction->customer_name = $historyTransaction->order?->customer_name;
+        }
+
+        // Decode JSON untuk endpoint Detail (show)
+        if (is_string($historyTransaction->order_items_summary)) {
+            $historyTransaction->order_items_summary = json_decode($historyTransaction->order_items_summary, true);
+        }
+
+        return response()->json($historyTransaction);
     }
 
     public function update(Request $request, HistoryTransaction $historyTransaction): JsonResponse
