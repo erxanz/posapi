@@ -90,6 +90,7 @@ Route::prefix('v1')->group(function () {
 
         // Tambahkan di dalam blok middleware auth:sanctum
         Route::post('/shifts/auto-generate', [App\Http\Controllers\ShiftController::class, 'autoGenerate']);
+        Route::get('/shifts/my-schedule', [App\Http\Controllers\ShiftController::class, 'mySchedule']);
 
         // Khusus untuk Dashboard Manager Vue (CRUD)
         Route::apiResource('shift-karyawans', ShiftKaryawanController::class)->only(['index', 'destroy', 'show']);

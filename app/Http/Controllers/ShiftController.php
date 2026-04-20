@@ -216,4 +216,27 @@ class ShiftController extends Controller
             return response()->json(['message' => 'Gagal auto-generate', 'error' => $e->getMessage()], 500);
         }
     }
+
+    // ==========================================
+    // UNTUK APLIKASI KASIR (FLUTTER)
+    // ==========================================
+    public function mySchedule(Request $request)
+    {
+        $user = auth()->user();
+
+        // Ambil jadwal shift yang ditugaskan kepada karyawan yang sedang login
+        $myShifts = $user->shifts()->with('outlet:id,name')->get();
+
+        if ($myShifts->isEmpty()) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki jadwal shift yang ditugaskan saat ini.',
+                'data' => []
+            ], 200);
+        }
+
+        return response()->json([
+            'message' => 'Berhasil mengambil jadwal saya',
+            'data' => $myShifts
+        ], 200);
+    }
 }
