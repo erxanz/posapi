@@ -14,15 +14,13 @@ use App\Models\User;
 
 class OrderService
 {
-    public function __construct(
-        private User $user
-    ) {}
-
     /**
      * Create checkout order with payment
      */
     public function createCheckoutOrder(array $validated, ?int $outletId = null): array
     {
+        $user = $this->currentUser();
+
         // 1. Ambil outlet_id dari validasi (jika dikirim)
         $outletId ??= $validated['outlet_id'] ?? null;
 
@@ -32,7 +30,7 @@ class OrderService
         }
 
         // 3. Fallback terakhir ke outlet_id karyawan yang sedang login
-        $outletId ??= $this->user->outlet_id;
+        $outletId ??= $user->outlet_id;
 
         $outlet = Outlet::findOrFail($outletId);
 
@@ -50,7 +48,7 @@ class OrderService
         try {
             $order = Order::create([
                 'outlet_id' => $outlet->id,
-                'user_id' => $this->user->id,
+                'user_id' => $user->id,
                 'table_id' => $table->id,
                 'customer_name' => $validated['customer_name'] ?? null,
                 'notes' => $validated['notes'] ?? null,
@@ -130,6 +128,8 @@ class OrderService
      */
     public function processPayments(Order $order, array $payments): array
     {
+        $user = $this->currentUser();
+
         if (! $this->canAccessOrder($order)) {
             throw new \Exception('Forbidden');
         }
@@ -158,7 +158,7 @@ class OrderService
                     'method' => $paymentData['method'],
                     'reference_no' => $paymentData['reference_no'] ?? null,
                     'paid_at' => now(),
-                    'paid_by' => $this->user->id,
+                    'paid_by' => $user->id,
                 ]);
 
                 $remaining -= $applied;
@@ -192,6 +192,8 @@ class OrderService
     // Private helpers...
     private function createOrderItems(Order $order, array $items, Outlet $outlet, bool $checkStock = true): void
     {
+        $user = $this->currentUser();
+
         foreach ($items as $item) {
             $product = $outlet->products()->where('products.id', $item['product_id'])->wherePivot('is_active', true)->lockForUpdate()->firstOrFail();
 
@@ -221,7 +223,7 @@ class OrderService
                 StockHistory::create([
                     'outlet_id' => $outlet->id,
                     'product_id' => $product->id,
-                    'user_id' => $this->user->id,
+                    'user_id' => $user->id,
                     'type' => 'sale',
                     'quantity' => -$qty,
                     'final_stock' => $newStock,
@@ -307,18 +309,31 @@ class OrderService
 
     private function canAccessOutlet(int $outletId): bool
     {
-        if ($this->user->role === 'developer') return true;
+        $user = $this->currentUser();
+
+        if ($user->role === 'developer') return true;
 
         // FIX: Izinkan Manager mengakses jika dia adalah owner outlet tsb
-        if ($this->user->role === 'manager') {
-            return Outlet::where('id', $outletId)->where('owner_id', $this->user->id)->exists();
+        if ($user->role === 'manager') {
+            return Outlet::where('id', $outletId)->where('owner_id', $user->id)->exists();
         }
 
-        return (int) $this->user->outlet_id === $outletId;
+        return (int) $user->outlet_id === $outletId;
     }
 
     private function canAccessOrder(Order $order): bool
     {
         return $this->canAccessOutlet($order->outlet_id);
+    }
+
+    private function currentUser(): User
+    {
+        $user = auth()->user();
+
+        if (!$user instanceof User) {
+            throw new \RuntimeException('Unauthenticated');
+        }
+
+        return $user;
     }
 }

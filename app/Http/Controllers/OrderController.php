@@ -4,13 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\Outlet;
-use App\Models\Payment;
-use App\Models\Table;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
-use App\Models\User;
 
 class OrderController extends Controller
 {
@@ -248,7 +244,11 @@ class OrderController extends Controller
             'amount_paid' => 'required|numeric|min:0',
         ]);
 
-        $result = $this->orderService->createCheckoutOrder($validated);
+        if ($user->role === 'karyawan' && empty($validated['outlet_id'])) {
+            $validated['outlet_id'] = $user->outlet_id;
+        }
+
+        $result = $this->orderService->createCheckoutOrder($validated, $validated['outlet_id'] ?? null);
 
         return response()->json($result, $result['success'] ? 201 : 500);
     }
