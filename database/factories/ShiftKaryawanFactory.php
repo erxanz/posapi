@@ -17,9 +17,9 @@ class ShiftKaryawanFactory extends Factory
      */
     public function definition(): array
     {
-        $shiftKe = fake()->randomElement([1, 2]);
+        $startHour = fake()->numberBetween(8, 15);
         $daysAgo = fake()->numberBetween(1, 30); // sebulan
-        $startHour = $shiftKe === 1 ? 8 : 15;
+
         $minutesOffset = fake()->numberBetween(0, 30);
         $startedAt = now()->subDays($daysAgo)->setTime($startHour, $minutesOffset);
 
@@ -37,8 +37,8 @@ class ShiftKaryawanFactory extends Factory
 
     public function closed()
     {
-        $shiftKe = fake()->randomElement([1, 2]);
-        $endHour = $shiftKe === 1 ? 15 : 22;
+        $endHour = fake()->numberBetween(15, 22);
+
         $endMinutesOffset = fake()->numberBetween(0, 30);
         $endedAt = fake()->dateTimeBetween('-30 days', 'now')->setTime($endHour, $endMinutesOffset);
 
