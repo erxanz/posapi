@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\HistoryTransaction;
+use App\Models\Outlet;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
@@ -12,13 +13,29 @@ class HistoryTransactionController extends Controller
     {
         $user = auth()->user();
 
-        // TAMBAHKAN 'outlet', 'order.table', dan 'order.items.product' agar terbaca di Frontend
+        // Gunakan eager load ringan untuk list agar respons Flutter lebih cepat.
+        // Detail item produk tetap di endpoint show.
         $query = HistoryTransaction::query()
-            ->with(['order.table', 'order.items.product', 'payment', 'cashier', 'outlet'])
+            ->with([
+                'outlet:id,name',
+                'cashier:id,name',
+                'payment:id,order_id,method,amount_paid,change_amount,paid_at',
+                'order:id,table_id,customer_name',
+                'order.table:id,name',
+            ])
             ->latest('paid_at');
 
-        if (!$user->isDeveloper()) {
+        if ($user->isKaryawan()) {
             $query->where('outlet_id', $user->outlet_id);
+        } elseif ($user->isManager()) {
+            $outletIds = Outlet::query()
+                ->where('owner_id', $user->id)
+                ->pluck('id');
+            $query->whereIn('outlet_id', $outletIds);
+
+            if ($request->filled('outlet_id')) {
+                $query->where('outlet_id', $request->integer('outlet_id'));
+            }
         } elseif ($request->filled('outlet_id')) {
             $query->where('outlet_id', $request->integer('outlet_id'));
         }
@@ -31,10 +48,36 @@ class HistoryTransactionController extends Controller
             $query->where('invoice_number', 'like', '%' . $request->string('invoice_number') . '%');
         }
 
-        // Ambil parameter limit dari frontend, default 15
-        $limit = $request->input('limit', 15);
+        if ($request->filled('start_date')) {
+            $query->whereDate('paid_at', '>=', $request->date('start_date'));
+        }
 
-        return response()->json($query->paginate($limit));
+        if ($request->filled('end_date')) {
+            $query->whereDate('paid_at', '<=', $request->date('end_date'));
+        }
+
+        if ($request->filled('customer_name')) {
+            $customerName = $request->string('customer_name')->toString();
+            $query->whereHas('order', function ($orderQuery) use ($customerName) {
+                $orderQuery->where('customer_name', 'like', '%' . $customerName . '%');
+            });
+        }
+
+        // Batasi limit supaya payload tetap aman untuk mobile.
+        $limit = max(1, min(100, (int) $request->input('limit', 15)));
+
+        $paginator = $query->paginate($limit);
+
+        // Normalisasi agar Flutter tidak perlu fallback ke order.customer_name.
+        $paginator->getCollection()->transform(function (HistoryTransaction $trx) {
+            if (!$trx->customer_name && $trx->relationLoaded('order')) {
+                $trx->customer_name = $trx->order?->customer_name;
+            }
+
+            return $trx;
+        });
+
+        return response()->json($paginator);
     }
 
     public function store(Request $request): JsonResponse

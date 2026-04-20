@@ -42,6 +42,7 @@ class HistoryTransaction extends Model
             'change_amount' => 'integer',
             'paid_at' => 'datetime',
             'metadata' => 'array',
+            'order_items_summary' => 'array',
         ];
     }
 
@@ -62,7 +63,7 @@ class HistoryTransaction extends Model
 
     public function items()
     {
-        return $this->order->orderItems ?? collect();
+        return $this->order?->items ?? collect();
     }
 
 
