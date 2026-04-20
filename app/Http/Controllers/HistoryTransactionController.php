@@ -13,8 +13,7 @@ class HistoryTransactionController extends Controller
     {
         $user = auth()->user();
 
-        // Gunakan eager load ringan untuk list agar respons Flutter lebih cepat.
-        // Detail item produk tetap di endpoint show.
+        // TAMBAHKAN RELASI 'order.items.product' dan 'order.logs' DI SINI
         $query = HistoryTransaction::query()
             ->with([
                 'outlet:id,name',
@@ -22,6 +21,8 @@ class HistoryTransactionController extends Controller
                 'payment:id,order_id,method,amount_paid,change_amount,paid_at',
                 'order:id,table_id,customer_name',
                 'order.table:id,name',
+                'order.items.product', // Memastikan item terbawa di tampilan list
+                'order.logs'           // Memastikan logs terbawa di tampilan list
             ])
             ->latest('paid_at');
 
@@ -56,7 +57,7 @@ class HistoryTransactionController extends Controller
             $query->whereDate('paid_at', '<=', $request->date('end_date'));
         }
 
-        // PERBAIKAN 1: Cari customer_name di HistoryTransaction DAN di Order
+        // Cari customer_name di HistoryTransaction DAN di Order
         if ($request->filled('customer_name')) {
             $customerName = $request->string('customer_name')->toString();
             $query->where(function ($q) use ($customerName) {
@@ -67,9 +68,7 @@ class HistoryTransactionController extends Controller
             });
         }
 
-        // Batasi limit supaya payload tetap aman untuk mobile.
         $limit = max(1, min(100, (int) $request->input('limit', 15)));
-
         $paginator = $query->paginate($limit);
 
         // Normalisasi agar Flutter & Vue lebih mudah membaca datanya
@@ -78,7 +77,7 @@ class HistoryTransactionController extends Controller
                 $trx->customer_name = $trx->order?->customer_name;
             }
 
-            // PERBAIKAN 2: Decode JSON agar Flutter dan Vue menerima format Array, bukan String biasa
+            // Decode JSON agar Flutter dan Vue menerima format Array
             if (is_string($trx->order_items_summary)) {
                 $trx->order_items_summary = json_decode($trx->order_items_summary, true);
             }
@@ -100,7 +99,7 @@ class HistoryTransactionController extends Controller
     {
         $user = auth()->user();
 
-        // PERBAIKAN 3: Perbaikan Role Guard. Manager dicek ke outlet miliknya, bukan outlet_id profilnya.
+        // Cek Izin Manager ke Outlet miliknya
         if ($user->isKaryawan()) {
             if ((int) $historyTransaction->outlet_id !== (int) $user->outlet_id) {
                 return response()->json(['message' => 'Forbidden'], 403);
@@ -116,18 +115,17 @@ class HistoryTransactionController extends Controller
 
         $historyTransaction->load([
             'order.items.product',
+            'order.logs',
             'order.table',
             'payment',
             'cashier',
             'outlet'
         ]);
 
-        // Standarisasi field untuk detail modal
         if (!$historyTransaction->customer_name && $historyTransaction->relationLoaded('order')) {
             $historyTransaction->customer_name = $historyTransaction->order?->customer_name;
         }
 
-        // Decode JSON untuk endpoint Detail (show)
         if (is_string($historyTransaction->order_items_summary)) {
             $historyTransaction->order_items_summary = json_decode($historyTransaction->order_items_summary, true);
         }
