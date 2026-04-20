@@ -282,14 +282,14 @@ class ReportController extends Controller
             ')
             ->first();
 
-        // --- K. CUSTOMER METRICS (DIPERBAIKI) ---
-        // Melakukan JOIN ke tabel 'orders' untuk mendapatkan data 'customer_name'
+        // --- K. CUSTOMER METRICS ---
+        // customer_name sumbernya ada di tabel orders, bukan history_transactions.
         $customerMetrics = (clone $trxQuery)
-            ->join('orders', 'history_transactions.order_id', '=', 'orders.id')
+            ->leftJoin('orders', 'history_transactions.order_id', '=', 'orders.id')
             ->selectRaw('
-                COUNT(DISTINCT orders.customer_name) as unique_customers,
+                COUNT(DISTINCT NULLIF(TRIM(orders.customer_name), "")) as unique_customers,
                 AVG(history_transactions.total_price) as avg_check,
-                SUM(CASE WHEN orders.customer_name IS NOT NULL AND orders.customer_name != "" THEN 1 ELSE 0 END) as named_customers
+                SUM(CASE WHEN NULLIF(TRIM(orders.customer_name), "") IS NOT NULL THEN 1 ELSE 0 END) as named_customers
             ')
             ->first();
 
