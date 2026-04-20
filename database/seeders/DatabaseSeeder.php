@@ -101,23 +101,23 @@ class DatabaseSeeder extends Seeder
                 'Minuman',
                 'Snack'
             ])->map(function ($name) use ($outlet) {
-                return Category::factory()->create([
-                    'name' => $name,
+                return Category::factory()->state(fn() => ['name' => $name])->create([
                     'owner_id' => $outlet->owner_id,
                 ]);
             });
 
+
             // station per outlet
             $stations = collect([
-                'Kitchen',
-                'Bar',
-                'Kasir',
+                'Dapur Utama',
+                'Bar Minuman',
+                'Kasir Utama',
             ])->map(function ($name) use ($outlet) {
-                return Station::factory()->create([
-                    'name' => $name,
+                return Station::factory()->state(fn() => ['name' => $name])->create([
                     'owner_id' => $outlet->owner_id,
                 ]);
             });
+
 
             $productCatalog = [
                 'Makanan' => [

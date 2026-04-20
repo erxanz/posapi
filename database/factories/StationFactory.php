@@ -17,16 +17,37 @@ class StationFactory extends Factory
      */
     public function definition(): array
     {
-        $name = fake()->randomElement([
-            'Kitchen',
-            'Bar',
-            'Kasir',
-            'Dessert',
-        ]);
-
         return [
             'owner_id' => null,
-            'name' => $name,
+            'name' => fake()->randomElement([
+                'Dapur Utama',
+                'Bar Minuman',
+                'Kasir Utama',
+                'Dessert Station',
+                'Appetizer',
+            ]),
         ];
     }
+
+    public function dapur(): static
+    {
+        return $this->state(fn () => [
+            'name' => 'Dapur Utama',
+        ]);
+    }
+
+    public function bar(): static
+    {
+        return $this->state(fn () => [
+            'name' => 'Bar Minuman',
+        ]);
+    }
+
+    public function kasir(): static
+    {
+        return $this->state(fn () => [
+            'name' => 'Kasir Utama',
+        ]);
+    }
+
 }

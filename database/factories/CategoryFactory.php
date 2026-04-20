@@ -18,8 +18,30 @@ class CategoryFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => fake()->word(),
+            'name' => fake()->randomElement(['Makanan', 'Minuman', 'Snack', 'Dessert', 'Makanan Pembuka']),
             'owner_id' => null,
         ];
     }
+
+    public function makanan(): static
+    {
+        return $this->state(fn () => [
+            'name' => 'Makanan',
+        ]);
+    }
+
+    public function minuman(): static
+    {
+        return $this->state(fn () => [
+            'name' => 'Minuman',
+        ]);
+    }
+
+    public function snack(): static
+    {
+        return $this->state(fn () => [
+            'name' => 'Snack',
+        ]);
+    }
+
 }
