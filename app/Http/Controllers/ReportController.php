@@ -21,11 +21,10 @@ class ReportController extends Controller
         $endDate = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : Carbon::today()->endOfDay();
         $outletId = $request->outlet_id;
 
-        // Previous period for growth comparison
         $prevStartDate = Carbon::parse($startDate)->subDays($endDate->diffInDays($startDate) + 1)->startOfDay();
         $prevEndDate = $startDate->copy()->subDay()->endOfDay();
 
-        // 1. Ambil daftar Outlet yang boleh dilihat user ini
+        // 1. Ambil daftar Outlet
         $outletsQuery = Outlet::query();
         if ($user->role === 'karyawan') {
             $outletsQuery->where('id', $user->outlet_id);
@@ -38,14 +37,14 @@ class ReportController extends Controller
 
         $allowedOutletIds = $outletsQuery->pluck('id');
 
-        // 2. Query Utama Transaksi 'Paid' (SUPER AMAN: Hanya query kolom yang ada di DB)
+        // 2. Query Utama Transaksi 'Paid' (Aman dengan prefix tabel)
         $trxQuery = HistoryTransaction::where('history_transactions.status', 'paid')
             ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
             ->whereBetween('history_transactions.paid_at', [$startDate, $endDate]);
 
-        $prevTrxQuery = HistoryTransaction::where('status', 'paid')
-            ->whereIn('outlet_id', $allowedOutletIds)
-            ->whereBetween('paid_at', [$prevStartDate, $prevEndDate]);
+        $prevTrxQuery = HistoryTransaction::where('history_transactions.status', 'paid')
+            ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
+            ->whereBetween('history_transactions.paid_at', [$prevStartDate, $prevEndDate]);
 
         // --- A. SUMMARY & KPI ---
         $summaryData = (clone $trxQuery)->selectRaw('
@@ -54,8 +53,8 @@ class ReportController extends Controller
         ')->first();
 
         $prevSummaryData = (clone $prevTrxQuery)->selectRaw('
-            COUNT(id) as prev_trx,
-            SUM(total_price) as prev_revenue
+            COUNT(history_transactions.id) as prev_trx,
+            SUM(history_transactions.total_price) as prev_revenue
         ')->first();
 
         $revenue = (int) ($summaryData->total_revenue ?? 0);
@@ -72,7 +71,7 @@ class ReportController extends Controller
             ->whereIn('order_id', (clone $trxQuery)->select('history_transactions.order_id'))
             ->sum('qty');
 
-        // --- TRIK AMAN: Menghitung Gross, Discount, dan Tax dari tabel order_items ---
+        // --- TRIK REVERSE CALCULATION UNTUK DISKON DAN PAJAK ---
         $grossData = DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->where('history_transactions.status', 'paid')
@@ -89,7 +88,7 @@ class ReportController extends Controller
         $totalDiscount = $totalGross > $revenue ? $totalGross - $revenue : 0;
         $totalTax = $revenue > $totalGross ? $revenue - $totalGross : 0;
 
-        // --- B. REVENUE CHART & SALES REPORT (Tab 1 & 2) ---
+        // --- B. REVENUE CHART & SALES REPORT ---
         $salesDaily = (clone $trxQuery)
             ->selectRaw('
                 DATE(history_transactions.paid_at) as date,
@@ -121,7 +120,7 @@ class ReportController extends Controller
             ];
         })->values();
 
-        // --- C. TOP PRODUCTS (Tab 3) ---
+        // --- C. TOP PRODUCTS ---
         $topProducts = DB::table('order_items')
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
@@ -145,7 +144,7 @@ class ReportController extends Controller
                 'avg_price' => (int) $item->avg_price
             ]);
 
-        // --- D. CASHIER PERFORMANCE (Tab 4) ---
+        // --- D. CASHIER PERFORMANCE ---
         $cashierPerformance = (clone $trxQuery)
             ->leftJoin('users', 'history_transactions.cashier_id', '=', 'users.id')
             ->join('outlets', 'history_transactions.outlet_id', '=', 'outlets.id')
@@ -181,9 +180,7 @@ class ReportController extends Controller
                 'percentage' => $transactions > 0 ? round(($item->count / $transactions) * 100, 1) : 0
             ]);
 
-        // === NEW FEATURES FOR COMPLETE F&B ANALYTICS ===
-
-        // 1. CATEGORY PERFORMANCE
+        // --- F. CATEGORY PERFORMANCE ---
         $categoryPerformance = DB::table('order_items')
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
@@ -198,13 +195,13 @@ class ReportController extends Controller
             ->limit(20)
             ->get()
             ->map(fn($item) => [
-                'name' => $item->category ?? 'Uncategorized',
+                'name' => $item->category ?? 'Tanpa Kategori',
                 'sold' => (int) $item->total_sold,
                 'revenue' => (int) $item->revenue,
                 'percentage' => $revenue > 0 ? round(($item->revenue / $revenue) * 100, 1) : 0
             ]);
 
-        // 2. HOURLY SALES (for heatmap)
+        // --- G. HOURLY SALES ---
         $hourlySales = (clone $trxQuery)
             ->selectRaw('
                 HOUR(history_transactions.paid_at) as hour,
@@ -229,7 +226,7 @@ class ReportController extends Controller
             ];
         });
 
-        // 3. TABLE PERFORMANCE
+        // --- H. TABLE PERFORMANCE ---
         $tablePerformance = DB::table('orders')
             ->join('tables', 'orders.table_id', '=', 'tables.id')
             ->join('history_transactions', 'orders.id', '=', 'history_transactions.order_id')
@@ -250,7 +247,7 @@ class ReportController extends Controller
                 'avg_check' => $item->orders_count > 0 ? round($item->revenue / $item->orders_count) : 0
             ]);
 
-        // 4. STATION PERFORMANCE
+        // --- I. STATION PERFORMANCE ---
         $stationPerformance = DB::table('order_items')
             ->leftJoin('stations', 'order_items.station_id', '=', 'stations.id')
             ->whereIn('order_items.order_id', (clone $trxQuery)->select('history_transactions.order_id'))
@@ -271,19 +268,18 @@ class ReportController extends Controller
                 'revenue' => (int) $item->revenue
             ]);
 
-        // 6. SHIFT SUMMARY
+        // --- J. SHIFT SUMMARY (FIXED: Menghapus shift_ke) ---
         $shiftSummary = ShiftKaryawan::whereIn('outlet_id', $allowedOutletIds)
             ->whereNotNull('ended_at')
             ->whereBetween('ended_at', [$startDate, $endDate])
             ->selectRaw('
                 AVG(closing_balance_system - opening_balance) as avg_shift_revenue,
-                AVG((closing_balance_system - opening_balance) / NULLIF(shift_ke, 0)) as avg_per_shift,
                 COUNT(id) as total_shifts,
                 AVG(difference) as avg_variance
             ')
             ->first();
 
-        // 7. Customer Metrics
+        // --- K. CUSTOMER METRICS ---
         $customerMetrics = (clone $trxQuery)
             ->selectRaw('
                 COUNT(DISTINCT history_transactions.customer_name) as unique_customers,
@@ -316,7 +312,6 @@ class ReportController extends Controller
             'station_performance' => $stationPerformance,
             'shift_summary' => [
                 'avg_shift_revenue' => (int) ($shiftSummary->avg_shift_revenue ?? 0),
-                'avg_per_shift' => (int) ($shiftSummary->avg_per_shift ?? 0),
                 'total_shifts' => (int) ($shiftSummary->total_shifts ?? 0),
                 'avg_variance' => (int) ($shiftSummary->avg_variance ?? 0)
             ],
@@ -334,7 +329,6 @@ class ReportController extends Controller
         $outletId = $request->outlet_id;
         $user = auth()->user();
 
-        // Same filters as index
         $outletsQuery = Outlet::query();
         if ($user->role === 'karyawan') {
             $outletsQuery->where('id', $user->outlet_id);
@@ -355,7 +349,6 @@ class ReportController extends Controller
             SUM(history_transactions.total_price) as total_revenue
         ')->first();
 
-        // AMAN: Hitung dari order_items
         $grossData = DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->where('history_transactions.status', 'paid')
@@ -381,7 +374,6 @@ class ReportController extends Controller
             ->limit(50)
             ->get();
 
-        // Generate CSV content
         $filename = 'laporan-penjualan-' . $startDate->format('Y-m-d') . '_to_' . $endDate->format('Y-m-d') . '.csv';
         $csv = fopen('php://temp', 'r+');
 
@@ -395,7 +387,6 @@ class ReportController extends Controller
         $totalDiscount = $totalGross > $totalRevenue ? $totalGross - $totalRevenue : 0;
         $totalTax = $totalRevenue > $totalGross ? $totalRevenue - $totalGross : 0;
 
-        // Summary
         fputcsv($csv, ['RINGKASAN']);
         fputcsv($csv, ['Total Transaksi', 'Pendapatan', 'Diskon', 'Pajak', 'Rata-rata Order']);
         fputcsv($csv, [
@@ -407,7 +398,6 @@ class ReportController extends Controller
         ]);
         fputcsv($csv, []);
 
-        // Daily sales
         fputcsv($csv, ['PENJUALAN HARIAN']);
         fputcsv($csv, ['Tanggal', 'Transaksi', 'Gross', 'Diskon', 'Pajak', 'Netto']);
         foreach ($salesDaily as $day) {
@@ -427,7 +417,6 @@ class ReportController extends Controller
         }
         fputcsv($csv, []);
 
-        // Top products
         fputcsv($csv, ['TOP PRODUCTS']);
         fputcsv($csv, ['Produk', 'Kategori', 'Terjual', 'Pendapatan']);
         foreach ($topProductsRaw as $prod) {
