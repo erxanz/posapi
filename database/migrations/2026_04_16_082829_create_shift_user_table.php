@@ -13,17 +13,9 @@ return new class extends Migration
     {
         Schema::create('shift_user', function (Blueprint $table) {
             $table->id();
-
-            $table->foreignId('shift_id')
-                ->constrained()
-                ->cascadeOnDelete();
-
-            $table->foreignId('user_id')
-                ->constrained()
-                ->cascadeOnDelete();
-
+            $table->foreignId('shift_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->timestamps();
-
             // penting: biar tidak double data
             $table->unique(['shift_id', 'user_id']);
         });

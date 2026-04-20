@@ -273,10 +273,19 @@ class DatabaseSeeder extends Seeder
             Discount::factory()->happyHour()->create(['owner_id' => $outlet->owner_id]);
             Discount::factory()->buy1Get1()->create(['owner_id' => $outlet->owner_id]);
 
-            // Additional history transactions - SKIP to avoid order_id null constraint
-            // HistoryTransaction::factory()->count(5)->create([
-            //     'outlet_id' => $outlet->id,
-            // ]);
+            // Additional history transactions using factory with existing orders - SKIP duplicate UNIQUE constraint
+            // $paidOrders = Order::where('outlet_id', $outlet->id)
+            //     ->where('status', 'paid')
+            //     ->inRandomOrder()
+            //     ->limit(10)
+            //     ->get();
+            //
+            // foreach ($paidOrders as $order) {
+            //     HistoryTransaction::factory()->create([
+            //         'outlet_id' => $outlet->id,
+            //         'order_id' => $order->id,
+            //     ]);
+            // }
         }
 
         // ================= SHIFT KARYAWAN =================
