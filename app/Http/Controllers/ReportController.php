@@ -337,8 +337,120 @@ class ReportController extends Controller
 
     public function export(Request $request)
     {
-        // TODO: Implement CSV export using Maatwebsite\Excel or native
-        return response()->json(['message' => 'Export CSV lengkap untuk semua metrics sedang dikembangkan. Gunakan data JSON untuk sekarang.'], 501);
+        $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : Carbon::today()->startOfMonth();
+        $endDate = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : Carbon::today()->endOfDay();
+        $outletId = $request->outlet_id;
+        $user = auth()->user();
+
+        // Same filters as index
+        $outletsQuery = Outlet::query();
+        if ($user->role === 'karyawan') {
+            $outletsQuery->where('id', $user->outlet_id);
+        } elseif ($user->role === 'manager') {
+            $outletsQuery->where('owner_id', $user->id);
+            if ($outletId) $outletsQuery->where('id', $outletId);
+        } else {
+            if ($outletId) $outletsQuery->where('id', $outletId);
+        }
+        $allowedOutletIds = $outletsQuery->pluck('id');
+
+        $trxQuery = HistoryTransaction::where('status', 'paid')
+            ->whereIn('outlet_id', $allowedOutletIds)
+            ->whereBetween('paid_at', [$startDate, $endDate]);
+
+        // Summary data for CSV
+        $summaryData = (clone $trxQuery)->selectRaw('
+            COUNT(id) as total_trx,
+            SUM(total_price) as total_revenue,
+            SUM(discount_amount) as total_discount,
+            SUM(tax_amount) as total_tax
+        ')->first();
+
+        $salesDaily = (clone $trxQuery)
+            ->selectRaw('
+                DATE(paid_at) as date,
+                COUNT(id) as transactions,
+                SUM(subtotal_price) as gross,
+                SUM(discount_amount) as discount,
+                SUM(tax_amount) as tax,
+                SUM(total_price) as net
+            ')
+            ->groupBy(DB::raw('DATE(paid_at)'))
+            ->orderBy('date')
+            ->get();
+
+        $topProductsRaw = DB::table('order_items')
+            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
+            ->whereIn('order_items.order_id', (clone $trxQuery)->select('order_id'))
+            ->selectRaw('
+                products.name,
+                categories.name as category,
+                SUM(order_items.qty) as sold,
+                SUM(order_items.total_price) as revenue
+            ')
+            ->groupBy('products.id', 'products.name', 'categories.name')
+            ->orderByDesc('sold')
+            ->limit(50)
+            ->get();
+
+        // Generate CSV content
+        $filename = 'laporan-penjualan-' . $startDate->format('Y-m-d') . '_to_' . $endDate->format('Y-m-d') . '.csv';
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $csv = fopen('php://temp', 'r+');
+        fputcsv($csv, ['LAPORAN PENJUALAN ENTERPRISE']);
+        fputcsv($csv, ['Periode', $startDate->format('d/m/Y') . ' s/d ' . $endDate->format('d/m/Y')]);
+        fputcsv($csv, ['Outlet', $outletId ? Outlet::find($outletId)?->name ?? 'Semua' : 'Semua']);
+        fputcsv($csv, []);
+
+        // Summary
+        fputcsv($csv, ['RINGKASAN']);
+        fputcsv($csv, ['Total Transaksi', 'Pendapatan', 'Diskon', 'Pajak', 'Rata-rata Order']);
+        fputcsv($csv, [
+            (int)($summaryData->total_trx ?? 0),
+            'Rp ' . number_format($summaryData->total_revenue ?? 0),
+            'Rp ' . number_format($summaryData->total_discount ?? 0),
+            'Rp ' . number_format($summaryData->total_tax ?? 0),
+            'Rp ' . number_format((int)($summaryData->total_revenue ?? 0) / max(1, (int)($summaryData->total_trx ?? 0)))
+        ]);
+        fputcsv($csv, []);
+
+        // Daily sales
+        fputcsv($csv, ['PENJUALAN HARIAN']);
+        fputcsv($csv, ['Tanggal', 'Transaksi', 'Gross', 'Diskon', 'Pajak', 'Netto']);
+        foreach ($salesDaily as $day) {
+            fputcsv($csv, [
+                $day->date,
+                $day->transactions,
+                'Rp ' . number_format($day->gross),
+                'Rp ' . number_format($day->discount),
+                'Rp ' . number_format($day->tax),
+                'Rp ' . number_format($day->net)
+            ]);
+        }
+        fputcsv($csv, []);
+
+        // Top products
+        fputcsv($csv, ['TOP PRODUCTS']);
+        fputcsv($csv, ['Produk', 'Kategori', 'Terjual', 'Pendapatan']);
+        foreach ($topProductsRaw as $prod) {
+            fputcsv($csv, [
+                $prod->name,
+                $prod->category ?? 'Lainnya',
+                $prod->sold,
+                'Rp ' . number_format($prod->revenue)
+            ]);
+        }
+
+        rewind($csv);
+        $csvContent = stream_get_contents($csv);
+        fclose($csv);
+
+        return response($csvContent, 200, $headers);
     }
 }
 
