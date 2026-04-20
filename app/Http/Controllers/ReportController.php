@@ -64,8 +64,9 @@ class ReportController extends Controller
                 SUM(tax_amount) as tax,
                 SUM(total_price) as net
             ')
-            ->groupBy('date')
-            ->orderByDesc('date') // Descending agar tanggal terbaru di atas (untuk tabel)
+            // Fix MySQL Strict Mode untuk alias date
+            ->groupBy(DB::raw('DATE(paid_at)'))
+            ->orderByDesc('date')
             ->get();
 
         $revenueChart = $salesDaily->sortBy('date')->map(fn($item) => [
@@ -80,10 +81,9 @@ class ReportController extends Controller
             'discount' => (int) $item->discount,
             'tax' => (int) $item->tax,
             'net' => (int) $item->net,
-        ]);
+        ])->values();
 
         // --- C. TOP PRODUCTS (Tab 3) ---
-        // Menggunakan order_items yang sukses dibayar
         $topProducts = DB::table('order_items')
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
@@ -96,11 +96,11 @@ class ReportController extends Controller
             ')
             ->groupBy('products.id', 'products.name', 'categories.name')
             ->orderByDesc('sold')
-            ->limit(100) // Dibatasi 100 produk teratas untuk keamanan memori
+            ->limit(100)
             ->get()
             ->map(fn($item) => [
                 'name' => $item->name,
-                'category' => $item->category,
+                'category' => $item->category ?? 'Lainnya',
                 'sold' => (int) $item->sold,
                 'revenue' => (int) $item->revenue
             ]);
