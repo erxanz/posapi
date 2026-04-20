@@ -221,7 +221,6 @@ class ReportController extends Controller
             ])->keyBy('hour');
 
         $fullHourly = collect(range(0, 23))->map(function($h) use ($hourlySales) {
-            // FIX: Gunakan format array sebagai fallback agar tidak memicu error object/array mismatch
             $data = $hourlySales->get($h, ['transactions' => 0, 'revenue' => 0]);
             return [
                 'hour' => $h,
@@ -232,7 +231,7 @@ class ReportController extends Controller
 
         // --- H. TABLE PERFORMANCE ---
         $tablePerformance = DB::table('orders')
-            ->leftJoin('tables', 'orders.table_id', '=', 'tables.id') // FIX: leftJoin agar Takeaway terhitung
+            ->leftJoin('tables', 'orders.table_id', '=', 'tables.id')
             ->join('history_transactions', 'orders.id', '=', 'history_transactions.order_id')
             ->whereIn('history_transactions.id', (clone $trxQuery)->select('history_transactions.id'))
             ->selectRaw('
@@ -283,12 +282,14 @@ class ReportController extends Controller
             ')
             ->first();
 
-        // --- K. CUSTOMER METRICS ---
+        // --- K. CUSTOMER METRICS (DIPERBAIKI) ---
+        // Melakukan JOIN ke tabel 'orders' untuk mendapatkan data 'customer_name'
         $customerMetrics = (clone $trxQuery)
+            ->join('orders', 'history_transactions.order_id', '=', 'orders.id')
             ->selectRaw('
-                COUNT(DISTINCT history_transactions.customer_name) as unique_customers,
+                COUNT(DISTINCT orders.customer_name) as unique_customers,
                 AVG(history_transactions.total_price) as avg_check,
-                SUM(CASE WHEN history_transactions.customer_name IS NOT NULL AND history_transactions.customer_name != "" THEN 1 ELSE 0 END) as named_customers
+                SUM(CASE WHEN orders.customer_name IS NOT NULL AND orders.customer_name != "" THEN 1 ELSE 0 END) as named_customers
             ')
             ->first();
 
