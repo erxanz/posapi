@@ -244,19 +244,24 @@ class DatabaseSeeder extends Seeder
             Discount::factory()->happyHour()->create(['owner_id' => $outlet->owner_id]);
             Discount::factory()->buy1Get1()->create(['owner_id' => $outlet->owner_id]);
 
-            // Additional history transactions using factory with existing orders - SKIP duplicate UNIQUE constraint
-            // $paidOrders = Order::where('outlet_id', $outlet->id)
-            //     ->where('status', 'paid')
-            //     ->inRandomOrder()
-            //     ->limit(10)
-            //     ->get();
-            //
-            // foreach ($paidOrders as $order) {
-            //     HistoryTransaction::factory()->create([
-            //         'outlet_id' => $outlet->id,
-            //         'order_id' => $order->id,
-            //     ]);
-            // }
+// Rapi history transactions using factory - sequential, non-random
+            $paidOrders = Order::where('outlet_id', $outlet->id)
+                ->where('status', 'paid')
+                ->orderBy('id')
+                ->get();
+
+            foreach ($paidOrders as $index => $order) {
+                $hasHistory = DB::table('history_transactions')->where('order_id', $order->id)->exists();
+                if (!$hasHistory) {
+                    HistoryTransaction::factory()->paid()->create([
+                        'outlet_id' => $outlet->id,
+                        'order_id' => $order->id,
+                        'payment_id' => DB::table('payments')->where('order_id', $order->id)->value('id'),
+                        'cashier_id' => $order->user_id,
+                    ]);
+                }
+            }
+
         }
 
         // ================= SHIFT KARYAWAN =================
@@ -334,31 +339,8 @@ class DatabaseSeeder extends Seeder
                 'updated_at' => now(),
             ]);
 
-            $payment = DB::table('payments')->where('id', $paymentId)->first();
+            // History created later by factory to avoid duplicate
 
-            DB::table('history_transactions')->insert([
-                'outlet_id' => $order->outlet_id,
-                'order_id' => $order->id,
-                'payment_id' => $paymentId,
-                'invoice_number' => $order->invoice_number,
-                'customer_name' => $order->customer_name,
-                'subtotal_price' => (int) $order->subtotal_price,
-                'discount_amount' => (int) $order->discount_amount,
-                'tax_amount' => (int) $order->tax_amount,
-                'total_price' => (int) $order->total_price,
-                'paid_amount' => (int) $payment->amount_paid - (int) $payment->change_amount,
-                'change_amount' => (int) $payment->change_amount,
-                'payment_method' => $payment->method,
-                'paid_at' => $payment->paid_at,
-                'cashier_id' => $payment->paid_by,
-                'status' => 'paid',
-                'metadata' => json_encode([
-                    'seeded' => true,
-                    'payments_count' => 1,
-                ]),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
         }
 
         // ================= END SHIFT KARYAWAN & PAYMENT =================
@@ -377,26 +359,9 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-        // Create history for cancelled orders (no payment)
-        foreach (Order::where('status', 'cancelled')->get() as $order) {
-            DB::table('history_transactions')->insert([
-                'outlet_id' => $order->outlet_id,
-                'order_id' => $order->id,
-                'invoice_number' => $order->invoice_number,
-                'customer_name' => $order->customer_name,
-                'subtotal_price' => (int) $order->subtotal_price,
-                'discount_amount' => (int) $order->discount_amount,
-                'tax_amount' => (int) $order->tax_amount,
-                'total_price' => (int) $order->total_price,
-                'status' => 'cancelled',
-                'metadata' => json_encode([
-                    'seeded' => true,
-                    'payments_count' => 0,
-                ]),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
+// Cancelled orders history handled in factory section
+
+
 
         // ================= SUMMARY =================
         $outletCount = Outlet::count();

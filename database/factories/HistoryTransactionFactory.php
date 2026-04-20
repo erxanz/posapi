@@ -17,35 +17,40 @@ class HistoryTransactionFactory extends Factory
      */
     public function definition(): array
     {
-        $subtotal = fake()->numberBetween(50000, 500000);
-        $discountAmount = fake()->numberBetween(0, min(50000, $subtotal * 0.3));
-        $taxAmount = fake()->numberBetween(2000, 30000);
+        $invoiceNumber = 'HT-' . str_pad((string) fake()->numberBetween(1000, 9999), 4, '0', STR_PAD_LEFT);
+        $customerName = fake()->name();
+        $subtotal = fake()->numberBetween(75000, 350000);
+        $discountAmount = fake()->numberBetween(0, 25000);
+        $taxAmount = round($subtotal * 0.11); // PPN 11%
         $totalPrice = $subtotal - $discountAmount + $taxAmount;
-        $paidAmount = $totalPrice + fake()->numberBetween(0, 50000);
+        $paymentMethod = fake()->randomElement(['cash', 'QRIS', 'Debit', 'E-Wallet']);
+        $paidAmount = $totalPrice + fake()->numberBetween(0, 25000);
+        $changeAmount = $paidAmount - $totalPrice;
 
         return [
             'outlet_id' => null,
             'order_id' => null,
             'payment_id' => null,
-            'invoice_number' => 'HT-' . fake()->bothify('#####'),
-            'customer_name' => fake()->name(),
+            'invoice_number' => $invoiceNumber,
+            'customer_name' => $customerName,
             'subtotal_price' => $subtotal,
             'discount_amount' => $discountAmount,
             'tax_amount' => $taxAmount,
             'total_price' => $totalPrice,
             'paid_amount' => $paidAmount,
-            'change_amount' => $paidAmount - $totalPrice,
-            'payment_method' => fake()->randomElement(['cash', 'qris', 'debit', 'ewallet']),
-            'paid_at' => fake()->dateTimeBetween('-90 days', '-1 day'),
+            'change_amount' => $changeAmount,
+            'payment_method' => $paymentMethod,
+            'paid_at' => fake()->dateTimeBetween('-60 days', '-1 day'),
             'cashier_id' => null,
-            'status' => fake()->randomElement(['paid', 'cancelled']),
+            'status' => 'paid',
             'metadata' => json_encode([
-                'items_count' => fake()->numberBetween(2, 8),
+                'items_count' => fake()->numberBetween(3, 7),
                 'table_number' => fake()->numberBetween(1, 20),
-                'shift_karyawan_id' => fake()->numberBetween(1, 100),
+                'discount_name' => fake()->randomElement(['Pelanggan Setia 10%', 'Promo Siang', null]),
             ]),
         ];
     }
+
 
     public function paid(): static
     {
