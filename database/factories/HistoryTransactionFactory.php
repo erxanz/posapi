@@ -3,7 +3,9 @@
 namespace Database\Factories;
 
 use App\Models\HistoryTransaction;
+use App\Models\OrderItem;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @extends Factory<HistoryTransaction>
@@ -27,6 +29,16 @@ class HistoryTransactionFactory extends Factory
         $paidAmount = $totalPrice + fake()->numberBetween(0, 25000);
         $changeAmount = $paidAmount - $totalPrice;
 
+        $items = fake()->randomElements([
+            'Nasi Goreng Spesial x2 Rp45.000',
+            'Es Teh Manis x1 Rp8.000',
+            'Kentang Goreng x1 Rp15.000',
+            'Ayam Geprek x1 Rp35.000',
+            'Kopi Susu x1 Rp12.000',
+            'Sate Ayam x1 Rp25.000',
+            'Jus Jeruk x1 Rp10.000',
+        ], fake()->numberBetween(2, 5));
+
         return [
             'outlet_id' => null,
             'order_id' => null,
@@ -43,14 +55,17 @@ class HistoryTransactionFactory extends Factory
             'paid_at' => fake()->dateTimeBetween('-60 days', '-1 day'),
             'cashier_id' => null,
             'status' => 'paid',
-            'metadata' => json_encode([
-                'items_count' => fake()->numberBetween(3, 7),
+            'order_items_summary' => json_encode([
+                'items_count' => count($items),
+                'items' => $items,
                 'table_number' => fake()->numberBetween(1, 20),
                 'discount_name' => fake()->randomElement(['Pelanggan Setia 10%', 'Promo Siang', null]),
             ]),
+            'metadata' => json_encode([
+                'shift_karyawan_id' => fake()->numberBetween(1, 50),
+            ]),
         ];
     }
-
 
     public function paid(): static
     {
@@ -65,6 +80,7 @@ class HistoryTransactionFactory extends Factory
             'status' => 'cancelled',
             'paid_amount' => 0,
             'change_amount' => 0,
+            'order_items_summary' => null,
         ]);
     }
 
@@ -78,9 +94,19 @@ class HistoryTransactionFactory extends Factory
     public function nonCash(): static
     {
         return $this->state(fn () => [
-            'payment_method' => fake()->randomElement(['qris', 'debit', 'ewallet']),
+            'payment_method' => fake()->randomElement(['QRIS', 'Debit', 'E-Wallet']),
             'change_amount' => 0,
         ]);
     }
 
+    public function withOrderItemsSummary(array $items): static
+    {
+        return $this->state(fn () => [
+            'order_items_summary' => json_encode([
+                'items_count' => count($items),
+                'items' => $items,
+            ]),
+        ]);
+    }
 }
+

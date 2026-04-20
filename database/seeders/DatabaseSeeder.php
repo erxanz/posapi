@@ -259,6 +259,8 @@ class DatabaseSeeder extends Seeder
                         'payment_id' => DB::table('payments')->where('order_id', $order->id)->value('id'),
                         'cashier_id' => $order->user_id,
                     ]);
+
+
                 }
             }
 
