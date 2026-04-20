@@ -176,16 +176,14 @@ class DatabaseSeeder extends Seeder
             }
 
             // ================= DISCOUNTS & TAXES PER OUTLET =================
-            Discount::factory()
-                ->count(3)
-                ->create(['owner_id' => $outlet->owner_id]);
-            Discount::factory()
-                ->lunchSpecial()
-                ->create(['owner_id' => $outlet->owner_id]);
+            Discount::factory()->lunchSpecial()->create(['owner_id' => $outlet->owner_id]);
+            Discount::factory()->happyHour()->create(['owner_id' => $outlet->owner_id]);
+            Discount::factory()->weekdayPromo()->create(['owner_id' => $outlet->owner_id]);
 
-            Tax::factory()
-                ->count(2)
-                ->create(['outlet_id' => $outlet->id]);
+
+            Tax::factory()->ppn()->create(['outlet_id' => $outlet->id]);
+            Tax::factory()->serviceCharge()->create(['outlet_id' => $outlet->id]);
+
 
             // ================= SAMPLE ORDER =================
             $tables = Table::where('outlet_id', $outlet->id)->orderBy('id')->get();

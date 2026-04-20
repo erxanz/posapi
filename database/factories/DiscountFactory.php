@@ -11,7 +11,8 @@ use Illuminate\Support\Carbon;
  */
 class DiscountFactory extends Factory
 {
-    protected $model = Discount::class;
+
+
 
     /**
      * Define the model's default state.
@@ -25,7 +26,13 @@ class DiscountFactory extends Factory
 
         return [
             'owner_id' => null, // Will be set when used
-            'name' => fake()->words(3, true),
+            'name' => fake()->randomElement([
+                'Diskon Pelanggan Setia',
+                'Promo Weekend',
+                'Buy More Save More',
+                'Flash Sale Siang Ini',
+            ]),
+
             'type' => $type,
             'value' => $type === 'percentage' ? fake()->numberBetween(5, 50) : fake()->numberBetween(5000, 50000),
             'min_purchase' => fake()->numberBetween(50000, 300000),
@@ -47,8 +54,9 @@ class DiscountFactory extends Factory
             'type' => 'percentage',
             'value' => 20,
             'min_purchase' => 50000,
-            'start_date' => now()->startOfWeek(Carbon::MONDAY),
-            'end_date' => now()->endOfWeek(Carbon::FRIDAY)->addHours(14),
+            'start_date' => now()->startOfWeek(),
+            'end_date' => now()->endOfWeek()->addHours(14),
+
         ]);
     }
 
@@ -91,8 +99,9 @@ class DiscountFactory extends Factory
             'type' => 'nominal',
             'value' => 10000,
             'min_purchase' => 100000,
-            'start_date' => now()->nextMonday(),
-            'end_date' => now()->nextFriday(),
+            'start_date' => now()->startOfWeek(),
+            'end_date' => now()->endOfWeek(),
+
         ]);
     }
 

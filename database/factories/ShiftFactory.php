@@ -19,9 +19,9 @@ class ShiftFactory extends Factory
     {
         return [
             'outlet_id' => null,
-'name' => fake()->randomElement(['Shift Pagi', 'Shift Malam']),
+            'name' => fake()->randomElement(['Shift Pagi', 'Shift Malam']),
 
-'start_time' => fake()->randomElement(['07:00:00', '15:00:00']),
+            'start_time' => fake()->randomElement(['07:00:00', '15:00:00']),
             'end_time' => match(fake()->randomElement(['07:00:00', '15:00:00'])) {
                 '07:00:00' => '15:00:00',
                 '15:00:00' => '23:00:00',
