@@ -107,7 +107,7 @@ Route::prefix('v1')->group(function () {
 
             Route::get('/', [OrderController::class, 'index']);
             Route::post('/', [OrderController::class, 'store']);
-            Route::get('/{id}', [OrderController::class, 'show']);
+            Route::get('/{order}', [OrderController::class, 'show']);
 
             // checkout order (create order + items)
             Route::post('/checkout', [OrderController::class, 'checkoutOrder']);
@@ -117,11 +117,11 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{id}/items/{itemId}', [OrderController::class, 'removeItem']);
 
             // payment
-            Route::post('/{id}/checkout', [OrderController::class, 'checkout']);
-            Route::post('/{id}/payments', [OrderController::class, 'pay']);
-            Route::patch('/{id}/adjustments', [OrderController::class, 'updateAdjustments']);
+            Route::post('/{order}/checkout', [OrderController::class, 'checkout']);
+            Route::post('/{order}/payments', [OrderController::class, 'pay']);
+            Route::patch('/{order}/adjustments', [OrderController::class, 'updateAdjustments']);
 
-            Route::post('/{id}/void-items', [OrderController::class, 'voidItems']);
+            Route::post('/{order}/void-items', [OrderController::class, 'voidItems']);
 
         });
 

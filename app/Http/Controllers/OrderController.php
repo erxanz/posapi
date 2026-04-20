@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\Outlet;
+use App\Models\Tax;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -211,15 +212,27 @@ class OrderController extends Controller
             'customer_name' => 'nullable|string|max:100',
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
+            'discount_type' => 'nullable|in:percentage,nominal',
+            'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
+            'tax_type' => 'nullable|in:percentage,nominal',
+            'tax_value' => 'nullable|integer|min:0',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
         ]);
 
-        $result = $this->orderService->createPublicOrder($validated);
+        $validated = $this->normalizeLegacyAdjustmentPayload($validated);
 
-        return response()->json($result, 201);
+        try {
+            $result = $this->orderService->createPublicOrder($validated);
+
+            return response()->json($result, 201);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -236,21 +249,36 @@ class OrderController extends Controller
             'notes' => 'nullable|string|max:255',
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
+            'discount_type' => 'nullable|in:percentage,nominal',
+            'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
+            'tax_type' => 'nullable|in:percentage,nominal',
+            'tax_value' => 'nullable|integer|min:0',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
             'payment_method' => 'required|string|max:50',
-            'amount_paid' => 'required|numeric|min:0',
+            'amount_paid' => 'nullable|numeric|min:0|required_without:paid_amount',
+            'paid_amount' => 'nullable|numeric|min:0|required_without:amount_paid',
         ]);
 
         if ($user->role === 'karyawan' && empty($validated['outlet_id'])) {
             $validated['outlet_id'] = $user->outlet_id;
         }
 
-        $result = $this->orderService->createCheckoutOrder($validated, $validated['outlet_id'] ?? null);
+        $validated['amount_paid'] = (int) ($validated['amount_paid'] ?? $validated['paid_amount']);
+        $validated = $this->normalizeLegacyAdjustmentPayload($validated);
 
-        return response()->json($result, $result['success'] ? 201 : 500);
+        try {
+            $result = $this->orderService->createCheckoutOrder($validated, $validated['outlet_id'] ?? null);
+
+            return response()->json($result, 201);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -258,6 +286,17 @@ class OrderController extends Controller
      */
     public function pay(Request $request, Order $order)
     {
+        // Backward compatibility: allow non-split payload on /payments endpoint.
+        if (!$request->has('payments') && $request->filled('amount_paid')) {
+            $request->merge([
+                'payments' => [[
+                    'amount_paid' => (int) $request->input('amount_paid'),
+                    'method' => $request->input('method', 'cash'),
+                    'reference_no' => $request->input('reference_no'),
+                ]],
+            ]);
+        }
+
         $validated = $request->validate([
             'payments' => 'required|array|min:1',
             'payments.*.amount_paid' => 'required|integer|min:1',
@@ -265,19 +304,27 @@ class OrderController extends Controller
             'payments.*.reference_no' => 'nullable|string|max:100',
         ]);
 
-        $result = $this->orderService->processPayments($order, $validated['payments']);
+        try {
+            $result = $this->orderService->processPayments($order, $validated['payments']);
 
-        $status = $result['is_paid'] ? 200 : 202;
+            $status = $result['is_paid'] ? 200 : 202;
 
-        return response()->json([
-            'message' => $result['is_paid'] ? 'Order lunas' : 'Pembayaran tercatat',
-            'order' => $result['order'],
-            'payment_summary' => [
-                'order_total' => $result['order']->total_price,
-                'effective_paid' => $result['order']->payments->sum(fn($p) => $p->amount_paid - $p->change_amount),
-                'remaining' => $result['remaining'],
-            ],
-        ], $status);
+            return response()->json([
+                'message' => $result['is_paid'] ? 'Order lunas' : 'Pembayaran tercatat',
+                'order' => $result['order'],
+                'payment_summary' => [
+                    'order_total' => $result['order']->total_price,
+                    'effective_paid' => $result['order']->payments->sum(fn($p) => $p->amount_paid - $p->change_amount),
+                    'remaining' => $result['remaining'],
+                ],
+            ], $status);
+        } catch (\Throwable $e) {
+            $status = str_contains(strtolower($e->getMessage()), 'forbidden') ? 403 : 400;
+
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], $status);
+        }
     }
 
     /**
@@ -286,14 +333,17 @@ class OrderController extends Controller
     public function checkout(Request $request, Order $order)
     {
         $validated = $request->validate([
-            'amount_paid' => 'required|integer|min:1',
+            'amount_paid' => 'nullable|integer|min:1|required_without:paid_amount',
+            'paid_amount' => 'nullable|integer|min:1|required_without:amount_paid',
             'method' => 'nullable|string|max:50',
             'reference_no' => 'nullable|string|max:100',
         ]);
 
+        $amountPaid = (int) ($validated['amount_paid'] ?? $validated['paid_amount']);
+
         $request->merge([
             'payments' => [[
-                'amount_paid' => $validated['amount_paid'],
+                'amount_paid' => $amountPaid,
                 'method' => $validated['method'] ?? 'cash',
                 'reference_no' => $validated['reference_no'] ?? null,
             ]],
@@ -314,8 +364,14 @@ class OrderController extends Controller
         $validated = $request->validate([
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
+            'discount_type' => 'nullable|in:percentage,nominal',
+            'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
+            'tax_type' => 'nullable|in:percentage,nominal',
+            'tax_value' => 'nullable|integer|min:0',
         ]);
+
+        $validated = $this->normalizeLegacyAdjustmentPayload($validated);
 
         $order->update($validated);
         $order->recalculateTotals($validated);
@@ -424,5 +480,32 @@ class OrderController extends Controller
         if ($user->role !== 'developer' && $user->outlet_id !== $order->outlet_id) {
             abort(403);
         }
+    }
+
+    private function normalizeLegacyAdjustmentPayload(array $payload): array
+    {
+        if (!isset($payload['manual_discount_type']) && isset($payload['discount_type'])) {
+            $payload['manual_discount_type'] = $payload['discount_type'];
+        }
+
+        if (!isset($payload['manual_discount_value']) && isset($payload['discount_value'])) {
+            $payload['manual_discount_value'] = (int) $payload['discount_value'];
+        }
+
+        if (!isset($payload['tax_id']) && isset($payload['tax_type']) && isset($payload['tax_value'])) {
+            $tax = Tax::query()
+                ->where('type', $payload['tax_type'])
+                ->where('active', true)
+                ->get()
+                ->first(function (Tax $tax) use ($payload) {
+                    return (int) round(((float) $tax->rate) * 100) === (int) $payload['tax_value'];
+                });
+
+            if ($tax) {
+                $payload['tax_id'] = $tax->id;
+            }
+        }
+
+        return $payload;
     }
 }

@@ -9,6 +9,7 @@ use App\Models\HistoryTransaction;
 use App\Models\Outlet;
 use App\Models\Table;
 use App\Models\StockHistory;
+use App\Models\Tax;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 
@@ -65,7 +66,7 @@ class OrderService
             // Kalkulasi otomatis subtotal, total, diskon & pajak
             $order->recalculateTotals();
 
-            $payment = $this->createPayment($order, $validated['amount_paid'], $validated['payment_method']);
+            $this->createPayment($order, (int) $validated['amount_paid'], $validated['payment_method']);
 
             // Simpan ke riwayat transaksi secara otomatis menggunakan total yang baru dihitung
             $this->storeHistoryTransaction($order);
@@ -76,7 +77,7 @@ class OrderService
 
             return [
                 'success' => true,
-                'message' => 'Checkout berhasil',
+                'message' => 'Checkout dan pembayaran berhasil',
                 'order' => $order->load('items.product', 'table', 'payments'),
             ];
 
@@ -237,15 +238,36 @@ class OrderService
     {
         $updates = [];
 
-        // FIX: Mapping nama variabel payload ke nama kolom sesungguhnya di tabel orders
+        // Support payload baru dan legacy agar Flutter lama tetap kompatibel.
         if (isset($data['manual_discount_type'])) {
-            $updates['discount_type'] = $data['manual_discount_type'];
+            $updates['manual_discount_type'] = $data['manual_discount_type'];
+        } elseif (isset($data['discount_type'])) {
+            $updates['manual_discount_type'] = $data['discount_type'];
         }
+
         if (isset($data['manual_discount_value'])) {
-            $updates['discount_value'] = $data['manual_discount_value'];
+            $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
+        } elseif (isset($data['discount_value'])) {
+            $updates['manual_discount_value'] = (int) $data['discount_value'];
         }
+
         if (isset($data['tax_id'])) {
             $updates['tax_id'] = $data['tax_id'];
+        } elseif (isset($data['tax_type']) && isset($data['tax_value'])) {
+            $taxType = (string) $data['tax_type'];
+            $taxValue = (int) $data['tax_value'];
+
+            $matchedTax = Tax::query()
+                ->where('type', $taxType)
+                ->where('active', true)
+                ->get()
+                ->first(function (Tax $tax) use ($taxValue) {
+                    return (int) round(((float) $tax->rate) * 100) === $taxValue;
+                });
+
+            if ($matchedTax) {
+                $updates['tax_id'] = $matchedTax->id;
+            }
         }
 
         if (!empty($updates)) {
@@ -256,13 +278,15 @@ class OrderService
     private function createPayment(Order $order, int $amountPaid, string $method): Payment
     {
         $change = max(0, $amountPaid - $order->total_price);
+        $user = $this->currentUser();
+
         return Payment::create([
             'order_id' => $order->id,
             'amount_paid' => $amountPaid,
             'change_amount' => $change,
             'method' => strtolower($method),
             'paid_at' => now(),
-            'paid_by' => $this->user->id,
+            'paid_by' => $user->id,
         ]);
     }
 
