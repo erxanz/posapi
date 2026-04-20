@@ -119,54 +119,25 @@ class DatabaseSeeder extends Seeder
             });
 
 
-            $productCatalog = [
-                'Makanan' => [
-                    ['name' => 'Nasi Goreng', 'description' => 'Nasi goreng spesial', 'cost_price' => 12000, 'station' => 'Kitchen'],
-                    ['name' => 'Mie Goreng', 'description' => 'Mie goreng gurih', 'cost_price' => 11000, 'station' => 'Kitchen'],
-                    ['name' => 'Ayam Geprek', 'description' => 'Ayam geprek sambal', 'cost_price' => 15000, 'station' => 'Kitchen'],
-                    ['name' => 'Soto Ayam', 'description' => 'Soto ayam hangat', 'cost_price' => 13000, 'station' => 'Kitchen'],
-                    ['name' => 'Bakso', 'description' => 'Bakso kuah sapi', 'cost_price' => 14000, 'station' => 'Kitchen'],
-                ],
-                'Minuman' => [
-                    ['name' => 'Es Teh Manis', 'description' => 'Teh manis dingin', 'cost_price' => 3000, 'station' => 'Bar'],
-                    ['name' => 'Es Jeruk', 'description' => 'Jeruk peras segar', 'cost_price' => 4000, 'station' => 'Bar'],
-                    ['name' => 'Kopi Hitam', 'description' => 'Kopi hitam panas', 'cost_price' => 5000, 'station' => 'Bar'],
-                    ['name' => 'Cappuccino', 'description' => 'Kopi susu foam', 'cost_price' => 8000, 'station' => 'Bar'],
-                    ['name' => 'Matcha Latte', 'description' => 'Matcha latte dingin', 'cost_price' => 9000, 'station' => 'Bar'],
-                ],
-                'Snack' => [
-                    ['name' => 'Kentang Goreng', 'description' => 'Kentang goreng crispy', 'cost_price' => 7000, 'station' => 'Kitchen'],
-                    ['name' => 'Pisang Goreng', 'description' => 'Pisang goreng hangat', 'cost_price' => 6000, 'station' => 'Kitchen'],
-                    ['name' => 'Cireng', 'description' => 'Cireng isi', 'cost_price' => 5000, 'station' => 'Kitchen'],
-                    ['name' => 'Roti Bakar', 'description' => 'Roti bakar coklat', 'cost_price' => 6500, 'station' => 'Kitchen'],
-                    ['name' => 'Donat', 'description' => 'Donat gula halus', 'cost_price' => 5500, 'station' => 'Kitchen'],
-                ],
-            ];
+            // FACTORY for products - fully connected to Category & Station
+            foreach ($categories as $category) {
+                $matchedStation = $stations->firstWhere('name', str_contains($category->name, 'Minuman') ? 'Bar Minuman' : 'Dapur Utama');
 
-            $stationMap = $stations->keyBy('name');
-
-            // produk per kategori
-            foreach ($categories as $categoryIndex => $category) {
-                $productRows = $productCatalog[$category->name] ?? [];
-
-                foreach ($productRows as $productIndex => $row) {
-                    $stationId = optional($stationMap->get($row['station']))->id;
-
-                    $product = Product::create([
-                        'owner_id' => $outlet->owner_id,
-                        'category_id' => $category->id,
-                        'station_id' => $stationId,
-                        'name' => $row['name'],
-                        'description' => $row['description'],
-                        'cost_price' => $row['cost_price'],
-                        'image' => self::DEFAULT_PRODUCT_IMAGE_URL,
+                Product::factory()
+                    ->count(5)
+                    ->state(fn() => ['category_id' => $category->id, 'owner_id' => $outlet->owner_id])
+                    ->create([
+                        'station_id' => $matchedStation?->id ?? $stations->random()->id,
                     ]);
 
-                    $price = $row['cost_price'] + 5000;
-                    $stock = 20 + ($categoryIndex * 10) + ($productIndex * 3);
-
+                // Update outlet_product pivot
+                $products = Product::where('category_id', $category->id)->latest()->limit(5)->get();
+                foreach ($products as $product) {
+                    $price = $product->cost_price + fake()->numberBetween(5000, 15000);
+                    $stock = fake()->numberBetween(10, 100);
                     $outlet->products()->syncWithoutDetaching([
                         $product->id => [
+                            'station_id' => $product->station_id,
                             'price' => $price,
                             'stock' => $stock,
                             'is_active' => true,
@@ -174,6 +145,7 @@ class DatabaseSeeder extends Seeder
                     ]);
                 }
             }
+
 
             // ================= DISCOUNTS & TAXES PER OUTLET =================
             Discount::factory()->lunchSpecial()->create(['owner_id' => $outlet->owner_id]);

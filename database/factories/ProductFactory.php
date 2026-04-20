@@ -64,9 +64,18 @@ class ProductFactory extends Factory
             'description' => $descriptions[$index],
             'cost_price' => fake()->numberBetween(8000, 25000),
             'image' => self::DEFAULT_IMAGE_URL,
-            'station_id' => null,
+'station_id' => null,
         ];
     }
+
+
+    public function withStation(Station $station): static
+    {
+        return $this->state(fn () => [
+            'station_id' => $station->id,
+        ]);
+    }
+
 
     public function makanan(): static
     {
