@@ -55,6 +55,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 
@@ -102,5 +103,10 @@ class User extends Authenticatable
     public function shifts()
     {
         return $this->belongsToMany(Shift::class, 'shift_user');
+    }
+
+    public function shiftKaryawans()
+    {
+        return $this->hasMany(ShiftKaryawan::class);
     }
 }

@@ -224,6 +224,13 @@ class ShiftController extends Controller
     {
         $user = auth()->user();
 
+        if ($user->role !== 'karyawan') {
+            return response()->json([
+                'message' => 'Endpoint ini khusus karyawan.',
+                'data' => []
+            ], 403);
+        }
+
         // Ambil jadwal shift yang ditugaskan kepada karyawan yang sedang login
         $myShifts = $user->shifts()->with('outlet:id,name')->get();
 

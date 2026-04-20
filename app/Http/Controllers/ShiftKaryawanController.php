@@ -30,6 +30,25 @@ class ShiftKaryawanController extends Controller
         return response()->json($query->latest()->paginate($request->limit ?? 15));
     }
 
+    public function show($id)
+    {
+        $authUser = auth()->user();
+        $shift = ShiftKaryawan::with(['user:id,name', 'outlet:id,name', 'shift:id,name,start_time,end_time,outlet_id'])->findOrFail($id);
+
+        if ($authUser->role === 'karyawan' && (int) $shift->user_id !== (int) $authUser->id) {
+            return response()->json(['message' => 'Akses ditolak'], 403);
+        }
+
+        if ($authUser->role === 'manager') {
+            $ownsOutlet = \App\Models\Outlet::where('id', $shift->outlet_id)->where('owner_id', $authUser->id)->exists();
+            if (!$ownsOutlet) {
+                return response()->json(['message' => 'Akses ditolak'], 403);
+            }
+        }
+
+        return response()->json(['data' => $shift], 200);
+    }
+
     public function destroy($id)
     {
         $shift = ShiftKaryawan::findOrFail($id);
@@ -42,19 +61,43 @@ class ShiftKaryawanController extends Controller
     // ==========================================
     public function startShift(Request $request)
     {
+        $user = auth()->user();
+        if ($user->role !== 'karyawan') {
+            return response()->json(['message' => 'Hanya karyawan yang dapat memulai shift'], 403);
+        }
+
         $validated = $request->validate([
             'outlet_id' => 'required|exists:outlets,id',
             // 'shift_id' dihapus dari sini karena Flutter tidak mengirimkannya lagi
             'opening_balance' => 'required|integer|min:0',
         ]);
 
-        $user = auth()->user();
+        if ((int) $user->outlet_id !== (int) $validated['outlet_id']) {
+            return response()->json(['message' => 'Outlet tidak sesuai dengan akun karyawan'], 403);
+        }
+
         $currentTime = now()->format('H:i:s'); // Ambil jam saat ini, misal: 08:30:00
 
         // 1. CARI JADWAL OTOMATIS: Cek tabel shift_user dan cocokkan dengan jam sekarang
         $currentAssignedShift = $user->shifts()
-            ->whereTime('start_time', '<=', $currentTime)
-            ->whereTime('end_time', '>=', $currentTime)
+            ->where('outlet_id', $validated['outlet_id'])
+            ->where(function ($query) use ($currentTime) {
+                $query
+                    // Shift normal (contoh: 08:00-16:00)
+                    ->where(function ($q) use ($currentTime) {
+                        $q->whereColumn('start_time', '<=', 'end_time')
+                            ->whereTime('start_time', '<=', $currentTime)
+                            ->whereTime('end_time', '>=', $currentTime);
+                    })
+                    // Shift lintas tengah malam (contoh: 22:00-06:00)
+                    ->orWhere(function ($q) use ($currentTime) {
+                        $q->whereColumn('start_time', '>', 'end_time')
+                            ->where(function ($q2) use ($currentTime) {
+                                $q2->whereTime('start_time', '<=', $currentTime)
+                                    ->orWhereTime('end_time', '>=', $currentTime);
+                            });
+                    });
+            })
             ->first();
 
         // Jika sistem tidak menemukan jadwal yang cocok di jam ini pada tabel shift_user
@@ -86,12 +129,17 @@ class ShiftKaryawanController extends Controller
 
         return response()->json([
             'message' => 'Shift berhasil dimulai otomatis sesuai jadwal',
-            'data' => $shiftKaryawan
+            'data' => $shiftKaryawan->load(['shift:id,name,start_time,end_time,outlet_id', 'outlet:id,name'])
         ], 201);
     }
 
     public function endShift(Request $request)
     {
+        $user = auth()->user();
+        if ($user->role !== 'karyawan') {
+            return response()->json(['message' => 'Hanya karyawan yang dapat mengakhiri shift'], 403);
+        }
+
         $validated = $request->validate([
             'actual_closing_balance' => 'required|integer|min:0',
             'notes' => 'nullable|string'
