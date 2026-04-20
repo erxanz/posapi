@@ -308,13 +308,23 @@ class OrderService
 
     private function storeHistoryTransaction(Order $order): void
     {
-        $order->load(['payments', 'items']);
+        $order->load(['payments', 'items.product']);
 
         $lastPayment = $order->payments->sortByDesc('id')->first();
         $methods = $order->payments->pluck('method')->unique()->values()->all();
         $paymentMethod = count($methods) === 1 ? $methods[0] : (count($methods) > 1 ? 'split' : null);
         $paidAmount = $order->payments->sum(fn($p) => $p->amount_paid - $p->change_amount);
         $changeAmount = $order->payments->sum('change_amount');
+        $orderItemsSummary = $order->items->map(function ($item) {
+            return [
+                'product_id' => (int) $item->product_id,
+                'product_name' => $item->product?->name,
+                'qty' => (int) $item->qty,
+                'price' => (int) $item->price,
+                'total_price' => (int) $item->total_price,
+                'cancelled_qty' => (int) ($item->cancelled_qty ?? 0),
+            ];
+        })->values()->all();
 
         HistoryTransaction::updateOrCreate(
             ['order_id' => $order->id],
@@ -338,6 +348,7 @@ class OrderService
                     'methods' => $methods,
                     'items_count' => $order->items->count(),
                 ],
+                'order_items_summary' => $orderItemsSummary,
             ]
         );
     }
