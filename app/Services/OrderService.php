@@ -205,7 +205,19 @@ class OrderService
                 throw new \Exception("Stok {$product->name} tidak cukup (Sisa: {$stock})");
             }
 
-            $price = (int) $product->pivot->price;
+            // Primary source is outlet-specific price on pivot.
+            // If empty, fallback to payload price (Flutter) then product cost price.
+            $price = (int) (
+                $product->pivot->price
+                ?? ($item['price'] ?? null)
+                ?? $product->cost_price
+                ?? 0
+            );
+
+            if ($price <= 0) {
+                throw new \Exception("Harga {$product->name} belum diatur");
+            }
+
             $stationId = $product->pivot->station_id ?? $product->station_id;
 
             OrderItem::create([
