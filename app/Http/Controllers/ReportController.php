@@ -46,6 +46,9 @@ class ReportController extends Controller
             ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
             ->whereBetween('history_transactions.paid_at', [$prevStartDate, $prevEndDate]);
 
+        // List Order IDs untuk query relasi
+        $orderIds = (clone $trxQuery)->pluck('history_transactions.order_id')->toArray();
+
         // --- A. SUMMARY & KPI ---
         $summaryData = (clone $trxQuery)->selectRaw('
             COUNT(history_transactions.id) as total_trx,
@@ -67,8 +70,8 @@ class ReportController extends Controller
 
         $avgOrder = $transactions > 0 ? (int) ($revenue / $transactions) : 0;
 
-        $itemsSold = (int) DB::table('order_items')
-            ->whereIn('order_id', (clone $trxQuery)->select('history_transactions.order_id'))
+        $itemsSold = empty($orderIds) ? 0 : (int) DB::table('order_items')
+            ->whereIn('order_id', $orderIds)
             ->sum('qty');
 
         // --- TRIK REVERSE CALCULATION UNTUK DISKON DAN PAJAK ---
@@ -121,10 +124,10 @@ class ReportController extends Controller
         })->values();
 
         // --- C. TOP PRODUCTS ---
-        $topProducts = DB::table('order_items')
+        $topProducts = empty($orderIds) ? collect([]) : DB::table('order_items')
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
-            ->whereIn('order_items.order_id', (clone $trxQuery)->select('history_transactions.order_id'))
+            ->whereIn('order_items.order_id', $orderIds)
             ->selectRaw('
                 products.name,
                 categories.name as category,
@@ -181,10 +184,10 @@ class ReportController extends Controller
             ]);
 
         // --- F. CATEGORY PERFORMANCE ---
-        $categoryPerformance = DB::table('order_items')
+        $categoryPerformance = empty($orderIds) ? collect([]) : DB::table('order_items')
             ->join('products', 'order_items.product_id', '=', 'products.id')
             ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
-            ->whereIn('order_items.order_id', (clone $trxQuery)->select('history_transactions.order_id'))
+            ->whereIn('order_items.order_id', $orderIds)
             ->selectRaw('
                 categories.name as category,
                 SUM(order_items.qty) as total_sold,
@@ -218,7 +221,8 @@ class ReportController extends Controller
             ])->keyBy('hour');
 
         $fullHourly = collect(range(0, 23))->map(function($h) use ($hourlySales) {
-            $data = $hourlySales->get($h, (object)['transactions' => 0, 'revenue' => 0]);
+            // FIX: Gunakan format array sebagai fallback agar tidak memicu error object/array mismatch
+            $data = $hourlySales->get($h, ['transactions' => 0, 'revenue' => 0]);
             return [
                 'hour' => $h,
                 'transactions' => (int) $data['transactions'],
@@ -228,7 +232,7 @@ class ReportController extends Controller
 
         // --- H. TABLE PERFORMANCE ---
         $tablePerformance = DB::table('orders')
-            ->join('tables', 'orders.table_id', '=', 'tables.id')
+            ->leftJoin('tables', 'orders.table_id', '=', 'tables.id') // FIX: leftJoin agar Takeaway terhitung
             ->join('history_transactions', 'orders.id', '=', 'history_transactions.order_id')
             ->whereIn('history_transactions.id', (clone $trxQuery)->select('history_transactions.id'))
             ->selectRaw('
@@ -248,9 +252,9 @@ class ReportController extends Controller
             ]);
 
         // --- I. STATION PERFORMANCE ---
-        $stationPerformance = DB::table('order_items')
+        $stationPerformance = empty($orderIds) ? collect([]) : DB::table('order_items')
             ->leftJoin('stations', 'order_items.station_id', '=', 'stations.id')
-            ->whereIn('order_items.order_id', (clone $trxQuery)->select('history_transactions.order_id'))
+            ->whereIn('order_items.order_id', $orderIds)
             ->selectRaw('
                 stations.name,
                 SUM(order_items.qty) as items_prepared,
@@ -268,7 +272,7 @@ class ReportController extends Controller
                 'revenue' => (int) $item->revenue
             ]);
 
-        // --- J. SHIFT SUMMARY (FIXED: Menghapus shift_ke) ---
+        // --- J. SHIFT SUMMARY ---
         $shiftSummary = ShiftKaryawan::whereIn('outlet_id', $allowedOutletIds)
             ->whereNotNull('ended_at')
             ->whereBetween('ended_at', [$startDate, $endDate])
