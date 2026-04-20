@@ -31,8 +31,13 @@ class ShiftKaryawanFactory extends Factory
             'started_at' => $startedAt,
             'ended_at' => null,
             'opening_balance' => fake()->numberBetween(100000, 500000),
+            'closing_balance_system' => null,
+            'closing_balance_actual' => null,
+            'difference' => 0,
+            'notes' => null,
             'status' => 'active',
         ];
+
     }
 
     public function closed()
@@ -43,11 +48,14 @@ class ShiftKaryawanFactory extends Factory
         $endedAt = fake()->dateTimeBetween('-30 days', 'now')->setTime($endHour, $endMinutesOffset);
 
         return $this->state(fn (array $attributes) => [
-            'shift_id' => null,
             'status' => 'closed',
             'ended_at' => $endedAt,
-            'closing_balance_system' => $attributes['opening_balance'] + fake()->numberBetween(0, 100000),
-            'closing_balance_actual' => $attributes['opening_balance'] + fake()->numberBetween(-50000, 150000),
+            'closing_balance_system' => $attributes['opening_balance'] + fake()->numberBetween(200000, 2000000), // +sales
+            'closing_balance_actual' => $attributes['opening_balance'] + fake()->numberBetween(150000, 2500000), // slight variance
+'difference' => $attributes['closing_balance_actual'] - $attributes['closing_balance_system'], // actual - system
+
+            'notes' => fake()->boolean(30) ? 'Selisih kecil akibat pembulatan kembalian.' : null,
         ]);
+
     }
 }

@@ -7,8 +7,9 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<object>
+ * @extends Factory<\App\Models\ShiftUser>
  */
+
 class ShiftUserFactory extends Factory
 {
     /**
