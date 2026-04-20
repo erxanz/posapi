@@ -119,47 +119,61 @@ class DatabaseSeeder extends Seeder
                 ]);
             });
 
-            // Use factory instead of hardcoded catalog
             $productCatalog = [
-                'Makanan' => Product::factory()->count(5)->makanan()->create([
-                    'owner_id' => $outlet->owner_id,
-                ])->pluck('id')->toArray(),
-                'Minuman' => Product::factory()->count(5)->minuman()->create([
-                    'owner_id' => $outlet->owner_id,
-                ])->pluck('id')->toArray(),
-                'Snack' => Product::factory()->count(5)->snack()->create([
-                    'owner_id' => $outlet->owner_id,
-                ])->pluck('id')->toArray(),
+                'Makanan' => [
+                    ['name' => 'Nasi Goreng', 'description' => 'Nasi goreng spesial', 'cost_price' => 12000, 'station' => 'Kitchen'],
+                    ['name' => 'Mie Goreng', 'description' => 'Mie goreng gurih', 'cost_price' => 11000, 'station' => 'Kitchen'],
+                    ['name' => 'Ayam Geprek', 'description' => 'Ayam geprek sambal', 'cost_price' => 15000, 'station' => 'Kitchen'],
+                    ['name' => 'Soto Ayam', 'description' => 'Soto ayam hangat', 'cost_price' => 13000, 'station' => 'Kitchen'],
+                    ['name' => 'Bakso', 'description' => 'Bakso kuah sapi', 'cost_price' => 14000, 'station' => 'Kitchen'],
+                ],
+                'Minuman' => [
+                    ['name' => 'Es Teh Manis', 'description' => 'Teh manis dingin', 'cost_price' => 3000, 'station' => 'Bar'],
+                    ['name' => 'Es Jeruk', 'description' => 'Jeruk peras segar', 'cost_price' => 4000, 'station' => 'Bar'],
+                    ['name' => 'Kopi Hitam', 'description' => 'Kopi hitam panas', 'cost_price' => 5000, 'station' => 'Bar'],
+                    ['name' => 'Cappuccino', 'description' => 'Kopi susu foam', 'cost_price' => 8000, 'station' => 'Bar'],
+                    ['name' => 'Matcha Latte', 'description' => 'Matcha latte dingin', 'cost_price' => 9000, 'station' => 'Bar'],
+                ],
+                'Snack' => [
+                    ['name' => 'Kentang Goreng', 'description' => 'Kentang goreng crispy', 'cost_price' => 7000, 'station' => 'Kitchen'],
+                    ['name' => 'Pisang Goreng', 'description' => 'Pisang goreng hangat', 'cost_price' => 6000, 'station' => 'Kitchen'],
+                    ['name' => 'Cireng', 'description' => 'Cireng isi', 'cost_price' => 5000, 'station' => 'Kitchen'],
+                    ['name' => 'Roti Bakar', 'description' => 'Roti bakar coklat', 'cost_price' => 6500, 'station' => 'Kitchen'],
+                    ['name' => 'Donat', 'description' => 'Donat gula halus', 'cost_price' => 5500, 'station' => 'Kitchen'],
+                ],
             ];
-
 
             $stationMap = $stations->keyBy('name');
 
-            // Use factory for products per category
+            // produk per kategori
             foreach ($categories as $categoryIndex => $category) {
-                $categoryType = $category->name;
-                $productIds = $productCatalog[$categoryType] ?? [];
+                $productRows = $productCatalog[$category->name] ?? [];
 
-                foreach ($productIds as $productIndex => $productId) {
-                    $product = Product::find($productId);
-                    if ($product) {
-                        $stationId = fake()->randomElement($stations->pluck('id')->toArray());
+                foreach ($productRows as $productIndex => $row) {
+                    $stationId = optional($stationMap->get($row['station']))->id;
 
-                        $price = $product->cost_price + fake()->numberBetween(5000, 15000);
-                        $stock = fake()->numberBetween(10, 50);
+                    $product = Product::create([
+                        'owner_id' => $outlet->owner_id,
+                        'category_id' => $category->id,
+                        'station_id' => $stationId,
+                        'name' => $row['name'],
+                        'description' => $row['description'],
+                        'cost_price' => $row['cost_price'],
+                        'image' => self::DEFAULT_PRODUCT_IMAGE_URL,
+                    ]);
 
-                        $outlet->products()->syncWithoutDetaching([
-                            $productId => [
-                                'station_id' => $stationId,
-                                'price' => $price,
-                                'stock' => $stock,
-                                'is_active' => true,
-                            ]
-                        ]);
-                    }
+                    $price = $row['cost_price'] + 5000;
+                    $stock = 20 + ($categoryIndex * 10) + ($productIndex * 3);
+
+                    $outlet->products()->syncWithoutDetaching([
+                        $product->id => [
+                            'price' => $price,
+                            'stock' => $stock,
+                            'is_active' => true,
+                        ]
+                    ]);
                 }
             }
-
 
             // ================= DISCOUNTS & TAXES PER OUTLET =================
             Discount::factory()->lunchSpecial()->create(['owner_id' => $outlet->owner_id]);
