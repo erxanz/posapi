@@ -217,6 +217,7 @@ class OrderController extends Controller
             'tax_id' => 'nullable|exists:taxes,id',
             'tax_type' => 'nullable|in:percentage,nominal',
             'tax_value' => 'nullable|integer|min:0',
+            'tax_breakdown' => 'nullable|array',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
@@ -254,6 +255,7 @@ class OrderController extends Controller
             'tax_id' => 'nullable|exists:taxes,id',
             'tax_type' => 'nullable|in:percentage,nominal',
             'tax_value' => 'nullable|integer|min:0',
+            'tax_breakdown' => 'nullable|array',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
@@ -369,6 +371,7 @@ class OrderController extends Controller
             'tax_id' => 'nullable|exists:taxes,id',
             'tax_type' => 'nullable|in:percentage,nominal',
             'tax_value' => 'nullable|integer|min:0',
+            'tax_breakdown' => 'nullable|array',
         ]);
 
         $validated = $this->normalizeLegacyAdjustmentPayload($validated);

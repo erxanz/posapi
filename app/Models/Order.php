@@ -45,6 +45,7 @@ class Order extends Model
         // tax
         'tax_id',
         'tax_amount',
+        'tax_breakdown',
 
         // total
         'total_price',
@@ -58,6 +59,7 @@ class Order extends Model
         'discount_amount' => 'integer',
         'manual_discount_value' => 'integer',
         'tax_amount' => 'integer',
+        'tax_breakdown' => 'array',
         'total_price' => 'integer',
         'logs' => 'array',
     ];

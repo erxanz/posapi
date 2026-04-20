@@ -270,6 +270,10 @@ class OrderService
             }
         }
 
+        if (array_key_exists('tax_breakdown', $data)) {
+            $updates['tax_breakdown'] = $data['tax_breakdown'];
+        }
+
         if (!empty($updates)) {
             $order->update($updates);
         }
