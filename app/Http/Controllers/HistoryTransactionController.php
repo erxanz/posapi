@@ -6,6 +6,7 @@ use App\Models\HistoryTransaction;
 use App\Models\Outlet;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Carbon\Carbon;
 
 class HistoryTransactionController extends Controller
 {
@@ -13,8 +14,7 @@ class HistoryTransactionController extends Controller
     {
         $user = auth()->user();
 
-        // Gunakan eager load ringan untuk list agar respons Flutter lebih cepat.
-        // Detail item produk tetap di endpoint show.
+        // Gunakan relasi lengkap agar kompatibel dengan kontrak response Flutter lama.
         $query = HistoryTransaction::query()
             ->with([
                 'outlet:id,name',
@@ -22,6 +22,7 @@ class HistoryTransactionController extends Controller
                 'payment:id,order_id,method,amount_paid,change_amount,paid_at',
                 'order:id,table_id,customer_name',
                 'order.table:id,name',
+                'order.items.product',
             ])
             ->latest('paid_at');
 
@@ -41,19 +42,30 @@ class HistoryTransactionController extends Controller
         }
 
         if ($request->filled('status')) {
-            $query->where('status', $request->string('status'));
+            $query->where('status', (string) $request->input('status'));
         }
 
         if ($request->filled('invoice_number')) {
-            $query->where('invoice_number', 'like', '%' . $request->string('invoice_number') . '%');
+            $invoice = trim((string) $request->input('invoice_number'));
+            $query->where('invoice_number', 'like', '%' . $invoice . '%');
         }
 
         if ($request->filled('start_date')) {
-            $query->whereDate('paid_at', '>=', $request->date('start_date'));
+            try {
+                $startDate = Carbon::parse((string) $request->input('start_date'))->toDateString();
+                $query->whereDate('paid_at', '>=', $startDate);
+            } catch (\Throwable $e) {
+                // Ignore invalid date input to keep list endpoint stable for mobile clients.
+            }
         }
 
         if ($request->filled('end_date')) {
-            $query->whereDate('paid_at', '<=', $request->date('end_date'));
+            try {
+                $endDate = Carbon::parse((string) $request->input('end_date'))->toDateString();
+                $query->whereDate('paid_at', '<=', $endDate);
+            } catch (\Throwable $e) {
+                // Ignore invalid date input to keep list endpoint stable for mobile clients.
+            }
         }
 
         if ($request->filled('customer_name')) {
@@ -91,7 +103,19 @@ class HistoryTransactionController extends Controller
     {
         $user = auth()->user();
 
-        if (!$user->isDeveloper() && (int) $historyTransaction->outlet_id !== (int) $user->outlet_id) {
+        if ($user->isKaryawan()) {
+            if ((int) $historyTransaction->outlet_id !== (int) $user->outlet_id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        } elseif ($user->isManager()) {
+            $allowedOutletIds = Outlet::query()
+                ->where('owner_id', $user->id)
+                ->pluck('id');
+
+            if (!$allowedOutletIds->contains((int) $historyTransaction->outlet_id)) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        } elseif (!$user->isDeveloper()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
