@@ -9,6 +9,12 @@ use Illuminate\Http\Request;
 class DiscountController extends Controller
 {
     public function index() {
+        // =========================================================
+        // FITUR BARU: AUTO-DELETE PROMO KEDALUWARSA SECARA REALTIME
+        // =========================================================
+        $today = now()->format('Y-m-d');
+        Discount::whereDate('end_date', '<', $today)->delete();
+
         $user = auth()->user();
 
         // 1. DEVELOPER (Bisa melihat semua diskon)
@@ -16,27 +22,25 @@ class DiscountController extends Controller
             return response()->json(Discount::latest()->get());
         }
 
-        // 2. KARYAWAN / KASIR FLUTTER (Hanya melihat diskon yang AKTIF milik Manager-nya)
+        // 2. KARYAWAN / KASIR FLUTTER (Hanya melihat diskon yang AKTIF dan belum kedaluwarsa)
         if ($user->role === 'karyawan') {
-            // Cari outlet tempat karyawan ini bekerja
             $outlet = Outlet::find($user->outlet_id);
 
             if (!$outlet) {
                 return response()->json([]);
             }
 
-            // Ambil diskon buatan manager (owner_id) yang aktif dan tanggalnya valid
+            // Ambil diskon buatan manager yang masih aktif (end_date sudah difilter hapus di atas)
             $discounts = Discount::where('owner_id', $outlet->owner_id)
                 ->where('is_active', true)
-                ->whereDate('start_date', '<=', now())
-                ->whereDate('end_date', '>=', now())
+                ->whereDate('start_date', '<=', $today)
                 ->latest()
                 ->get();
 
             return response()->json($discounts);
         }
 
-        // 3. MANAGER (Melihat semua diskon yang ia buat, aktif maupun tidak)
+        // 3. MANAGER (Melihat semua diskon buatannya yang masih belum dihapus sistem)
         return response()->json(Discount::where('owner_id', $user->id)->latest()->get());
     }
 
