@@ -141,6 +141,19 @@ class Order extends Model
 
         $manualDiscountType = $overrides['manual_discount_type'] ?? $this->manual_discount_type;
         $manualDiscountValue = $overrides['manual_discount_value'] ?? ($this->manual_discount_value ?? 0);
+        $discountId = $overrides['discount_id'] ?? $this->discount_id;
+
+        if (!$manualDiscountType && $discountId) {
+            $discount = Discount::query()
+                ->whereKey($discountId)
+                ->where('is_active', true)
+                ->first();
+
+            if ($discount && $subtotal >= (int) $discount->min_purchase) {
+                $manualDiscountType = $discount->type;
+                $manualDiscountValue = (int) $discount->value;
+            }
+        }
 
         $taxId = $overrides['tax_id'] ?? $this->tax_id;
         $tax = $taxId ? Tax::where('id', $taxId)->where('active', true)->first() : null;
@@ -163,6 +176,7 @@ class Order extends Model
 
         $this->update([
             'subtotal_price' => $subtotal,
+            'discount_id' => $discountId,
             'manual_discount_type' => $manualDiscountType,
             'manual_discount_value' => $manualDiscountType ? (int) $manualDiscountValue : null,
             'discount_amount' => $discountAmount,

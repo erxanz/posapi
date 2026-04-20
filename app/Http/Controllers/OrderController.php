@@ -212,6 +212,7 @@ class OrderController extends Controller
             'customer_name' => 'nullable|string|max:100',
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
+            'discount_id' => 'nullable|exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
@@ -251,6 +252,7 @@ class OrderController extends Controller
             'notes' => 'nullable|string|max:255',
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
+            'discount_id' => 'nullable|exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
@@ -368,6 +370,7 @@ class OrderController extends Controller
         $validated = $request->validate([
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
+            'discount_id' => 'nullable|exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',

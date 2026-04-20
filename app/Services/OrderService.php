@@ -10,6 +10,7 @@ use App\Models\Outlet;
 use App\Models\Table;
 use App\Models\StockHistory;
 use App\Models\Tax;
+use App\Models\Discount;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 
@@ -250,6 +251,10 @@ class OrderService
     {
         $updates = [];
 
+        if (array_key_exists('discount_id', $data)) {
+            $updates['discount_id'] = $data['discount_id'] ? (int) $data['discount_id'] : null;
+        }
+
         // Support payload baru dan legacy agar Flutter lama tetap kompatibel.
         if (isset($data['manual_discount_type'])) {
             $updates['manual_discount_type'] = $data['manual_discount_type'];
@@ -261,6 +266,24 @@ class OrderService
             $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
         } elseif (isset($data['discount_value'])) {
             $updates['manual_discount_value'] = (int) $data['discount_value'];
+        }
+
+        // Jika promo dikirim sebagai discount_id tanpa manual override,
+        // map ke manual discount agar perhitungan order tetap jalan.
+        $shouldResolvePromoDiscount = isset($updates['discount_id'])
+            && !isset($updates['manual_discount_type'])
+            && !isset($updates['manual_discount_value']);
+
+        if ($shouldResolvePromoDiscount && $updates['discount_id']) {
+            $discount = Discount::query()
+                ->whereKey($updates['discount_id'])
+                ->where('is_active', true)
+                ->first();
+
+            if ($discount) {
+                $updates['manual_discount_type'] = $discount->type;
+                $updates['manual_discount_value'] = (int) $discount->value;
+            }
         }
 
         if (isset($data['tax_id'])) {
