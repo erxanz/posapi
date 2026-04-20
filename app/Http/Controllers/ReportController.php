@@ -15,44 +15,42 @@ class ReportController extends Controller
     {
         $user = auth()->user();
 
-        // Tangkap filter dari Vue (start_date dan end_date)
+        // Filter Tanggal
         $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : Carbon::today()->startOfMonth();
         $endDate = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : Carbon::today()->endOfDay();
         $outletId = $request->outlet_id;
 
-        // 1. Query Dasar Transaksi Selesai (Paid)
-        $query = HistoryTransaction::where('status', 'paid')
-            ->whereBetween('paid_at', [$startDate, $endDate]);
-
-        // 2. Filter Berdasarkan Role (Konsep Multi-Cabang)
+        // 1. Ambil daftar Outlet yang boleh dilihat user ini (Manager/Dev/Karyawan)
+        $outletsQuery = Outlet::query();
         if ($user->role === 'karyawan') {
-            $query->where('outlet_id', $user->outlet_id);
+            $outletsQuery->where('id', $user->outlet_id);
         } elseif ($user->role === 'manager') {
-            $managerOutlets = Outlet::where('owner_id', $user->id)->pluck('id');
-            if ($outletId && $managerOutlets->contains($outletId)) {
-                $query->where('outlet_id', $outletId);
-            } else {
-                $query->whereIn('outlet_id', $managerOutlets);
-            }
+            $outletsQuery->where('owner_id', $user->id); // Filter berdasarkan owner_id
+            if ($outletId) $outletsQuery->where('id', $outletId);
         } else {
-            // Developer
-            if ($outletId) {
-                $query->where('outlet_id', $outletId);
-            }
+            if ($outletId) $outletsQuery->where('id', $outletId);
         }
 
+        $allowedOutlets = $outletsQuery->get();
+        $allowedOutletIds = $allowedOutlets->pluck('id');
+
+        // 2. Query Utama Transaksi 'Paid'
+        $trxQuery = HistoryTransaction::where('status', 'paid')
+            ->whereIn('outlet_id', $allowedOutletIds)
+            ->whereBetween('paid_at', [$startDate, $endDate]);
+
         // --- A. SUMMARY ---
-        $summaryData = (clone $query)->selectRaw('COUNT(id) as total_trx, SUM(total_price) as total_revenue')->first();
+        $summaryData = (clone $trxQuery)->selectRaw('COUNT(id) as total_trx, SUM(total_price) as total_revenue')->first();
         $revenue = (int) ($summaryData->total_revenue ?? 0);
         $transactions = (int) ($summaryData->total_trx ?? 0);
         $avgOrder = $transactions > 0 ? (int) ($revenue / $transactions) : 0;
 
         $itemsSold = (int) DB::table('order_items')
-            ->whereIn('order_id', (clone $query)->select('order_id'))
+            ->whereIn('order_id', (clone $trxQuery)->select('order_id'))
             ->sum('qty');
 
-        // --- B. REVENUE CHART (TREN PENDAPATAN) ---
-        $revenueChart = (clone $query)
+        // --- B. REVENUE CHART ---
+        $revenueChart = (clone $trxQuery)
             ->selectRaw('DATE(paid_at) as date, SUM(total_price) as revenue')
             ->groupBy('date')
             ->orderBy('date')
@@ -62,46 +60,42 @@ class ReportController extends Controller
                 'revenue' => (int) $item->revenue
             ]);
 
-        // --- C. TOP PRODUCTS (PRODUK TERLARIS) ---
+        // --- C. TOP PRODUCTS ---
         $topProducts = DB::table('order_items')
             ->join('products', 'order_items.product_id', '=', 'products.id')
-            ->whereIn('order_items.order_id', (clone $query)->select('order_id'))
+            ->whereIn('order_items.order_id', (clone $trxQuery)->select('order_id'))
             ->selectRaw('products.name, SUM(order_items.qty) as sold, SUM(order_items.total_price) as revenue')
             ->groupBy('products.id', 'products.name')
             ->orderByDesc('sold')
             ->limit(10)
-            ->get()
-            ->map(fn($item) => [
-                'name' => $item->name,
-                'sold' => (int) $item->sold,
-                'revenue' => (int) $item->revenue
-            ]);
+            ->get();
 
-        // --- D. PAYMENT METHODS (METODE PEMBAYARAN) ---
-        $paymentMethods = (clone $query)
+        // --- D. PAYMENT METHODS ---
+        $paymentMethods = (clone $trxQuery)
             ->selectRaw('payment_method as method, SUM(total_price) as total')
             ->groupBy('payment_method')
             ->orderByDesc('total')
             ->get()
             ->map(fn($item) => [
-                'method' => $item->method ?? 'Unknown',
+                'method' => $item->method ?? 'Tunai',
                 'total' => (int) $item->total
             ]);
 
-        // --- E. OUTLET PERFORMANCE (KINERJA CABANG) ---
-        $outletPerformance = (clone $query)
-            ->join('outlets', 'history_transactions.outlet_id', '=', 'outlets.id')
-            ->selectRaw('outlets.name, SUM(history_transactions.total_price) as revenue, COUNT(history_transactions.id) as transactions')
-            ->groupBy('outlets.id', 'outlets.name')
-            ->orderByDesc('revenue')
-            ->get()
-            ->map(fn($item) => [
-                'name' => $item->name,
-                'revenue' => (int) $item->revenue,
-                'transactions' => (int) $item->transactions
-            ]);
+        // --- E. OUTLET PERFORMANCE (FIX: Tampilkan semua cabang, walau revenue 0) ---
+        $outletPerformance = $allowedOutlets->map(function($out) use ($startDate, $endDate) {
+            $perf = HistoryTransaction::where('outlet_id', $out->id)
+                ->where('status', 'paid')
+                ->whereBetween('paid_at', [$startDate, $endDate])
+                ->selectRaw('SUM(total_price) as revenue, COUNT(id) as transactions')
+                ->first();
 
-        // Return JSON sesuai format yang diharapkan oleh Vue
+            return [
+                'name' => $out->name,
+                'revenue' => (int) ($perf->revenue ?? 0),
+                'transactions' => (int) ($perf->transactions ?? 0)
+            ];
+        })->sortByDesc('revenue')->values();
+
         return response()->json([
             'summary' => [
                 'revenue' => $revenue,
@@ -118,8 +112,6 @@ class ReportController extends Controller
 
     public function export(Request $request)
     {
-        // Placeholder untuk fitur export.
-        // Nanti kamu bisa tambahkan library Maatwebsite/Excel atau DomPDF di sini.
-        return response()->json(['message' => 'Fitur export sedang dalam tahap pengembangan.'], 501);
+        return response()->json(['message' => 'Fitur export sedang disiapkan.'], 501);
     }
 }
