@@ -274,7 +274,11 @@ class OrderService
                 ->where('active', true)
                 ->get()
                 ->first(function (Tax $tax) use ($taxValue) {
-                    return (int) round(((float) $tax->rate) * 100) === $taxValue;
+                    $expectedValue = $tax->type === 'percentage'
+                        ? (int) round(((float) $tax->rate) * 100)
+                        : (int) round((float) $tax->rate);
+
+                    return $expectedValue === $taxValue;
                 });
 
             if ($matchedTax) {

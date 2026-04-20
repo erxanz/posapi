@@ -215,7 +215,7 @@ class OrderController extends Controller
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
-            'tax_type' => 'nullable|in:percentage,nominal',
+            'tax_type' => 'nullable|in:percentage,nominal,fixed',
             'tax_value' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
             'items' => 'required|array|min:1',
@@ -254,7 +254,7 @@ class OrderController extends Controller
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
-            'tax_type' => 'nullable|in:percentage,nominal',
+            'tax_type' => 'nullable|in:percentage,nominal,fixed',
             'tax_value' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
             'items' => 'required|array|min:1',
@@ -371,7 +371,7 @@ class OrderController extends Controller
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
-            'tax_type' => 'nullable|in:percentage,nominal',
+            'tax_type' => 'nullable|in:percentage,nominal,fixed',
             'tax_value' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
         ]);
@@ -503,7 +503,11 @@ class OrderController extends Controller
                 ->where('active', true)
                 ->get()
                 ->first(function (Tax $tax) use ($payload) {
-                    return (int) round(((float) $tax->rate) * 100) === (int) $payload['tax_value'];
+                    $expectedValue = $tax->type === 'percentage'
+                        ? (int) round(((float) $tax->rate) * 100)
+                        : (int) round((float) $tax->rate);
+
+                    return $expectedValue === (int) $payload['tax_value'];
                 });
 
             if ($tax) {

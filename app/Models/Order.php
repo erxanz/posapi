@@ -150,7 +150,14 @@ class Order extends Model
 
         // Tax
         $baseAfterDiscount = max(0, $subtotal - $discountAmount);
-        $taxAmount = $tax ? $this->computeAdjustmentAmount($tax->type, (float) $tax->rate * 100, $baseAfterDiscount) : 0;
+        $taxRateValue = 0.0;
+        if ($tax) {
+            $taxRateValue = $tax->type === self::DISCOUNT_TYPE_PERCENTAGE
+                ? (float) $tax->rate * 100
+                : (float) $tax->rate;
+        }
+
+        $taxAmount = $tax ? $this->computeAdjustmentAmount($tax->type, $taxRateValue, $baseAfterDiscount) : 0;
 
         $total = max(0, $baseAfterDiscount + $taxAmount);
 
