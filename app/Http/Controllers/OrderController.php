@@ -218,6 +218,7 @@ class OrderController extends Controller
             'tax_id' => 'nullable|exists:taxes,id',
             'tax_type' => 'nullable|in:percentage,nominal,fixed',
             'tax_value' => 'nullable|integer|min:0',
+            'tax_amount' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
@@ -258,6 +259,7 @@ class OrderController extends Controller
             'tax_id' => 'nullable|exists:taxes,id',
             'tax_type' => 'nullable|in:percentage,nominal,fixed',
             'tax_value' => 'nullable|integer|min:0',
+            'tax_amount' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
@@ -376,6 +378,7 @@ class OrderController extends Controller
             'tax_id' => 'nullable|exists:taxes,id',
             'tax_type' => 'nullable|in:percentage,nominal,fixed',
             'tax_value' => 'nullable|integer|min:0',
+            'tax_amount' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
         ]);
 

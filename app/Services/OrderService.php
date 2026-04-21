@@ -65,7 +65,7 @@ class OrderService
             $this->handleAdjustments($order, $validated);
 
             // Kalkulasi otomatis subtotal, total, diskon & pajak
-            $order->recalculateTotals();
+            $order->recalculateTotals($validated);
 
             $this->createPayment($order, (int) $validated['amount_paid'], $validated['payment_method']);
 
@@ -108,7 +108,7 @@ class OrderService
 
             $this->createOrderItems($order, $validated['items'], $outlet, false);
             $this->handleAdjustments($order, $validated);
-            $order->recalculateTotals();
+            $order->recalculateTotals($validated);
 
             $order->update(['invoice_number' => 'INV-' . strtoupper(uniqid())]);
 
@@ -311,6 +311,10 @@ class OrderService
 
         if (array_key_exists('tax_breakdown', $data)) {
             $updates['tax_breakdown'] = $data['tax_breakdown'];
+        }
+
+        if (array_key_exists('tax_amount', $data)) {
+            $updates['tax_amount'] = max(0, (int) $data['tax_amount']);
         }
 
         if (!empty($updates)) {

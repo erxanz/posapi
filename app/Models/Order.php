@@ -170,7 +170,16 @@ class Order extends Model
                 : (float) $tax->rate;
         }
 
-        $taxAmount = $tax ? $this->computeAdjustmentAmount($tax->type, $taxRateValue, $baseAfterDiscount) : 0;
+        $taxAmount = 0;
+        if ($tax) {
+            $taxAmount = $this->computeAdjustmentAmount($tax->type, $taxRateValue, $baseAfterDiscount);
+        } elseif (array_key_exists('tax_amount', $overrides)) {
+            // Fallback untuk payload mobile yang kirim nominal pajak langsung.
+            $taxAmount = max(0, (int) $overrides['tax_amount']);
+        } elseif (array_key_exists('tax_breakdown', $overrides) && is_array($overrides['tax_breakdown'])) {
+            $taxAmount = max(0, (int) collect($overrides['tax_breakdown'])
+                ->sum(fn($taxItem) => (int) data_get($taxItem, 'amount', 0)));
+        }
 
         $total = max(0, $baseAfterDiscount + $taxAmount);
 
