@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\Mail;
 
 class AuthController extends Controller
 {
-    private function hasActiveShiftNow(User $user, int $outletId): bool
+    // DIPERBAIKI 1: Mengambil data Shift (bukan sekadar True/False)
+    private function getActiveShift(User $user, int $outletId)
     {
         $currentTime = now()->format('H:i:s');
 
@@ -36,7 +37,7 @@ class AuthController extends Controller
                             });
                     });
             })
-            ->exists();
+            ->first(); // Menggunakan first() untuk mengambil data shift-nya
     }
 
     /**
@@ -88,17 +89,26 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // WAJIB CEK AKTIF (karena ini khusus karyawan)
-        if ($user->role === 'karyawan' && !$user->is_active) {
-            return response()->json([
-                'message' => 'Akun karyawan tidak aktif'
-            ], 403);
-        }
+        // Default shift_id null (karena manager/developer mungkin tidak punya shift)
+        $shiftId = null;
 
-        if ($user->role === 'karyawan' && !$this->hasActiveShiftNow($user, (int) $user->outlet_id)) {
-            return response()->json([
-                'message' => 'Anda tidak memiliki jadwal shift pada jam ini.'
-            ], 403);
+        // WAJIB CEK AKTIF (karena ini khusus karyawan)
+        if ($user->role === 'karyawan') {
+            if (!$user->is_active) {
+                return response()->json([
+                    'message' => 'Akun karyawan tidak aktif'
+                ], 403);
+            }
+
+            $activeShift = $this->getActiveShift($user, (int) $user->outlet_id);
+
+            if (!$activeShift) {
+                return response()->json([
+                    'message' => 'Anda tidak memiliki jadwal shift pada jam ini.'
+                ], 403);
+            }
+
+            $shiftId = $activeShift->id;
         }
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -106,6 +116,7 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Login berhasil',
             'token' => $token,
+            'shift_id' => $shiftId, // DIPERBAIKI 2: Mengirimkan shift_id (jika ada)
             'user' => $user->load('outlet')
         ]);
     }
@@ -137,7 +148,10 @@ class AuthController extends Controller
             ], 403);
         }
 
-        if (!$this->hasActiveShiftNow($user, (int) $request->outlet_id)) {
+        // DIPERBAIKI 3: Menggunakan getActiveShift untuk dapatkan ID-nya
+        $activeShift = $this->getActiveShift($user, (int) $request->outlet_id);
+
+        if (!$activeShift) {
             return response()->json([
                 'message' => 'Anda tidak memiliki jadwal shift pada jam ini.'
             ], 403);
@@ -148,6 +162,7 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Login berhasil',
             'token' => $token,
+            'shift_id' => $activeShift->id, // DIPERBAIKI 4: Mengirimkan shift_id ke Flutter
             'user' => $user->load('outlet')
         ]);
     }
