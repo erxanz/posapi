@@ -108,6 +108,7 @@ class OrderService
                 'outlet_id' => $validated['outlet_id'],
                 'table_id' => $table->id,
                 'customer_name' => $validated['customer_name'],
+                'notes' => $validated['notes'] ?? null,
                 'status' => Order::STATUS_PENDING,
             ]);
 

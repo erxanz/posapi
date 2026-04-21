@@ -179,6 +179,7 @@ class OrderController extends Controller
             'outlet_id' => 'required|exists:outlets,id',
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
+            'notes' => 'nullable|string|max:255',
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
             'discount_id' => 'nullable|exists:discounts,id',
