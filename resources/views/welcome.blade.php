@@ -419,7 +419,7 @@
                     <div class="endpoint-row">
                         <span class="badge badge-resource">API RES (limited)</span>
                         <code class="api-path">/api/v1/history-transactions</code>
-                        <span class="api-method-list">GET, GET /{id}, DELETE /{id}</span>
+                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
