@@ -116,7 +116,7 @@
 
 <body>
     <div class="header">
-        <span class="brand">LUNE POS</span>
+        <span class="brand">MINI POS</span>
         <div class="report-info">
             <strong>LAPORAN {{ strtoupper($reportType) }}</strong><br>
             Periode: {{ $startDate->format('d/m/Y') }} - {{ $endDate->format('d/m/Y') }}<br>
