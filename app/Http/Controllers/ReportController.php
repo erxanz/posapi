@@ -47,9 +47,12 @@ class ReportController extends Controller
             ->whereBetween('history_transactions.paid_at', [$prevStartDate, $prevEndDate]);
 
         // --- A. SUMMARY & KPI ---
+        // PERBAIKAN: Ambil langsung SUM diskon dan pajak dari tabel transaksi
         $summaryData = (clone $trxQuery)->selectRaw('
             COUNT(history_transactions.id) as total_trx,
-            SUM(history_transactions.total_price) as total_revenue
+            SUM(history_transactions.total_price) as total_revenue,
+            SUM(history_transactions.discount_amount) as total_discount,
+            SUM(history_transactions.tax_amount) as total_tax
         ')->first();
 
         $prevSummaryData = (clone $prevTrxQuery)->selectRaw('
@@ -58,6 +61,9 @@ class ReportController extends Controller
         ')->first();
 
         $revenue = (int) ($summaryData->total_revenue ?? 0);
+        $totalDiscount = (int) ($summaryData->total_discount ?? 0); // Diskon Akurat
+        $totalTax = (int) ($summaryData->total_tax ?? 0); // Pajak Akurat
+
         $prevRevenue = (int) ($prevSummaryData->prev_revenue ?? 0);
         $revenueGrowth = $prevRevenue > 0 ? round((($revenue - $prevRevenue) / $prevRevenue) * 100, 1) : null;
 
@@ -67,7 +73,6 @@ class ReportController extends Controller
 
         $avgOrder = $transactions > 0 ? (int) ($revenue / $transactions) : 0;
 
-        // Gunakan JOIN untuk menghindari masalah limit array orderIds
         $itemsSold = (int) DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->where('history_transactions.status', 'paid')
@@ -75,7 +80,7 @@ class ReportController extends Controller
             ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
             ->sum('order_items.qty');
 
-        // --- TRIK REVERSE CALCULATION UNTUK DISKON DAN PAJAK ---
+        // Data Gross (Kotor) dari harga per item
         $grossData = DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->where('history_transactions.status', 'paid')
@@ -91,16 +96,15 @@ class ReportController extends Controller
                 return [Carbon::parse($item->date_val)->format('Y-m-d') => $item->gross];
             });
 
-        $totalGross = $grossData->sum();
-        $totalDiscount = $totalGross > $revenue ? $totalGross - $revenue : 0;
-        $totalTax = $revenue > $totalGross ? $revenue - $totalGross : 0;
-
         // --- B. REVENUE CHART & SALES REPORT ---
+        // PERBAIKAN: SUM langsung diskon dan pajak per tanggal
         $salesDaily = (clone $trxQuery)
             ->selectRaw('
                 DATE(history_transactions.paid_at) as date_val,
                 COUNT(history_transactions.id) as transactions,
-                SUM(history_transactions.total_price) as net
+                SUM(history_transactions.total_price) as net,
+                SUM(history_transactions.discount_amount) as discount,
+                SUM(history_transactions.tax_amount) as tax
             ')
             ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
             ->orderByDesc('date_val')
@@ -109,15 +113,17 @@ class ReportController extends Controller
         $revenueChart = $salesDaily->sortBy('date_val')->map(fn($item) => [
             'date' => Carbon::parse($item->date_val)->format('Y-m-d'),
             'revenue' => (int) $item->net,
-            'transactions' => (int) $item->transactions // Tambahan untuk tooltip
+            'transactions' => (int) $item->transactions
         ])->values();
 
         $salesReport = $salesDaily->map(function($item) use ($grossData) {
             $dateKey = Carbon::parse($item->date_val)->format('Y-m-d');
             $net = (int) $item->net;
-            $gross = (int) ($grossData[$dateKey] ?? $net);
-            $discount = $gross > $net ? $gross - $net : 0;
-            $tax = $net > $gross ? $net - $gross : 0;
+            $discount = (int) $item->discount; // Akurat 100%
+            $tax = (int) $item->tax; // Akurat 100%
+
+            // Jika ada diskriminasi data item vs nota, gunakan net + diskon - pajak
+            $gross = (int) ($grossData[$dateKey] ?? ($net + $discount - $tax));
 
             return [
                 'date' => $dateKey,
@@ -129,7 +135,7 @@ class ReportController extends Controller
             ];
         })->values();
 
-        // --- C. TOP PRODUCTS (MENGGUNAKAN JOIN) ---
+        // --- C. TOP PRODUCTS ---
         $topProducts = DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->join('products', 'order_items.product_id', '=', 'products.id')
@@ -192,7 +198,7 @@ class ReportController extends Controller
                 'percentage' => $transactions > 0 ? round(($item->count / $transactions) * 100, 1) : 0
             ]);
 
-        // --- F. CATEGORY PERFORMANCE (MENGGUNAKAN JOIN) ---
+        // --- F. CATEGORY PERFORMANCE ---
         $categoryPerformance = DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->join('products', 'order_items.product_id', '=', 'products.id')
@@ -262,7 +268,7 @@ class ReportController extends Controller
                 'avg_check' => $item->orders_count > 0 ? round($item->revenue / $item->orders_count) : 0
             ]);
 
-        // --- I. STATION PERFORMANCE (MENGGUNAKAN JOIN) ---
+        // --- I. STATION PERFORMANCE ---
         $stationPerformance = DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->leftJoin('stations', 'order_items.station_id', '=', 'stations.id')
@@ -315,8 +321,8 @@ class ReportController extends Controller
                 'transactions' => $transactions,
                 'avg_order' => $avgOrder,
                 'items_sold' => $itemsSold,
-                'total_discount' => $totalDiscount,
-                'total_tax' => $totalTax,
+                'total_discount' => $totalDiscount, // Sudah akurat!
+                'total_tax' => $totalTax, // Sudah akurat!
                 'revenue_growth' => $revenueGrowth,
                 'trx_growth' => $trxGrowth,
                 'unique_customers' => (int) ($customerMetrics->unique_customers ?? 0),
@@ -367,9 +373,12 @@ class ReportController extends Controller
             ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
             ->whereBetween('history_transactions.paid_at', [$startDate, $endDate]);
 
+        // EKSPOR PERBAIKAN: Ambil nilai diskon dan pajak langsung
         $summaryData = (clone $trxQuery)->selectRaw('
             COUNT(history_transactions.id) as total_trx,
-            SUM(history_transactions.total_price) as total_revenue
+            SUM(history_transactions.total_price) as total_revenue,
+            SUM(history_transactions.discount_amount) as total_discount,
+            SUM(history_transactions.tax_amount) as total_tax
         ')->first();
 
         $grossData = DB::table('order_items')
@@ -384,8 +393,15 @@ class ReportController extends Controller
                 return [Carbon::parse($item->date_val)->format('Y-m-d') => $item->gross];
             });
 
+        // EKSPOR PERBAIKAN: Sertakan diskon dan pajak per tanggal
         $salesDaily = (clone $trxQuery)
-            ->selectRaw('DATE(history_transactions.paid_at) as date_val, COUNT(history_transactions.id) as transactions, SUM(history_transactions.total_price) as net')
+            ->selectRaw('
+                DATE(history_transactions.paid_at) as date_val,
+                COUNT(history_transactions.id) as transactions,
+                SUM(history_transactions.total_price) as net,
+                SUM(history_transactions.discount_amount) as discount,
+                SUM(history_transactions.tax_amount) as tax
+            ')
             ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
             ->orderBy('date_val')
             ->get();
@@ -412,12 +428,11 @@ class ReportController extends Controller
         fputcsv($csv, []);
 
         $totalRevenue = (int)($summaryData->total_revenue ?? 0);
-        $totalGross = $grossData->sum();
-        $totalDiscount = $totalGross > $totalRevenue ? $totalGross - $totalRevenue : 0;
-        $totalTax = $totalRevenue > $totalGross ? $totalRevenue - $totalGross : 0;
+        $totalDiscount = (int)($summaryData->total_discount ?? 0); // Akurat dari DB
+        $totalTax = (int)($summaryData->total_tax ?? 0); // Akurat dari DB
 
         fputcsv($csv, ['RINGKASAN']);
-        fputcsv($csv, ['Total Transaksi', 'Pendapatan', 'Diskon', 'Pajak', 'Rata-rata Order']);
+        fputcsv($csv, ['Total Transaksi', 'Pendapatan Bersih', 'Diskon', 'Pajak', 'Rata-rata Order']);
         fputcsv($csv, [
             (int)($summaryData->total_trx ?? 0),
             'Rp ' . number_format($totalRevenue),
@@ -432,9 +447,9 @@ class ReportController extends Controller
         foreach ($salesDaily as $day) {
             $dateKey = Carbon::parse($day->date_val)->format('Y-m-d');
             $net = (int) $day->net;
-            $gross = (int) ($grossData[$dateKey] ?? $net);
-            $discount = $gross > $net ? $gross - $net : 0;
-            $tax = $net > $gross ? $net - $gross : 0;
+            $discount = (int) $day->discount;
+            $tax = (int) $day->tax;
+            $gross = (int) ($grossData[$dateKey] ?? ($net + $discount - $tax));
 
             fputcsv($csv, [
                 $dateKey,
