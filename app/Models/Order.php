@@ -30,7 +30,6 @@ class Order extends Model
         'user_id',
         'table_id',
         'customer_name',
-        'notes',
         'invoice_number',
 
         // price

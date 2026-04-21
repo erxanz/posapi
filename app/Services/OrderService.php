@@ -53,7 +53,6 @@ class OrderService
                 'user_id' => $user->id,
                 'table_id' => $table->id,
                 'customer_name' => $validated['customer_name'] ?? null,
-                'notes' => $validated['notes'] ?? null,
                 'invoice_number' => $this->generateInvoiceNumber($outlet->id),
                 'status' => Order::STATUS_PAID,
                 'total_price' => 0,
@@ -108,7 +107,6 @@ class OrderService
                 'outlet_id' => $validated['outlet_id'],
                 'table_id' => $table->id,
                 'customer_name' => $validated['customer_name'],
-                'notes' => $validated['notes'] ?? null,
                 'status' => Order::STATUS_PENDING,
             ]);
 
