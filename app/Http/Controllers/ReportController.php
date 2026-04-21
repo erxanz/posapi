@@ -382,6 +382,18 @@ class ReportController extends Controller
         $outletName = $outletId ? Outlet::find($outletId)?->name ?? 'Semua Cabang' : 'Semua Cabang';
         $exportData = [];
 
+        // --- PERBAIKAN 1: Hitung Summary Untuk KPI di PDF/Excel ---
+        $summaryData = (clone $trxQuery)->selectRaw('
+            SUM(history_transactions.total_price) as total_revenue,
+            COUNT(history_transactions.id) as total_trx
+        ')->first();
+
+        $summary = [
+            'revenue' => (int) ($summaryData->total_revenue ?? 0),
+            'transactions' => (int) ($summaryData->total_trx ?? 0)
+        ];
+        // ------------------------------------------------------------
+
         // Ambil Data Sesuai Tab
         if ($reportType === 'summary' || $reportType === 'sales') {
             $grossData = DB::table('order_items')
@@ -444,6 +456,7 @@ class ReportController extends Controller
             'startDate' => $startDate,
             'endDate' => $endDate,
             'outletName' => $outletName,
+            'summary' => $summary, // PASTIKAN INI MASUK
             'data' => $exportData
         ];
 

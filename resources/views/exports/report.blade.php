@@ -14,7 +14,6 @@
             margin: 0;
         }
 
-        /* Header Section */
         .header {
             border-bottom: 2px solid #f0f0f0;
             padding-bottom: 20px;
@@ -34,20 +33,20 @@
             color: #5a7a9a;
         }
 
-        /* KPI Section (Grid-like) */
         .kpi-container {
             margin-bottom: 30px;
             clear: both;
+            overflow: hidden;
         }
 
         .kpi-box {
-            width: 22%;
+            width: 45%;
             float: left;
-            margin-right: 2%;
             background: #fcfcfc;
             border: 1px solid #eef2f6;
             padding: 15px;
             border-radius: 8px;
+            margin-right: 2%;
         }
 
         .kpi-label {
@@ -64,14 +63,13 @@
             margin-top: 5px;
         }
 
-        /* Table Section */
         .section-title {
             font-size: 14px;
             font-weight: bold;
             margin-bottom: 15px;
             color: #1a2332;
             clear: both;
-            padding-top: 20px;
+            padding-top: 10px;
         }
 
         table {
@@ -84,13 +82,13 @@
             color: #5a7a9a;
             font-size: 11px;
             text-transform: uppercase;
-            padding: 12px 10px;
+            padding: 10px;
             text-align: left;
             border-bottom: 2px solid #eef2f6;
         }
 
         td {
-            padding: 10px;
+            padding: 8px 10px;
             font-size: 12px;
             border-bottom: 1px solid #f0f0f0;
         }
@@ -99,7 +97,10 @@
             background-color: #fafafa;
         }
 
-        /* Footer */
+        .text-right {
+            text-align: right;
+        }
+
         .footer {
             position: fixed;
             bottom: 0;
@@ -118,38 +119,125 @@
         <span class="brand">LUNE POS</span>
         <div class="report-info">
             <strong>LAPORAN {{ strtoupper($reportType) }}</strong><br>
-            Periode: {{ $startDate->format('d M Y') }} - {{ $endDate->format('d M Y') }}<br>
+            Periode: {{ $startDate->format('d/m/Y') }} - {{ $endDate->format('d/m/Y') }}<br>
             Outlet: {{ $outletName }}
         </div>
     </div>
 
     <div class="kpi-container">
         <div class="kpi-box">
-            <div class="kpi-label">Total Netto</div>
-            <div class="kpi-value">Rp {{ number_format($summary['revenue']) }}</div>
+            <div class="kpi-label">Total Pendapatan Bersih</div>
+            <div class="kpi-value">Rp {{ number_format($summary['revenue'], 0, ',', '.') }}</div>
+        </div>
+        <div class="kpi-box">
+            <div class="kpi-label">Total Transaksi Selesai</div>
+            <div class="kpi-value">{{ number_format($summary['transactions'], 0, ',', '.') }} Trx</div>
         </div>
     </div>
 
-    <div class="section-title">Detail Transaksi Terlampir</div>
+    <div class="section-title">Detail Data Lampiran</div>
+
     <table>
+        {{-- KONDISI 1: JIKA TAB SUMMARY / SALES --}}
+        @if($reportType === 'summary' || $reportType === 'sales')
         <thead>
             <tr>
-                <th>Deskripsi</th>
-                <th style="text-align: right;">Nilai</th>
+                <th>Tanggal</th>
+                <th class="text-right">Transaksi</th>
+                <th class="text-right">Gross (Kotor)</th>
+                <th class="text-right">Diskon</th>
+                <th class="text-right">Pajak</th>
+                <th class="text-right">Net (Bersih)</th>
             </tr>
         </thead>
         <tbody>
-            @foreach($data as $key => $row)
+            @foreach($data as $row)
             <tr class="{{ $loop->even ? 'tr-even' : '' }}">
-                <td>{{ $row['label'] }}</td>
-                <td style="text-align: right;">{{ $row['value'] }}</td>
+                <td>{{ \Carbon\Carbon::parse($row['date'])->format('d/m/Y') }}</td>
+                <td class="text-right">{{ $row['transactions'] }}</td>
+                <td class="text-right">Rp {{ number_format($row['gross'], 0, ',', '.') }}</td>
+                <td class="text-right">Rp {{ number_format($row['discount'], 0, ',', '.') }}</td>
+                <td class="text-right">Rp {{ number_format($row['tax'], 0, ',', '.') }}</td>
+                <td class="text-right">Rp {{ number_format($row['net'], 0, ',', '.') }}</td>
             </tr>
             @endforeach
         </tbody>
+
+        {{-- KONDISI 2: JIKA TAB KINERJA PRODUK --}}
+        @elseif($reportType === 'products')
+        <thead>
+            <tr>
+                <th>Nama Produk</th>
+                <th>Kategori</th>
+                <th class="text-right">Terjual</th>
+                <th class="text-right">Harga Rata-rata</th>
+                <th class="text-right">Total Pendapatan (Gross)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($data as $row)
+            <tr class="{{ $loop->even ? 'tr-even' : '' }}">
+                <td>{{ $row->name }}</td>
+                <td>{{ $row->category ?? 'Lainnya' }}</td>
+                <td class="text-right">{{ $row->sold }}</td>
+                <td class="text-right">Rp {{ number_format(round($row->avg_price), 0, ',', '.') }}</td>
+                <td class="text-right">Rp {{ number_format($row->revenue, 0, ',', '.') }}</td>
+            </tr>
+            @endforeach
+        </tbody>
+
+        {{-- KONDISI 3: JIKA TAB KINERJA SHIFT --}}
+        @elseif($reportType === 'shifts')
+        <thead>
+            <tr>
+                <th>Kasir</th>
+                <th>Jam Mulai</th>
+                <th>Jam Selesai</th>
+                <th class="text-right">Sistem</th>
+                <th class="text-right">Uang Laci</th>
+                <th class="text-right">Selisih</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($data as $row)
+            <tr class="{{ $loop->even ? 'tr-even' : '' }}">
+                <td>{{ $row->cashier ?? 'Tidak Diketahui' }}</td>
+                <td>{{ \Carbon\Carbon::parse($row->started_at)->format('d/m y H:i') }}</td>
+                <td>{{ \Carbon\Carbon::parse($row->ended_at)->format('d/m y H:i') }}</td>
+                <td class="text-right">Rp {{ number_format($row->closing_balance_system, 0, ',', '.') }}</td>
+                <td class="text-right">Rp {{ number_format($row->closing_balance_actual, 0, ',', '.') }}</td>
+                <td class="text-right" style="{{ $row->difference < 0 ? 'color: red;' : 'color: green;' }}">
+                    Rp {{ number_format($row->difference, 0, ',', '.') }}
+                </td>
+            </tr>
+            @endforeach
+        </tbody>
+
+        {{-- KONDISI 4: JIKA TAB KINERJA KASIR --}}
+        @elseif($reportType === 'staff')
+        <thead>
+            <tr>
+                <th>Nama Kasir</th>
+                <th>Outlet</th>
+                <th class="text-right">Trx Ditangani</th>
+                <th class="text-right">Pendapatan Diterima</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($data as $row)
+            <tr class="{{ $loop->even ? 'tr-even' : '' }}">
+                <td>{{ $row->name ?? 'Terhapus' }}</td>
+                <td>{{ $row->outlet_name }}</td>
+                <td class="text-right">{{ $row->transactions }}</td>
+                <td class="text-right">Rp {{ number_format($row->revenue, 0, ',', '.') }}</td>
+            </tr>
+            @endforeach
+        </tbody>
+        @endif
     </table>
 
     <div class="footer">
-        Dicetak secara otomatis pada {{ now()->format('d/m/Y H:i') }} - Halaman 1 dari 1
+        Dicetak secara otomatis pada {{ now()->format('d/m/Y H:i') }}
     </div>
 </body>
 
