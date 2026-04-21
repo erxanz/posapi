@@ -453,6 +453,52 @@ class OrderController extends Controller
     }
 
     /**
+     * Update multiple order items qty by ID (for kitchen/customer sync)
+     */
+    public function updateItems(Request $request, Order $order)
+    {
+        $this->authorizeOutletAccess($order);
+
+        if ($order->status !== Order::STATUS_PENDING) {
+            return response()->json(['message' => 'Only pending orders can be updated'], 400);
+        }
+
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.id' => 'required|exists:order_items,id',
+            'items.*.qty' => 'required|integer|min:0',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            foreach ($validated['items'] as $itemData) {
+                \App\Models\OrderItem::where('id', $itemData['id'])
+                    ->where('order_id', $order->id)
+                    ->lockForUpdate()
+                    ->update([
+                        'qty' => $itemData['qty'],
+                        'total_price' => $itemData['qty'] * (
+                            \App\Models\OrderItem::where('id', $itemData['id'])
+                            ->where('order_id', $order->id)
+                            ->value('price') ?? 0
+                        ),
+                    ]);
+            }
+
+            $this->recalculateOrderTotals($order);
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Order items updated',
+                'order' => $order->fresh()->load('items.product'),
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * No delete
      */
     public function destroy(Order $order)

@@ -129,6 +129,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('/{order}/adjustments', [OrderController::class, 'updateAdjustments']);
 
             Route::post('/{order}/void-items', [OrderController::class, 'voidItems']);
+            Route::put('/{order}/items', [OrderController::class, 'updateItems']);
 
         });
 
