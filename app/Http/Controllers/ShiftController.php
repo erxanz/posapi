@@ -53,6 +53,21 @@ class ShiftController extends Controller
             if (!$isMine) return response()->json(['message' => 'Akses ditolak.'], 403);
         }
 
+        if (!empty($validated['user_ids'])) {
+            $invalidUsersCount = User::whereIn('id', $validated['user_ids'])
+                ->where(function ($query) use ($validated) {
+                    $query->where('role', '!=', 'karyawan')
+                        ->orWhere('outlet_id', '!=', $validated['outlet_id']);
+                })
+                ->count();
+
+            if ($invalidUsersCount > 0) {
+                return response()->json([
+                    'message' => 'Hanya user role karyawan pada outlet yang sama yang boleh ditugaskan ke shift.'
+                ], 422);
+            }
+        }
+
         // --- CEGAK DOUBLE SHIFT ---
         if (!empty($validated['user_ids'])) {
             $hasOtherShift = DB::table('shift_user')
@@ -106,6 +121,24 @@ class ShiftController extends Controller
         if ($user->role === 'manager') {
             $isMine = Outlet::where('id', $shift->outlet_id)->where('owner_id', $user->id)->exists();
             if (!$isMine) return response()->json(['message' => 'Akses ditolak.'], 403);
+
+            $isTargetOutletMine = Outlet::where('id', $validated['outlet_id'])->where('owner_id', $user->id)->exists();
+            if (!$isTargetOutletMine) return response()->json(['message' => 'Akses ditolak untuk outlet tujuan.'], 403);
+        }
+
+        if (!empty($validated['user_ids'])) {
+            $invalidUsersCount = User::whereIn('id', $validated['user_ids'])
+                ->where(function ($query) use ($validated) {
+                    $query->where('role', '!=', 'karyawan')
+                        ->orWhere('outlet_id', '!=', $validated['outlet_id']);
+                })
+                ->count();
+
+            if ($invalidUsersCount > 0) {
+                return response()->json([
+                    'message' => 'Hanya user role karyawan pada outlet yang sama yang boleh ditugaskan ke shift.'
+                ], 422);
+            }
         }
 
         // --- CEGAK DOUBLE SHIFT (Kecuali di shift yang sedang di-edit) ---
