@@ -14,7 +14,7 @@ class ShiftKaryawanController extends Controller
     public function index(Request $request)
     {
         $user = auth()->user();
-        $query = ShiftKaryawan::with(['user', 'outlet']);
+        $query = ShiftKaryawan::with(['user', 'outlet', 'shift']);
 
         // Filter berdasarkan Role (Manager hanya melihat outlet miliknya)
         if ($user->role === 'manager') {
