@@ -67,7 +67,12 @@ class OrderService
             // Kalkulasi otomatis subtotal, total, diskon & pajak
             $order->recalculateTotals($validated);
 
-            $this->createPayment($order, (int) $validated['amount_paid'], $validated['payment_method']);
+            $amountPaid = (int) $validated['amount_paid'];
+            if ($amountPaid < (int) $order->total_price) {
+                throw new \Exception('Nominal bayar kurang dari total tagihan');
+            }
+
+            $this->createPayment($order, $amountPaid, $validated['payment_method']);
 
             // Simpan ke riwayat transaksi secara otomatis menggunakan total yang baru dihitung
             $this->storeHistoryTransaction($order);
@@ -189,6 +194,11 @@ class OrderService
             DB::rollBack();
             throw $e;
         }
+    }
+
+    public function syncHistoryTransaction(Order $order): void
+    {
+        $this->storeHistoryTransaction($order);
     }
 
     // Private helpers...

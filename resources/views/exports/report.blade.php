@@ -2,140 +2,155 @@
 <html>
 
 <head>
-    <title>Laporan {{ ucfirst($reportType) }}</title>
     <style>
-        body {
-            font-family: sans-serif;
-            font-size: 12px;
+        @page {
+            margin: 1cm;
         }
 
+        body {
+            font-family: 'Helvetica', sans-serif;
+            color: #333;
+            line-height: 1.5;
+            margin: 0;
+        }
+
+        /* Header Section */
         .header {
-            text-align: center;
-            margin-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .brand {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1a2332;
+        }
+
+        .report-info {
+            float: right;
+            text-align: right;
+            font-size: 11px;
+            color: #5a7a9a;
+        }
+
+        /* KPI Section (Grid-like) */
+        .kpi-container {
+            margin-bottom: 30px;
+            clear: both;
+        }
+
+        .kpi-box {
+            width: 22%;
+            float: left;
+            margin-right: 2%;
+            background: #fcfcfc;
+            border: 1px solid #eef2f6;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .kpi-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #5a7a9a;
+            font-weight: bold;
+        }
+
+        .kpi-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #2e7dd6;
+            margin-top: 5px;
+        }
+
+        /* Table Section */
+        .section-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #1a2332;
+            clear: both;
+            padding-top: 20px;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 10px;
-        }
-
-        th,
-        td {
-            border: 1px solid #dddddd;
-            padding: 8px;
-            text-align: left;
         }
 
         th {
-            background-color: #f2f2f2;
-            font-weight: bold;
+            background: #f8fafc;
+            color: #5a7a9a;
+            font-size: 11px;
+            text-transform: uppercase;
+            padding: 12px 10px;
+            text-align: left;
+            border-bottom: 2px solid #eef2f6;
         }
 
-        .text-right {
-            text-align: right;
+        td {
+            padding: 10px;
+            font-size: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .tr-even {
+            background-color: #fafafa;
+        }
+
+        /* Footer */
+        .footer {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 10px;
+            color: #8aafcc;
+            border-top: 1px solid #f0f0f0;
+            padding-top: 10px;
         }
     </style>
 </head>
 
 <body>
     <div class="header">
-        <h2>LAPORAN ENTERPRISE - {{ strtoupper($reportType) }}</h2>
-        <p>Periode: {{ $startDate->format('d/m/Y') }} s/d {{ $endDate->format('d/m/Y') }} <br> Outlet: {{ $outletName }}
-        </p>
+        <span class="brand">LUNE POS</span>
+        <div class="report-info">
+            <strong>LAPORAN {{ strtoupper($reportType) }}</strong><br>
+            Periode: {{ $startDate->format('d M Y') }} - {{ $endDate->format('d M Y') }}<br>
+            Outlet: {{ $outletName }}
+        </div>
     </div>
 
+    <div class="kpi-container">
+        <div class="kpi-box">
+            <div class="kpi-label">Total Netto</div>
+            <div class="kpi-value">Rp {{ number_format($summary['revenue']) }}</div>
+        </div>
+    </div>
+
+    <div class="section-title">Detail Transaksi Terlampir</div>
     <table>
-        @if($reportType === 'summary' || $reportType === 'sales')
         <thead>
             <tr>
-                <th>Tanggal</th>
-                <th class="text-right">Transaksi</th>
-                <th class="text-right">Gross (Kotor)</th>
-                <th class="text-right">Diskon</th>
-                <th class="text-right">Pajak</th>
-                <th class="text-right">Net (Bersih)</th>
+                <th>Deskripsi</th>
+                <th style="text-align: right;">Nilai</th>
             </tr>
         </thead>
         <tbody>
-            @foreach($data as $row)
-            <tr>
-                <td>{{ $row['date'] }}</td>
-                <td class="text-right">{{ $row['transactions'] }}</td>
-                <td class="text-right">{{ $row['gross'] }}</td>
-                <td class="text-right">{{ $row['discount'] }}</td>
-                <td class="text-right">{{ $row['tax'] }}</td>
-                <td class="text-right">{{ $row['net'] }}</td>
+            @foreach($data as $key => $row)
+            <tr class="{{ $loop->even ? 'tr-even' : '' }}">
+                <td>{{ $row['label'] }}</td>
+                <td style="text-align: right;">{{ $row['value'] }}</td>
             </tr>
             @endforeach
         </tbody>
-        @elseif($reportType === 'products')
-        <thead>
-            <tr>
-                <th>Nama Produk</th>
-                <th>Kategori</th>
-                <th class="text-right">Terjual</th>
-                <th class="text-right">Harga Rata-rata</th>
-                <th class="text-right">Total Pendapatan (Gross)</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($data as $row)
-            <tr>
-                <td>{{ $row->name }}</td>
-                <td>{{ $row->category ?? 'Lainnya' }}</td>
-                <td class="text-right">{{ $row->sold }}</td>
-                <td class="text-right">{{ round($row->avg_price) }}</td>
-                <td class="text-right">{{ $row->revenue }}</td>
-            </tr>
-            @endforeach
-        </tbody>
-        @elseif($reportType === 'shifts')
-        <thead>
-            <tr>
-                <th>Kasir</th>
-                <th>Mulai</th>
-                <th>Selesai</th>
-                <th class="text-right">Modal Awal</th>
-                <th class="text-right">Catatan Sistem</th>
-                <th class="text-right">Uang Fisik (Laci)</th>
-                <th class="text-right">Selisih (Variance)</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($data as $row)
-            <tr>
-                <td>{{ $row->cashier ?? 'Tidak Diketahui' }}</td>
-                <td>{{ $row->started_at }}</td>
-                <td>{{ $row->ended_at }}</td>
-                <td class="text-right">{{ $row->opening_balance }}</td>
-                <td class="text-right">{{ $row->closing_balance_system }}</td>
-                <td class="text-right">{{ $row->closing_balance_actual }}</td>
-                <td class="text-right">{{ $row->difference }}</td>
-            </tr>
-            @endforeach
-        </tbody>
-        @elseif($reportType === 'staff')
-        <thead>
-            <tr>
-                <th>Nama Kasir</th>
-                <th>Outlet</th>
-                <th class="text-right">Trx Ditangani</th>
-                <th class="text-right">Uang Diterima (Bersih)</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($data as $row)
-            <tr>
-                <td>{{ $row->name ?? 'Terhapus' }}</td>
-                <td>{{ $row->outlet_name }}</td>
-                <td class="text-right">{{ $row->transactions }}</td>
-                <td class="text-right">{{ $row->revenue }}</td>
-            </tr>
-            @endforeach
-        </tbody>
-        @endif
     </table>
+
+    <div class="footer">
+        Dicetak secara otomatis pada {{ now()->format('d/m/Y H:i') }} - Halaman 1 dari 1
+    </div>
 </body>
 
 </html>

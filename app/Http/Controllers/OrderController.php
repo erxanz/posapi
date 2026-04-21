@@ -75,9 +75,14 @@ class OrderController extends Controller
             ->wherePivot('is_active', true)
             ->firstOrFail();
 
-        if ((int) $product->pivot->stock < (int) $request->qty) {
+        $requestQty = (int) $request->qty;
+        $existingQty = (int) ($order->items()->where('product_id', $request->product_id)->value('qty') ?? 0);
+        $targetQty = $existingQty + $requestQty;
+        $availableStock = (int) $product->pivot->stock;
+
+        if ($targetQty > $availableStock) {
             return response()->json([
-                'message' => "Stok {$product->name} tidak cukup"
+                'message' => "Stok {$product->name} tidak cukup (maksimal {$availableStock})"
             ], 400);
         }
 
@@ -89,15 +94,15 @@ class OrderController extends Controller
             $item = $order->items()->where('product_id', $product->id)->first();
 
             if ($item) {
-                $item->qty += $request->qty;
+                $item->qty += $requestQty;
                 $item->total_price = $item->qty * $item->price;
                 $item->save();
             } else {
                 $order->items()->create([
                     'product_id' => $product->id,
-                    'qty' => $request->qty,
+                    'qty' => $requestQty,
                     'price' => $price,
-                    'total_price' => $price * $request->qty
+                    'total_price' => $price * $requestQty
                 ]);
             }
 
@@ -126,44 +131,8 @@ class OrderController extends Controller
 
     private function recalculateOrderTotals(Order $order, array $overrides = []): void
     {
-        $subtotal = (int) $order->items()->sum('total_price');
-
-        $discountType = $overrides['discount_type'] ?? $order->discount_type;
-        $discountValue = isset($overrides['discount_value']) ? (int) $overrides['discount_value'] : (int) ($order->discount_value ?? 0);
-
-        $taxType = $overrides['tax_type'] ?? $order->tax_type;
-        $taxValue = isset($overrides['tax_value']) ? (int) $overrides['tax_value'] : (int) ($order->tax_value ?? 0);
-
-        $discountAmount = $this->computeAdjustmentAmount($discountType, $discountValue, $subtotal);
-        $baseAfterDiscount = max(0, $subtotal - $discountAmount);
-        $taxAmount = $this->computeAdjustmentAmount($taxType, $taxValue, $baseAfterDiscount);
-        $total = max(0, $baseAfterDiscount + $taxAmount);
-
-        $order->update([
-            'subtotal_price' => $subtotal,
-            'discount_type' => $discountType,
-            'discount_value' => $discountType ? round($discountValue, 2) : null,
-            'discount_amount' => $discountAmount,
-            'tax_type' => $taxType,
-            'tax_value' => $taxType ? round($taxValue, 2) : null,
-            'tax_amount' => $taxAmount,
-            'total_price' => $total,
-        ]);
-    }
-
-    private function computeAdjustmentAmount(?string $type, int $value, int $baseAmount): int
-    {
-        if (!$type || $baseAmount <= 0 || $value <= 0) {
-            return 0;
-        }
-
-        if ($type === 'percentage') {
-            $percent = min(100, max(0, $value));
-
-            return (int) round(($baseAmount * $percent) / 100);
-        }
-
-        return min($baseAmount, max(0, $value));
+        $normalizedOverrides = $this->normalizeLegacyAdjustmentPayload($overrides);
+        $order->recalculateTotals($normalizedOverrides);
     }
 
     /**
@@ -463,6 +432,11 @@ class OrderController extends Controller
                 ]);
                 $order->update(['logs' => $logs]);
                 $order->recalculateTotals();
+
+                // Keep transaction history consistent after void/restore on paid orders.
+                if ($order->status === Order::STATUS_PAID) {
+                    $this->orderService->syncHistoryTransaction($order->fresh());
+                }
             }
 
             DB::commit();
