@@ -356,8 +356,11 @@ class ReportController extends Controller
         $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : Carbon::today()->startOfMonth();
         $endDate = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : Carbon::today()->endOfDay();
         $outletId = $request->outlet_id;
+        $reportType = $request->report_type ?? 'summary'; // Tangkap tab yang aktif
+        $format = $request->format ?? 'excel'; // pdf atau excel
         $user = auth()->user();
 
+        // 1. Filter Outlet
         $outletsQuery = Outlet::query();
         if ($user->role === 'karyawan') {
             $outletsQuery->where('id', $user->outlet_id);
@@ -369,113 +372,122 @@ class ReportController extends Controller
         }
         $allowedOutletIds = $outletsQuery->pluck('id');
 
-        $trxQuery = HistoryTransaction::where('history_transactions.status', 'paid')
-            ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
-            ->whereBetween('history_transactions.paid_at', [$startDate, $endDate]);
+        // Query Utama
+        $trxQuery = HistoryTransaction::where('status', 'paid')
+            ->whereIn('outlet_id', $allowedOutletIds)
+            ->whereBetween('paid_at', [$startDate, $endDate]);
 
-        // EKSPOR PERBAIKAN: Ambil nilai diskon dan pajak langsung
-        $summaryData = (clone $trxQuery)->selectRaw('
-            COUNT(history_transactions.id) as total_trx,
-            SUM(history_transactions.total_price) as total_revenue,
-            SUM(history_transactions.discount_amount) as total_discount,
-            SUM(history_transactions.tax_amount) as total_tax
-        ')->first();
-
-        $grossData = DB::table('order_items')
-            ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
-            ->where('history_transactions.status', 'paid')
-            ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
-            ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
-            ->selectRaw('DATE(history_transactions.paid_at) as date_val, SUM(order_items.total_price) as gross')
-            ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
-            ->get()
-            ->mapWithKeys(function ($item) {
-                return [Carbon::parse($item->date_val)->format('Y-m-d') => $item->gross];
-            });
-
-        // EKSPOR PERBAIKAN: Sertakan diskon dan pajak per tanggal
-        $salesDaily = (clone $trxQuery)
-            ->selectRaw('
-                DATE(history_transactions.paid_at) as date_val,
-                COUNT(history_transactions.id) as transactions,
-                SUM(history_transactions.total_price) as net,
-                SUM(history_transactions.discount_amount) as discount,
-                SUM(history_transactions.tax_amount) as tax
-            ')
-            ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
-            ->orderBy('date_val')
-            ->get();
-
-        $topProductsRaw = DB::table('order_items')
-            ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
-            ->join('products', 'order_items.product_id', '=', 'products.id')
-            ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
-            ->where('history_transactions.status', 'paid')
-            ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
-            ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
-            ->selectRaw('products.name, categories.name as category, SUM(order_items.qty) as sold, SUM(order_items.total_price) as revenue')
-            ->groupBy('products.id', 'products.name', 'categories.name')
-            ->orderByDesc('sold')
-            ->limit(50)
-            ->get();
-
-        $filename = 'laporan-penjualan-' . $startDate->format('Y-m-d') . '_to_' . $endDate->format('Y-m-d') . '.csv';
+        // Siapkan File CSV
+        $filename = 'Laporan_' . ucfirst($reportType) . '_' . $startDate->format('Ymd') . '-' . $endDate->format('Ymd') . '.csv';
         $csv = fopen('php://temp', 'r+');
 
-        fputcsv($csv, ['LAPORAN PENJUALAN ENTERPRISE']);
+        // Header Umum Laporan
+        fputcsv($csv, ['LAPORAN ENTERPRISE - ' . strtoupper($reportType)]);
         fputcsv($csv, ['Periode', $startDate->format('d/m/Y') . ' s/d ' . $endDate->format('d/m/Y')]);
-        fputcsv($csv, ['Outlet', $outletId ? Outlet::find($outletId)?->name ?? 'Semua' : 'Semua']);
-        fputcsv($csv, []);
+        $outletName = $outletId ? Outlet::find($outletId)?->name ?? 'Semua Cabang' : 'Semua Cabang';
+        fputcsv($csv, ['Outlet', $outletName]);
+        fputcsv($csv, []); // Baris kosong
 
-        $totalRevenue = (int)($summaryData->total_revenue ?? 0);
-        $totalDiscount = (int)($summaryData->total_discount ?? 0); // Akurat dari DB
-        $totalTax = (int)($summaryData->total_tax ?? 0); // Akurat dari DB
+        // --- LOGIKA EKSPOR BERDASARKAN TAB ---
 
-        fputcsv($csv, ['RINGKASAN']);
-        fputcsv($csv, ['Total Transaksi', 'Pendapatan Bersih', 'Diskon', 'Pajak', 'Rata-rata Order']);
-        fputcsv($csv, [
-            (int)($summaryData->total_trx ?? 0),
-            'Rp ' . number_format($totalRevenue),
-            'Rp ' . number_format($totalDiscount),
-            'Rp ' . number_format($totalTax),
-            'Rp ' . number_format($totalRevenue / max(1, (int)($summaryData->total_trx ?? 0)))
-        ]);
-        fputcsv($csv, []);
+        if ($reportType === 'summary' || $reportType === 'sales') {
+            // EKSPOR: PENJUALAN HARIAN
+            $grossData = DB::table('order_items')
+                ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
+                ->where('history_transactions.status', 'paid')
+                ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
+                ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
+                ->selectRaw('DATE(history_transactions.paid_at) as date_val, SUM(order_items.total_price) as gross')
+                ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
+                ->get()->mapWithKeys(fn ($item) => [Carbon::parse($item->date_val)->format('Y-m-d') => $item->gross]);
 
-        fputcsv($csv, ['PENJUALAN HARIAN']);
-        fputcsv($csv, ['Tanggal', 'Transaksi', 'Gross', 'Diskon', 'Pajak', 'Netto']);
-        foreach ($salesDaily as $day) {
-            $dateKey = Carbon::parse($day->date_val)->format('Y-m-d');
-            $net = (int) $day->net;
-            $discount = (int) $day->discount;
-            $tax = (int) $day->tax;
-            $gross = (int) ($grossData[$dateKey] ?? ($net + $discount - $tax));
+            $salesDaily = (clone $trxQuery)
+                ->selectRaw('DATE(paid_at) as date_val, COUNT(id) as transactions, SUM(total_price) as net, SUM(discount_amount) as discount, SUM(tax_amount) as tax')
+                ->groupBy(DB::raw('DATE(paid_at)'))->orderBy('date_val')->get();
 
-            fputcsv($csv, [
-                $dateKey,
-                $day->transactions,
-                'Rp ' . number_format($gross),
-                'Rp ' . number_format($discount),
-                'Rp ' . number_format($tax),
-                'Rp ' . number_format($net)
-            ]);
+            fputcsv($csv, ['Tanggal', 'Jumlah Trx', 'Total Kotor (Gross)', 'Diskon', 'Pajak/Biaya', 'Pendapatan Bersih (Net)']);
+
+            $totalGross = 0; $totalDiscount = 0; $totalTax = 0; $totalNet = 0;
+
+            foreach ($salesDaily as $day) {
+                $dateKey = Carbon::parse($day->date_val)->format('Y-m-d');
+                $net = (int) $day->net;
+                $discount = (int) $day->discount;
+                $tax = (int) $day->tax;
+                $gross = (int) ($grossData[$dateKey] ?? ($net + $discount - $tax));
+
+                $totalGross += $gross; $totalDiscount += $discount; $totalTax += $tax; $totalNet += $net;
+
+                fputcsv($csv, [$dateKey, $day->transactions, $gross, $discount, $tax, $net]);
+            }
+            fputcsv($csv, []);
+            fputcsv($csv, ['TOTAL KESELURUHAN', '', $totalGross, $totalDiscount, $totalTax, $totalNet]);
+
         }
-        fputcsv($csv, []);
+        elseif ($reportType === 'products') {
+            // EKSPOR: KINERJA PRODUK
+            $topProducts = DB::table('order_items')
+                ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
+                ->join('products', 'order_items.product_id', '=', 'products.id')
+                ->leftJoin('categories', 'products.category_id', '=', 'categories.id')
+                ->where('history_transactions.status', 'paid')
+                ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
+                ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
+                ->selectRaw('products.name, categories.name as category, SUM(order_items.qty) as sold, AVG(order_items.price) as avg_price, SUM(order_items.total_price) as revenue')
+                ->groupBy('products.id', 'products.name', 'categories.name')
+                ->orderByDesc('sold')->get();
 
-        fputcsv($csv, ['TOP PRODUCTS']);
-        fputcsv($csv, ['Produk', 'Kategori', 'Terjual', 'Pendapatan Kotor']);
-        foreach ($topProductsRaw as $prod) {
-            fputcsv($csv, [
-                $prod->name,
-                $prod->category ?? 'Lainnya',
-                $prod->sold,
-                'Rp ' . number_format($prod->revenue)
-            ]);
+            fputcsv($csv, ['Nama Produk', 'Kategori', 'Qty Terjual', 'Harga Rata-rata', 'Total Pendapatan Kotor (Gross)']);
+            foreach ($topProducts as $prod) {
+                fputcsv($csv, [$prod->name, $prod->category ?? 'Lainnya', $prod->sold, round($prod->avg_price), $prod->revenue]);
+            }
+        }
+        elseif ($reportType === 'staff') {
+            // EKSPOR: KINERJA KASIR
+            $staffs = (clone $trxQuery)
+                ->leftJoin('users', 'history_transactions.cashier_id', '=', 'users.id')
+                ->join('outlets', 'history_transactions.outlet_id', '=', 'outlets.id')
+                ->selectRaw('users.name as name, outlets.name as outlet_name, COUNT(history_transactions.id) as transactions, SUM(history_transactions.total_price) as revenue')
+                ->groupBy('users.id', 'users.name', 'outlets.name')->orderByDesc('revenue')->get();
+
+            fputcsv($csv, ['Nama Kasir', 'Outlet', 'Transaksi Ditangani', 'Uang Diterima (Bersih)']);
+            foreach ($staffs as $staff) {
+                fputcsv($csv, [$staff->name ?? 'Terhapus', $staff->outlet_name, $staff->transactions, $staff->revenue]);
+            }
+        }
+        elseif ($reportType === 'shifts') {
+            // EKSPOR: KINERJA SHIFT
+            $shifts = ShiftKaryawan::whereIn('outlet_id', $allowedOutletIds)
+                ->leftJoin('users', 'shift_karyawans.user_id', '=', 'users.id')
+                ->whereNotNull('ended_at')
+                ->whereBetween('ended_at', [$startDate, $endDate])
+                ->selectRaw('users.name as cashier, shift_karyawans.started_at, shift_karyawans.ended_at, opening_balance, closing_balance_system, closing_balance_actual, difference')
+                ->orderByDesc('ended_at')->get();
+
+            fputcsv($csv, ['Kasir', 'Waktu Mulai', 'Waktu Selesai', 'Modal Awal', 'Catatan Sistem', 'Uang Fisik (Laci)', 'Selisih (Variance)']);
+            foreach ($shifts as $shift) {
+                fputcsv($csv, [
+                    $shift->cashier ?? 'Tidak Diketahui',
+                    $shift->started_at,
+                    $shift->ended_at,
+                    $shift->opening_balance,
+                    $shift->closing_balance_system,
+                    $shift->closing_balance_actual,
+                    $shift->difference // Minus berarti kurang uang, Plus berarti lebih
+                ]);
+            }
         }
 
+        // Output File
         rewind($csv);
         $csvContent = stream_get_contents($csv);
         fclose($csv);
+
+        // Jika request format PDF (opsional untuk nanti jika Anda install DOMPDF)
+        if ($format === 'pdf') {
+            // return \PDF::loadHTML('...')->download($filename . '.pdf');
+            // Saat ini fallback ke CSV karena PDF murni butuh package
+        }
 
         return response($csvContent, 200, [
             'Content-Type' => 'text/csv',
