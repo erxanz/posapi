@@ -20,7 +20,7 @@ return new class extends Migration
             $table->integer('cancelled_qty')->default(0); // jumlah produk yang dibatalkan
             $table->integer('price'); // harga saat transaksi
             $table->integer('total_price')->default(0); // price * qty
-            $table->text('notes')->nullable()->after('total_price');
+            $table->text('notes')->nullable();
             $table->timestamps();
         });
     }
