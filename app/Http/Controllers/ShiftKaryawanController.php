@@ -121,7 +121,6 @@ class ShiftKaryawanController extends Controller
             'user_id' => $user->id,
             'outlet_id' => $validated['outlet_id'],
             'shift_id' => $currentAssignedShift->id, // Diambil otomatis dari sistem
-            'uang_awal' => $validated['opening_balance'], // Alias untuk opening_balance jika masih dipakai
             'opening_balance' => $validated['opening_balance'],
             'started_at' => now(),
             'status' => 'active',

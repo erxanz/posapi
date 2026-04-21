@@ -13,7 +13,6 @@ class ShiftKaryawan extends Model
         'outlet_id',
         'user_id',
         'shift_id', // WAJIB DITAMBAHKAN
-        'uang_awal',
         'started_at',
         'ended_at',
         'opening_balance',
@@ -31,7 +30,6 @@ class ShiftKaryawan extends Model
         'closing_balance_system' => 'integer',
         'closing_balance_actual' => 'integer',
         'difference' => 'integer',
-        'uang_awal' => 'integer',
     ];
 
     public function user()

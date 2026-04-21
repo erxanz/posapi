@@ -27,7 +27,6 @@ class ShiftKaryawanFactory extends Factory
             'outlet_id' => null,
             'user_id' => null,
             'shift_id' => null,
-            'uang_awal' => fake()->numberBetween(100000, 500000),
             'started_at' => $startedAt,
             'ended_at' => null,
             'opening_balance' => fake()->numberBetween(100000, 500000),

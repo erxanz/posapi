@@ -302,7 +302,6 @@ class DatabaseSeeder extends Seeder
                     'outlet_id' => $karyawan->outlet_id,
                     'user_id' => $karyawan->id,
                     'shift_id' => $randomShift->id,
-                    'uang_awal' => $faker->numberBetween(100000, 500000),
                     'started_at' => $date->copy()->setTime(
                         (int) explode(':', $randomShift->start_time)[0],
                         (int) explode(':', $randomShift->start_time)[1]
