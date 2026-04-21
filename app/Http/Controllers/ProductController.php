@@ -314,6 +314,7 @@ class ProductController extends Controller
             'description' => 'nullable|string',
             'cost_price' => 'sometimes|required|numeric|min:0',
             'image' => 'nullable|image|max:2048',
+            'remove_image' => 'nullable|boolean',
 
             // PERUBAHAN: Menjadikan array outlets opsional
             'outlets' => 'nullable|array',
@@ -336,8 +337,15 @@ class ProductController extends Controller
             'cost_price',
         ]);
 
-        // UPDATE IMAGE
-        if ($request->hasFile('image')) {
+        // LOGIKA UPDATE / HAPUS IMAGE
+        if ($request->boolean('remove_image')) {
+            // Hapus gambar lama jika ada request remove_image
+            if ($product->image && Storage::disk('public')->exists($product->image)) {
+                Storage::disk('public')->delete($product->image);
+            }
+            $data['image'] = null; // Set image jadi null di database
+        } elseif ($request->hasFile('image')) {
+            // Timpa gambar lama jika ada upload gambar baru
             if ($product->image && Storage::disk('public')->exists($product->image)) {
                 Storage::disk('public')->delete($product->image);
             }
