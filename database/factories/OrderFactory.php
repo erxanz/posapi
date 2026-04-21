@@ -16,7 +16,6 @@ class OrderFactory extends Factory
             'user_id' => null,
             'table_id' => null,
             'customer_name' => fake()->optional()->name(),
-            'notes' => fake()->optional()->sentence(),
             'invoice_number' => 'INV-' . strtoupper(Str::random(10)),
             'subtotal_price' => $subtotal,
             'discount_amount' => 0,

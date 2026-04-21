@@ -179,7 +179,6 @@ class DatabaseSeeder extends Seeder
                         'user_id' => $selectedUser->id,
                         'table_id' => $selectedTable->id,
                         'customer_name' => 'Customer ' . $outlet->id . '-' . ($o + 1),
-                        'notes' => null,
                         'invoice_number' => 'INV-' . str_pad((string) $outlet->id, 2, '0', STR_PAD_LEFT) . '-' . str_pad((string) ($o + 1), 4, '0', STR_PAD_LEFT),
                     ]);
 
