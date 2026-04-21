@@ -46,7 +46,6 @@ class ReportController extends Controller
             ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
             ->whereBetween('history_transactions.paid_at', [$prevStartDate, $prevEndDate]);
 
-
         // --- A. SUMMARY & KPI ---
         $summaryData = (clone $trxQuery)->selectRaw('
             COUNT(history_transactions.id) as total_trx,
@@ -68,7 +67,7 @@ class ReportController extends Controller
 
         $avgOrder = $transactions > 0 ? (int) ($revenue / $transactions) : 0;
 
-        // MENGHINDARI array $orderIds, pakai JOIN
+        // Gunakan JOIN untuk menghindari masalah limit array orderIds
         $itemsSold = (int) DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->where('history_transactions.status', 'paid')
@@ -89,7 +88,6 @@ class ReportController extends Controller
             ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
             ->get()
             ->mapWithKeys(function ($item) {
-                // Konversi tanggal jadi format Y-m-d pasti agar key array selalu cocok
                 return [Carbon::parse($item->date_val)->format('Y-m-d') => $item->gross];
             });
 
@@ -110,13 +108,13 @@ class ReportController extends Controller
 
         $revenueChart = $salesDaily->sortBy('date_val')->map(fn($item) => [
             'date' => Carbon::parse($item->date_val)->format('Y-m-d'),
-            'revenue' => (int) $item->net
+            'revenue' => (int) $item->net,
+            'transactions' => (int) $item->transactions // Tambahan untuk tooltip
         ])->values();
 
         $salesReport = $salesDaily->map(function($item) use ($grossData) {
             $dateKey = Carbon::parse($item->date_val)->format('Y-m-d');
             $net = (int) $item->net;
-            // Akses array dengan key yang sudah dijamin strukturnya sama
             $gross = (int) ($grossData[$dateKey] ?? $net);
             $discount = $gross > $net ? $gross - $net : 0;
             $tax = $net > $gross ? $net - $gross : 0;
@@ -131,7 +129,7 @@ class ReportController extends Controller
             ];
         })->values();
 
-        // --- C. TOP PRODUCTS (MENGGUNAKAN JOIN, BUKAN whereIn) ---
+        // --- C. TOP PRODUCTS (MENGGUNAKAN JOIN) ---
         $topProducts = DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->join('products', 'order_items.product_id', '=', 'products.id')
@@ -294,8 +292,10 @@ class ReportController extends Controller
             ->whereBetween('ended_at', [$startDate, $endDate])
             ->selectRaw('
                 AVG(closing_balance_system - opening_balance) as avg_shift_revenue,
+                SUM(closing_balance_system - opening_balance) as total_shift_revenue,
                 COUNT(id) as total_shifts,
-                AVG(difference) as avg_variance
+                AVG(difference) as avg_variance,
+                SUM(difference) as total_variance
             ')
             ->first();
 
@@ -333,8 +333,10 @@ class ReportController extends Controller
             'station_performance' => $stationPerformance,
             'shift_summary' => [
                 'avg_shift_revenue' => (int) ($shiftSummary->avg_shift_revenue ?? 0),
+                'total_shift_revenue' => (int) ($shiftSummary->total_shift_revenue ?? 0),
                 'total_shifts' => (int) ($shiftSummary->total_shifts ?? 0),
-                'avg_variance' => (int) ($shiftSummary->avg_variance ?? 0)
+                'avg_variance' => (int) ($shiftSummary->avg_variance ?? 0),
+                'total_variance' => (int) ($shiftSummary->total_variance ?? 0)
             ],
             'period_info' => [
                 'current' => ['start' => $startDate->toDateString(), 'end' => $endDate->toDateString()],
