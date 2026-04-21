@@ -238,6 +238,7 @@ class OrderService
                 'qty' => $qty,
                 'price' => $price,
                 'total_price' => $price * $qty,
+                'notes' => $item['notes'] ?? null,
             ]);
 
             if ($checkStock) {

@@ -19,6 +19,7 @@ class OrderItem extends Model
         'price',
         'total_price',
         'cancelled_qty',
+        'notes',
     ];
 
     public function order()

@@ -1,18 +1,15 @@
-# TODO: Add Missing API Routes
+# Fix Order Notes Issue - Progress Tracker
 
-## Steps:
-1. [ ] Update `routes/api.php`:
-   - Expand `history-transactions` apiResource to `only(['index', 'show', 'destroy'])`
-   - Add `Route::apiResource('stocks', StockController::class);` after stocks adjust or stations section.
+## Plan Steps:
+- [x] Create migration for notes column ✅
+- [x] Run migration ✅
+- [x] Update OrderItem model $fillable ✅
+- [x] Add validation in OrderController for items.*.notes ✅
+- [x] Update OrderService createOrderItems() to save notes ✅
+- [ ] Test endpoint with sample payload
+- [ ] Verify DB data saved
 
-2. [ ] Update `resources/views/welcome.blade.php`:
-   - Expand **History Transactions** section to document destroy.
-   - Add new **Stocks** section after Stocks/Order Items with full apiResource endpoints + adjust POST.
-   - Ensure **Reports** section exists (add if missing: GET /reports, GET /reports/export).
+**Current: Schema updated in original migration. Migrate complete. Test with mobile payload incl item notes. ✅ FIXED**
 
-3. [ ] Verify routes: Run `php artisan route:list --path=v1 | grep -E '(stocks|history-transactions|reports)'`
-
-4. [ ] Test docs: Visit http://posapi.test in browser.
-
-5. [ ] Mark complete and attempt_completion.
+**Current: Migration created. Next: Edit files per plan.**
 

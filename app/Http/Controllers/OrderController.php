@@ -193,6 +193,7 @@ class OrderController extends Controller
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
             'items.*.price' => 'nullable|integer|min:1',
+            'items.*.notes' => 'nullable|string|max:500',
         ]);
 
         $validated = $this->normalizeLegacyAdjustmentPayload($validated);
@@ -234,6 +235,7 @@ class OrderController extends Controller
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
             'items.*.price' => 'nullable|integer|min:1',
+            'items.*.notes' => 'nullable|string|max:500',
             'payment_method' => 'required|string|max:50',
             'amount_paid' => 'nullable|numeric|min:0|required_without:paid_amount',
             'paid_amount' => 'nullable|numeric|min:0|required_without:amount_paid',
