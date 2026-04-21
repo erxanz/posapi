@@ -17,13 +17,12 @@ class HistoryTransactionController extends Controller
         // Gunakan relasi lengkap agar kompatibel dengan kontrak response Flutter lama.
         $query = HistoryTransaction::query()
             ->with([
-                'outlet',
+                'outlet:id,name',
                 'cashier:id,name',
                 'payment:id,order_id,method,amount_paid,change_amount,paid_at',
                 'order:id,table_id,customer_name',
                 'order.table:id,name',
-                'order.items',
-                'order.logs.user',
+                'order.items.product',
             ])
             ->latest('paid_at');
 
