@@ -104,7 +104,7 @@ Route::prefix('v1')->group(function () {
         Route::delete('/shifts/{id}', [ShiftController::class, 'destroy']);
 
         // ================= HISTORY TRANSACTION =================
-Route::apiResource('history-transactions', HistoryTransactionController::class)->only(['index', 'show', 'destroy']);
+        Route::apiResource('history-transactions', HistoryTransactionController::class)->only(['index', 'show', 'update', 'destroy']);
 
         Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
         Route::get('/reports/export', [ReportController::class, 'export'])->name('reports.export');

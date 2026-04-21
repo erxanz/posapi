@@ -101,22 +101,9 @@ class HistoryTransactionController extends Controller
 
     public function show(HistoryTransaction $historyTransaction): JsonResponse
     {
-        $user = auth()->user();
-
-        if ($user->isKaryawan()) {
-            if ((int) $historyTransaction->outlet_id !== (int) $user->outlet_id) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
-        } elseif ($user->isManager()) {
-            $allowedOutletIds = Outlet::query()
-                ->where('owner_id', $user->id)
-                ->pluck('id');
-
-            if (!$allowedOutletIds->contains((int) $historyTransaction->outlet_id)) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
-        } elseif (!$user->isDeveloper()) {
-            return response()->json(['message' => 'Forbidden'], 403);
+        $forbiddenResponse = $this->authorizeHistoryTransactionAccess($historyTransaction);
+        if ($forbiddenResponse instanceof JsonResponse) {
+            return $forbiddenResponse;
         }
 
          // PERBAIKAN: Tambahkan 'order.table' dan 'outlet' agar Flutter tidak menerima nilai null
@@ -133,9 +120,40 @@ class HistoryTransactionController extends Controller
 
     public function update(Request $request, HistoryTransaction $historyTransaction): JsonResponse
     {
+        $forbiddenResponse = $this->authorizeHistoryTransactionAccess($historyTransaction);
+        if ($forbiddenResponse instanceof JsonResponse) {
+            return $forbiddenResponse;
+        }
+
+        $validated = $request->validate([
+            'invoice_number' => 'sometimes|nullable|string|max:255',
+            'customer_name' => 'sometimes|nullable|string|max:255',
+            'payment_method' => 'sometimes|nullable|string|max:50',
+            'paid_at' => 'sometimes|nullable|date',
+            'status' => 'sometimes|required|in:paid,cancelled',
+            'subtotal_price' => 'sometimes|required|integer|min:0',
+            'discount_amount' => 'sometimes|required|integer|min:0',
+            'tax_amount' => 'sometimes|required|integer|min:0',
+            'total_price' => 'sometimes|required|integer|min:0',
+            'paid_amount' => 'sometimes|required|integer|min:0',
+            'change_amount' => 'sometimes|required|integer|min:0',
+            'metadata' => 'sometimes|nullable|array',
+            'order_items_summary' => 'sometimes|nullable|array',
+        ]);
+
+        $historyTransaction->fill($validated);
+        $historyTransaction->save();
+
         return response()->json([
-            'message' => 'History transaction tidak bisa diubah',
-        ], 405);
+            'message' => 'History transaction berhasil diupdate',
+            'data' => $historyTransaction->fresh()->load([
+                'order.items.product',
+                'order.table',
+                'payment',
+                'cashier',
+                'outlet',
+            ]),
+        ]);
     }
 
     public function destroy(HistoryTransaction $historyTransaction): JsonResponse
@@ -143,5 +161,36 @@ class HistoryTransactionController extends Controller
         return response()->json([
             'message' => 'History transaction tidak bisa dihapus',
         ], 405);
+    }
+
+    private function authorizeHistoryTransactionAccess(HistoryTransaction $historyTransaction): ?JsonResponse
+    {
+        $user = auth()->user();
+
+        if ($user->isKaryawan()) {
+            if ((int) $historyTransaction->outlet_id !== (int) $user->outlet_id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            return null;
+        }
+
+        if ($user->isManager()) {
+            $allowedOutletIds = Outlet::query()
+                ->where('owner_id', $user->id)
+                ->pluck('id');
+
+            if (!$allowedOutletIds->contains((int) $historyTransaction->outlet_id)) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+
+            return null;
+        }
+
+        if (!$user->isDeveloper()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        return null;
     }
 }
