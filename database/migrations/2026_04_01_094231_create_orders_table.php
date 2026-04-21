@@ -20,7 +20,6 @@ return new class extends Migration
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
 
             $table->string('customer_name')->nullable();
-            $table->string('notes')->nullable();
 
             $table->string('invoice_number')->unique();
 

@@ -33,6 +33,7 @@ return new class extends Migration
 
             $table->enum('status', ['paid', 'cancelled'])->default('paid');
             $table->json('metadata')->nullable();
+            $table->json('order_items_summary')->nullable();
             $table->timestamps();
 
             $table->index(['outlet_id', 'status', 'paid_at']);
