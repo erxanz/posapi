@@ -13,6 +13,32 @@ use Illuminate\Support\Facades\Mail;
 
 class AuthController extends Controller
 {
+    private function hasActiveShiftNow(User $user, int $outletId): bool
+    {
+        $currentTime = now()->format('H:i:s');
+
+        return $user->shifts()
+            ->where('outlet_id', $outletId)
+            ->where(function ($query) use ($currentTime) {
+                $query
+                    // Shift normal (contoh: 08:00-16:00)
+                    ->where(function ($q) use ($currentTime) {
+                        $q->whereColumn('start_time', '<=', 'end_time')
+                            ->whereTime('start_time', '<=', $currentTime)
+                            ->whereTime('end_time', '>=', $currentTime);
+                    })
+                    // Shift lintas tengah malam (contoh: 22:00-06:00)
+                    ->orWhere(function ($q) use ($currentTime) {
+                        $q->whereColumn('start_time', '>', 'end_time')
+                            ->where(function ($q2) use ($currentTime) {
+                                $q2->whereTime('start_time', '<=', $currentTime)
+                                    ->orWhereTime('end_time', '>=', $currentTime);
+                            });
+                    });
+            })
+            ->exists();
+    }
+
     /**
      * REGISTER (Manager)
      */
@@ -69,6 +95,12 @@ class AuthController extends Controller
             ], 403);
         }
 
+        if ($user->role === 'karyawan' && !$this->hasActiveShiftNow($user, (int) $user->outlet_id)) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki jadwal shift pada jam ini.'
+            ], 403);
+        }
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
@@ -102,6 +134,12 @@ class AuthController extends Controller
         if (!$user->is_active) {
             return response()->json([
                 'message' => 'Akun karyawan tidak aktif'
+            ], 403);
+        }
+
+        if (!$this->hasActiveShiftNow($user, (int) $request->outlet_id)) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki jadwal shift pada jam ini.'
             ], 403);
         }
 
