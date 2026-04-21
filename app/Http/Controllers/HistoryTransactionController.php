@@ -20,7 +20,8 @@ class HistoryTransactionController extends Controller
                 'outlet:id,name',
                 'cashier:id,name',
                 'payment:id,order_id,method,amount_paid,change_amount,paid_at',
-                'order:id,table_id,customer_name',
+                // PERBAIKAN: Tambahkan 'logs' ke sini agar data log tidak terpotong (di-select oleh SQL)
+                'order:id,table_id,customer_name,logs',
                 'order.table:id,name',
                 'order.items.product',
             ])
@@ -106,9 +107,10 @@ class HistoryTransactionController extends Controller
             return $forbiddenResponse;
         }
 
-         // PERBAIKAN: Tambahkan 'order.table' dan 'outlet' agar Flutter tidak menerima nilai null
+         // Memuat relasi lengkap termasuk order agar logs juga ikut terbawa
         return response()->json(
             $historyTransaction->load([
+                'order', // Memastikan kolom logs pada tabel order termuat utuh
                 'order.items.product',
                 'order.table',
                 'payment',
@@ -147,6 +149,7 @@ class HistoryTransactionController extends Controller
         return response()->json([
             'message' => 'History transaction berhasil diupdate',
             'data' => $historyTransaction->fresh()->load([
+                'order', // Load order agar logs ikut
                 'order.items.product',
                 'order.table',
                 'payment',
