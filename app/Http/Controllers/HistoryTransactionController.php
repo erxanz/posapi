@@ -23,6 +23,7 @@ class HistoryTransactionController extends Controller
                 'order:id,table_id,customer_name',
                 'order.table:id,name',
                 'order.items.product',
+                'order.logs.user',
             ])
             ->latest('paid_at');
 
