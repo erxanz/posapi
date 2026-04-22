@@ -155,6 +155,7 @@ class ShiftController extends Controller
             return response()->json(['message' => 'Tidak ada master shift. Buat minimal 1 shift dulu.'], 400);
         }
 
+        // Ambil ID semua karyawan
         $karyawans = User::where('outlet_id', $outletId)->where('role', 'karyawan')->pluck('id')->toArray();
         if (empty($karyawans)) {
             return response()->json(['message' => 'Tidak ada karyawan di outlet ini.'], 400);
@@ -162,7 +163,6 @@ class ShiftController extends Controller
 
         DB::beginTransaction();
         try {
-            // Default generate bulan berjalan jika tidak ada filter
             $targetDate = now();
             if ($request->filled('month') && $request->filled('year')) {
                 $targetDate = Carbon::create($validated['year'], $validated['month'], 1);
@@ -171,39 +171,47 @@ class ShiftController extends Controller
             $startOfMonth = $targetDate->copy()->startOfMonth();
             $endOfMonth = $targetDate->copy()->endOfMonth();
 
-            // Reset jadwal lama agar tidak ganda
+            // Hapus jadwal lama bulan ini
             Schedule::where('outlet_id', $outletId)
                 ->whereBetween('date', [$startOfMonth->toDateString(), $endOfMonth->toDateString()])
                 ->delete();
 
             $newSchedules = [];
-            $karyawanCount = count($karyawans);
-            $karyawanIndex = 0;
+            $karyawanPool = []; // Wadah untuk pengacakan
 
             for ($date = $startOfMonth->copy(); $date->lte($endOfMonth); $date->addDay()) {
-                foreach ($shifts as $shift) {
-                    $userId = $karyawans[$karyawanIndex % $karyawanCount];
+
+                // Acak urutan shift harian agar pembagian lebih bervariasi
+                $dailyShifts = $shifts->shuffle();
+
+                foreach ($dailyShifts as $shift) {
+
+                    // Jika wadah karyawan habis, isi lagi dan kocok ulang (menjamin keadilan & keacakan)
+                    if (empty($karyawanPool)) {
+                        $karyawanPool = $karyawans;
+                        shuffle($karyawanPool);
+                    }
+
+                    // Tarik 1 karyawan secara acak dari wadah
+                    $userId = array_pop($karyawanPool);
 
                     $newSchedules[] = [
                         'outlet_id'  => $outletId,
                         'shift_id'   => $shift->id,
                         'user_id'    => $userId,
                         'date'       => $date->toDateString(),
-                        'created_at' => now()->toDateTimeString(), // Harus diubah ke string saat array insert
+                        'created_at' => now()->toDateTimeString(),
                         'updated_at' => now()->toDateTimeString(),
                     ];
-
-                    $karyawanIndex++;
                 }
             }
 
-            // Chunk insert
             foreach (array_chunk($newSchedules, 100) as $chunk) {
                 Schedule::insert($chunk);
             }
 
             DB::commit();
-            return response()->json(['message' => 'Jadwal bulan ini berhasil digenerate otomatis secara merata.']);
+            return response()->json(['message' => 'Jadwal bulan ini berhasil digenerate otomatis secara acak.']);
         } catch (\Throwable $e) {
             DB::rollBack();
             return response()->json(['message' => 'Gagal auto-generate', 'error' => $e->getMessage()], 500);
