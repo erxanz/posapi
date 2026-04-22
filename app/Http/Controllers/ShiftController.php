@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Shift;
 use App\Models\Outlet;
 use App\Models\User;
+use App\Models\Schedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class ShiftController extends Controller
 {
@@ -52,9 +54,6 @@ class ShiftController extends Controller
             if (!$isMine) return response()->json(['message' => 'Akses ditolak.'], 403);
         }
 
-        // Master shift now has no user assignments (use /schedules endpoint instead)
-        // Double shift checks handled in ScheduleController
-
         DB::beginTransaction();
         try {
             $shift = Shift::create([
@@ -96,9 +95,6 @@ class ShiftController extends Controller
             if (!$isTargetOutletMine) return response()->json(['message' => 'Akses ditolak untuk outlet tujuan.'], 403);
         }
 
-        // Master shift now has no user assignments (use /schedules endpoint instead)
-        // Double shift checks handled in ScheduleController
-
         DB::beginTransaction();
         try {
             $shift->update([
@@ -138,13 +134,12 @@ class ShiftController extends Controller
         }
     }
 
-    // ==========================================
-    // FITUR BARU: GENERATE JADWAL OTOMATIS
-    // ==========================================
     public function autoGenerate(Request $request)
     {
         $validated = $request->validate([
-            'outlet_id' => 'required|exists:outlets,id'
+            'outlet_id' => 'required|exists:outlets,id',
+            'month'     => 'nullable|integer|min:1|max:12',
+            'year'      => 'nullable|integer'
         ]);
 
         $user = auth()->user();
@@ -160,7 +155,6 @@ class ShiftController extends Controller
             return response()->json(['message' => 'Tidak ada master shift. Buat minimal 1 shift dulu.'], 400);
         }
 
-        // Ambil semua karyawan yang bekerja di outlet ini (dalam bentuk Array ID)
         $karyawans = User::where('outlet_id', $outletId)->where('role', 'karyawan')->pluck('id')->toArray();
         if (empty($karyawans)) {
             return response()->json(['message' => 'Tidak ada karyawan di outlet ini.'], 400);
@@ -168,11 +162,16 @@ class ShiftController extends Controller
 
         DB::beginTransaction();
         try {
-            // Kita generate untuk bulan berjalan ini
-            $startOfMonth = now()->startOfMonth();
-            $endOfMonth = now()->endOfMonth();
+            // Default generate bulan berjalan jika tidak ada filter
+            $targetDate = now();
+            if ($request->filled('month') && $request->filled('year')) {
+                $targetDate = Carbon::create($validated['year'], $validated['month'], 1);
+            }
 
-            // Reset jadwal lama di bulan ini untuk outlet ini agar tidak tumpang tindih
+            $startOfMonth = $targetDate->copy()->startOfMonth();
+            $endOfMonth = $targetDate->copy()->endOfMonth();
+
+            // Reset jadwal lama agar tidak ganda
             Schedule::where('outlet_id', $outletId)
                 ->whereBetween('date', [$startOfMonth->toDateString(), $endOfMonth->toDateString()])
                 ->delete();
@@ -181,26 +180,24 @@ class ShiftController extends Controller
             $karyawanCount = count($karyawans);
             $karyawanIndex = 0;
 
-            // Looping dari tanggal 1 sampai akhir bulan
             for ($date = $startOfMonth->copy(); $date->lte($endOfMonth); $date->addDay()) {
-                // Untuk setiap hari, bagikan shift yang ada ke karyawan secara berurutan (Round Robin)
                 foreach ($shifts as $shift) {
                     $userId = $karyawans[$karyawanIndex % $karyawanCount];
 
                     $newSchedules[] = [
-                        'outlet_id' => $outletId,
-                        'shift_id' => $shift->id,
-                        'user_id' => $userId,
-                        'date' => $date->toDateString(),
-                        'created_at' => now(),
-                        'updated_at' => now(),
+                        'outlet_id'  => $outletId,
+                        'shift_id'   => $shift->id,
+                        'user_id'    => $userId,
+                        'date'       => $date->toDateString(),
+                        'created_at' => now()->toDateTimeString(), // Harus diubah ke string saat array insert
+                        'updated_at' => now()->toDateTimeString(),
                     ];
 
                     $karyawanIndex++;
                 }
             }
 
-            // Insert data secara massal (di-chunk agar aman jika memory kecil)
+            // Chunk insert
             foreach (array_chunk($newSchedules, 100) as $chunk) {
                 Schedule::insert($chunk);
             }
@@ -213,9 +210,6 @@ class ShiftController extends Controller
         }
     }
 
-    // ==========================================
-    // UNTUK APLIKASI KASIR (FLUTTER)
-    // ==========================================
     public function mySchedule(Request $request)
     {
         $user = auth()->user();
@@ -227,7 +221,6 @@ class ShiftController extends Controller
             ], 403);
         }
 
-        // Ambil jadwal shift yang ditugaskan kepada karyawan yang sedang login
         $todaySchedules = Schedule::where('user_id', $user->id)
             ->where('date', now()->toDateString())
             ->with('shift.outlet:id,name', 'shift:id,name,start_time,end_time,color')

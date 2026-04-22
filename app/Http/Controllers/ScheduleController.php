@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Schedule;
 use App\Models\Outlet;
 use App\Models\User;
-use App\Models\Shift;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -35,7 +34,6 @@ class ScheduleController extends Controller
 
         $schedules = $query->get();
 
-        // Langsung return flat array. Grouping dan filtering ditangani oleh Frontend
         return response()->json([
             'data' => $schedules,
             'period' => [
@@ -63,7 +61,6 @@ class ScheduleController extends Controller
             }
         }
 
-        // Validate users belong to outlet and are karyawan
         $invalidUsers = User::whereIn('id', $validated['user_ids'])
             ->where(function ($q) use ($validated) {
                 $q->where('role', '!=', 'karyawan')->orWhere('outlet_id', '!=', $validated['outlet_id']);
@@ -73,7 +70,6 @@ class ScheduleController extends Controller
             return response()->json(['message' => 'Hanya karyawan outlet ini yang boleh ditugaskan.'], 422);
         }
 
-        // Check conflicts: no other shift on same date for these users/outlet
         $conflictCount = Schedule::where('outlet_id', $validated['outlet_id'])
             ->where('date', $validated['date'])
             ->whereIn('user_id', $validated['user_ids'])
@@ -126,4 +122,3 @@ class ScheduleController extends Controller
         return response()->json(['message' => 'Jadwal dihapus'], 200);
     }
 }
-

@@ -18,8 +18,9 @@ class Schedule extends Model
         'date'
     ];
 
+    // INI KUNCI AGAR TANGGAL JSON COCOK DENGAN FRONTEND
     protected $casts = [
-        'date' => 'date',
+        'date' => 'date:Y-m-d',
     ];
 
     public function outlet()
@@ -47,4 +48,3 @@ class Schedule extends Model
         return $query->where('outlet_id', $outletId);
     }
 }
-
