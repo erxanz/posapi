@@ -35,18 +35,9 @@ class ScheduleController extends Controller
 
         $schedules = $query->get();
 
-        // Group by date for calendar UI
-        $grouped = $schedules->groupBy('date')->map(function ($items, $date) {
-            return $items->groupBy('shift_id')->map(function ($shiftSchedules) {
-                return [
-                    'shift' => $shiftSchedules->first()->shift,
-                    'users' => $shiftSchedules->pluck('user')->unique('id')
-                ];
-            });
-        });
-
+        // Langsung return flat array. Grouping dan filtering ditangani oleh Frontend
         return response()->json([
-            'data' => $grouped,
+            'data' => $schedules,
             'period' => [
                 'start' => $validated['start_date'],
                 'end' => $validated['end_date']

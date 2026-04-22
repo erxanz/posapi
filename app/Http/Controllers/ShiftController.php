@@ -160,22 +160,53 @@ class ShiftController extends Controller
             return response()->json(['message' => 'Tidak ada master shift. Buat minimal 1 shift dulu.'], 400);
         }
 
-        // Ambil semua karyawan yang bekerja di outlet ini
-        $karyawans = User::where('outlet_id', $outletId)->where('role', 'karyawan')->pluck('id');
-        if ($karyawans->isEmpty()) {
+        // Ambil semua karyawan yang bekerja di outlet ini (dalam bentuk Array ID)
+        $karyawans = User::where('outlet_id', $outletId)->where('role', 'karyawan')->pluck('id')->toArray();
+        if (empty($karyawans)) {
             return response()->json(['message' => 'Tidak ada karyawan di outlet ini.'], 400);
         }
 
         DB::beginTransaction();
         try {
-            // TODO: Adapt autoGenerate to generate schedules for a date range
-            // For now, reset existing schedules for outlet (no new assignments)
-            Schedule::where('outlet_id', $outletId)->delete();
+            // Kita generate untuk bulan berjalan ini
+            $startOfMonth = now()->startOfMonth();
+            $endOfMonth = now()->endOfMonth();
 
-            return response()->json(['message' => 'Jadwal lama di-reset. Gunakan /schedules untuk penugasan manual.']);
+            // Reset jadwal lama di bulan ini untuk outlet ini agar tidak tumpang tindih
+            Schedule::where('outlet_id', $outletId)
+                ->whereBetween('date', [$startOfMonth->toDateString(), $endOfMonth->toDateString()])
+                ->delete();
+
+            $newSchedules = [];
+            $karyawanCount = count($karyawans);
+            $karyawanIndex = 0;
+
+            // Looping dari tanggal 1 sampai akhir bulan
+            for ($date = $startOfMonth->copy(); $date->lte($endOfMonth); $date->addDay()) {
+                // Untuk setiap hari, bagikan shift yang ada ke karyawan secara berurutan (Round Robin)
+                foreach ($shifts as $shift) {
+                    $userId = $karyawans[$karyawanIndex % $karyawanCount];
+
+                    $newSchedules[] = [
+                        'outlet_id' => $outletId,
+                        'shift_id' => $shift->id,
+                        'user_id' => $userId,
+                        'date' => $date->toDateString(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+
+                    $karyawanIndex++;
+                }
+            }
+
+            // Insert data secara massal (di-chunk agar aman jika memory kecil)
+            foreach (array_chunk($newSchedules, 100) as $chunk) {
+                Schedule::insert($chunk);
+            }
 
             DB::commit();
-            return response()->json(['message' => 'Jadwal berhasil digenerate otomatis secara merata.']);
+            return response()->json(['message' => 'Jadwal bulan ini berhasil digenerate otomatis secara merata.']);
         } catch (\Throwable $e) {
             DB::rollBack();
             return response()->json(['message' => 'Gagal auto-generate', 'error' => $e->getMessage()], 500);
