@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Mail;
 
 class AuthController extends Controller
 {
-    // DIPERBAIKI 1: Mengambil data Shift (bukan sekadar True/False)
+    // Mengambil data Shift aktif berdasarkan jam saat ini
     private function getActiveShift(User $user, int $outletId)
     {
         $currentTime = now()->format('H:i:s');
@@ -37,7 +37,7 @@ class AuthController extends Controller
                             });
                     });
             })
-            ->first(); // Menggunakan first() untuk mengambil data shift-nya
+            ->first();
     }
 
     /**
@@ -72,7 +72,7 @@ class AuthController extends Controller
     }
 
     /**
-     * LOGIN EMAIL (MANAGER & DEVELOPER)
+     * LOGIN EMAIL (MANAGER, DEVELOPER, & WEB KARYAWAN)
      */
     public function login(Request $request)
     {
@@ -89,10 +89,9 @@ class AuthController extends Controller
             ], 401);
         }
 
-        // Default shift_id null (karena manager/developer mungkin tidak punya shift)
         $shiftId = null;
 
-        // WAJIB CEK AKTIF (karena ini khusus karyawan)
+        // Cek khusus karyawan
         if ($user->role === 'karyawan') {
             if (!$user->is_active) {
                 return response()->json([
@@ -102,13 +101,11 @@ class AuthController extends Controller
 
             $activeShift = $this->getActiveShift($user, (int) $user->outlet_id);
 
-            if (!$activeShift) {
-                return response()->json([
-                    'message' => 'Anda tidak memiliki jadwal shift pada jam ini.'
-                ], 403);
+            // PERBAIKAN: Tidak diblokir dengan 403.
+            // Tetap izinkan login agar bisa akses /my-schedule di Flutter.
+            if ($activeShift) {
+                $shiftId = $activeShift->id;
             }
-
-            $shiftId = $activeShift->id;
         }
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -116,13 +113,13 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Login berhasil',
             'token' => $token,
-            'shift_id' => $shiftId, // DIPERBAIKI 2: Mengirimkan shift_id (jika ada)
+            'shift_id' => $shiftId,
             'user' => $user->load('outlet')
         ]);
     }
 
     /**
-     * LOGIN PIN (KARYAWAN)
+     * LOGIN PIN (KARYAWAN - FLUTTER)
      */
     public function loginPin(Request $request)
     {
@@ -133,36 +130,33 @@ class AuthController extends Controller
 
         $user = User::where('pin', $request->pin)
             ->where('outlet_id', $request->outlet_id)
+            ->where('role', 'karyawan')
             ->first();
 
         if (!$user) {
             return response()->json([
-                'message' => 'PIN salah'
+                'message' => 'PIN salah atau karyawan tidak terdaftar di outlet ini.'
             ], 401);
         }
 
-        // WAJIB CEK AKTIF (karena ini khusus karyawan)
         if (!$user->is_active) {
             return response()->json([
                 'message' => 'Akun karyawan tidak aktif'
             ], 403);
         }
 
-        // DIPERBAIKI 3: Menggunakan getActiveShift untuk dapatkan ID-nya
         $activeShift = $this->getActiveShift($user, (int) $request->outlet_id);
 
-        if (!$activeShift) {
-            return response()->json([
-                'message' => 'Anda tidak memiliki jadwal shift pada jam ini.'
-            ], 403);
-        }
+        // PERBAIKAN: Karyawan tetap diizinkan login walaupun belum jam shift-nya.
+        // Jika belum jam shift, shift_id akan dikirim null.
+        $shiftId = $activeShift ? $activeShift->id : null;
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login berhasil',
             'token' => $token,
-            'shift_id' => $activeShift->id, // DIPERBAIKI 4: Mengirimkan shift_id ke Flutter
+            'shift_id' => $shiftId,
             'user' => $user->load('outlet')
         ]);
     }
@@ -203,7 +197,6 @@ class AuthController extends Controller
         }
         $user->phone_number = $request->phone_number;
 
-        // Update password hanya jika form password diisi
         if ($request->filled('password')) {
             $user->password = \Illuminate\Support\Facades\Hash::make($request->password);
         }
@@ -250,67 +243,10 @@ class AuthController extends Controller
             ]
         );
 
-        // Link reset diarahkan ke frontend (bukan API/backend).
         $frontendUrl = rtrim(config('app.frontend_url'), '/');
         $resetLink = "$frontendUrl/reset-password?token=$token&email=" . urlencode($user->email);
 
-        $emailBody = "
-            <!DOCTYPE html>
-            <html lang='id'>
-            <head>
-                <meta charset='UTF-8'>
-                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-                <style>
-                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5; margin: 0; padding: 0; }
-                    .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-                    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px 20px; text-align: center; }
-                    .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
-                    .content { padding: 30px 25px; }
-                    .content h2 { color: #333; font-size: 22px; margin-top: 0; margin-bottom: 15px; }
-                    .content p { color: #555; font-size: 16px; line-height: 1.6; margin: 10px 0; }
-                    .button-container { text-align: center; margin: 30px 0; }
-                    .btn { display: inline-block; padding: 12px 35px; background-color: #667eea; color: white; text-decoration: none; border-radius: 5px; font-weight: 600; font-size: 16px; }
-                    .btn:hover { background-color: #5568d3; }
-                    .info-box { background-color: #f9f9f9; border-left: 4px solid #667eea; padding: 15px; margin: 20px 0; border-radius: 4px; }
-                    .info-box strong { color: #333; }
-                    .footer { background-color: #f5f5f5; padding: 20px 25px; text-align: center; border-top: 1px solid #e0e0e0; }
-                    .footer p { color: #999; font-size: 13px; margin: 5px 0; }
-                    .divider { height: 1px; background-color: #e0e0e0; margin: 25px 0; }
-                </style>
-            </head>
-            <body>
-                <div class='container'>
-                    <div class='header'>
-                        <h1>Reset Password</h1>
-                    </div>
-                    <div class='content'>
-                        <h2>Halo, $user->name</h2>
-                        <p>Kami menerima permintaan untuk mereset password akun Anda. Klik tombol di bawah untuk melanjutkan proses reset password:</p>
-
-                        <div class='button-container'>
-                            <a href='$resetLink' class='btn'>Reset Password</a>
-                        </div>
-
-                        <p>Atau salin dan tempel link berikut ke browser Anda:</p>
-                        <p style='word-break: break-all; background-color: #f9f9f9; padding: 10px; border-radius: 4px; font-size: 13px; color: #666;'>$resetLink</p>
-
-                        <div class='info-box'>
-                            <strong>Penting:</strong> Link reset password ini hanya berlaku selama <strong>15 menit</strong>. Jika Anda tidak mereset password dalam waktu tersebut, Anda harus meminta link baru.
-                        </div>
-
-                        <div class='divider'></div>
-
-                        <p style='color: #888; font-size: 14px;'><strong>Keamanan:</strong> Jika Anda tidak meminta reset password ini, abaikan email ini dan hubungi tim support kami segera.</p>
-                    </div>
-                    <div class='footer'>
-                        <p>© " . date('Y') . " POS API. Semua hak dilindungi.</p>
-                        <p>Email ini dikirim ke <strong>$user->email</strong></p>
-                        <p style='font-size: 12px; color: #bbb;'>Mohon jangan membalas email ini, karena mailbox ini tidak dimonitor.</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-        ";
+        $emailBody = view('emails.password-reset', compact('user', 'resetLink'))->render();
 
         Mail::html($emailBody, function ($message) use ($user) {
             $message->to($user->email)
@@ -343,21 +279,18 @@ class AuthController extends Controller
             ], 400);
         }
 
-        // cek token
         if (!Hash::check($request->token, $record->token)) {
             return response()->json([
                 'message' => 'Token tidak valid'
             ], 400);
         }
 
-        // cek expired
         if (Carbon::parse($record->created_at)->addMinutes(15)->isPast()) {
             return response()->json([
                 'message' => 'Token sudah kadaluarsa'
             ], 400);
         }
 
-        // pastikan user ada
         $user = User::where('email', $request->email)->first();
 
         if (!$user) {
@@ -366,19 +299,16 @@ class AuthController extends Controller
             ], 404);
         }
 
-        // cek role (hanya manager/developer)
         if (!in_array($user->role, ['manager', 'developer'])) {
             return response()->json([
                 'message' => 'Hanya untuk manager/developer'
             ], 403);
         }
 
-        // update password
         $user->update([
             'password' => Hash::make($request->password)
         ]);
 
-        // hapus token
         DB::table('password_reset_tokens')
             ->where('email', $request->email)
             ->delete();
