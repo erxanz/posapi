@@ -155,7 +155,6 @@ class ShiftController extends Controller
             return response()->json(['message' => 'Tidak ada master shift. Buat minimal 1 shift dulu.'], 400);
         }
 
-        // Ambil ID semua karyawan
         $karyawans = User::where('outlet_id', $outletId)->where('role', 'karyawan')->pluck('id')->toArray();
         if (empty($karyawans)) {
             return response()->json(['message' => 'Tidak ada karyawan di outlet ini.'], 400);
@@ -171,41 +170,42 @@ class ShiftController extends Controller
             $startOfMonth = $targetDate->copy()->startOfMonth();
             $endOfMonth = $targetDate->copy()->endOfMonth();
 
-            // Hapus jadwal lama bulan ini
             Schedule::where('outlet_id', $outletId)
                 ->whereBetween('date', [$startOfMonth->toDateString(), $endOfMonth->toDateString()])
                 ->delete();
 
             $newSchedules = [];
-            $karyawanPool = []; // Wadah untuk pengacakan
+            $shiftCount = $shifts->count();
+            // Menghitung berapa banyak karyawan yang ditugaskan per 1 shift
+            $empPerShift = ceil(count($karyawans) / $shiftCount);
 
             for ($date = $startOfMonth->copy(); $date->lte($endOfMonth); $date->addDay()) {
 
-                // Acak urutan shift harian agar pembagian lebih bervariasi
-                $dailyShifts = $shifts->shuffle();
+                // Ambil semua karyawan lalu acak posisinya setiap hari berganti
+                $dailyKaryawans = $karyawans;
+                shuffle($dailyKaryawans);
 
-                foreach ($dailyShifts as $shift) {
+                // Pecah karyawan menjadi beberapa grup sesuai jumlah shift
+                $chunks = array_chunk($dailyKaryawans, $empPerShift);
 
-                    // Jika wadah karyawan habis, isi lagi dan kocok ulang (menjamin keadilan & keacakan)
-                    if (empty($karyawanPool)) {
-                        $karyawanPool = $karyawans;
-                        shuffle($karyawanPool);
+                foreach ($shifts as $index => $shift) {
+                    // Ambil grup karyawan berdasarkan index shift (jika grupnya ada)
+                    $assignedUsers = $chunks[$index] ?? [];
+
+                    foreach ($assignedUsers as $userId) {
+                        $newSchedules[] = [
+                            'outlet_id'  => $outletId,
+                            'shift_id'   => $shift->id,
+                            'user_id'    => $userId,
+                            'date'       => $date->toDateString(),
+                            'created_at' => now()->toDateTimeString(),
+                            'updated_at' => now()->toDateTimeString(),
+                        ];
                     }
-
-                    // Tarik 1 karyawan secara acak dari wadah
-                    $userId = array_pop($karyawanPool);
-
-                    $newSchedules[] = [
-                        'outlet_id'  => $outletId,
-                        'shift_id'   => $shift->id,
-                        'user_id'    => $userId,
-                        'date'       => $date->toDateString(),
-                        'created_at' => now()->toDateTimeString(),
-                        'updated_at' => now()->toDateTimeString(),
-                    ];
                 }
             }
 
+            // Insert massal
             foreach (array_chunk($newSchedules, 100) as $chunk) {
                 Schedule::insert($chunk);
             }
