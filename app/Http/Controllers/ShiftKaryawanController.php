@@ -76,34 +76,37 @@ class ShiftKaryawanController extends Controller
             return response()->json(['message' => 'Outlet tidak sesuai dengan akun karyawan'], 403);
         }
 
-        $currentTime = now()->format('H:i:s'); // Ambil jam saat ini, misal: 08:30:00
+        $currentTime = now()->format('H:i:s');
+        $today = now()->toDateString();
 
-        // 1. CARI JADWAL OTOMATIS: Cek tabel shift_user dan cocokkan dengan jam sekarang
-        $currentAssignedShift = $user->shifts()
+        // 1. CARI JADWAL OTOMATIS: Cek tabel shift_schedules untuk hari ini + cocokkan jam
+        $currentAssignedShift = Schedule::where('user_id', $user->id)
             ->where('outlet_id', $validated['outlet_id'])
+            ->where('date', $today)
+            ->join('shifts', 'shift_schedules.shift_id', '=', 'shifts.id')
             ->where(function ($query) use ($currentTime) {
                 $query
-                    // Shift normal (contoh: 08:00-16:00)
+                    // Shift normal
                     ->where(function ($q) use ($currentTime) {
-                        $q->whereColumn('start_time', '<=', 'end_time')
-                            ->whereTime('start_time', '<=', $currentTime)
-                            ->whereTime('end_time', '>=', $currentTime);
+                        $q->whereColumn('shifts.start_time', '<=', 'shifts.end_time')
+                            ->whereTime('shifts.start_time', '<=', $currentTime)
+                            ->whereTime('shifts.end_time', '>=', $currentTime);
                     })
-                    // Shift lintas tengah malam (contoh: 22:00-06:00)
+                    // Shift lintas malam
                     ->orWhere(function ($q) use ($currentTime) {
-                        $q->whereColumn('start_time', '>', 'end_time')
+                        $q->whereColumn('shifts.start_time', '>', 'shifts.end_time')
                             ->where(function ($q2) use ($currentTime) {
-                                $q2->whereTime('start_time', '<=', $currentTime)
-                                    ->orWhereTime('end_time', '>=', $currentTime);
+                                $q2->whereTime('shifts.start_time', '<=', $currentTime)
+                                    ->orWhereTime('shifts.end_time', '>=', $currentTime);
                             });
                     });
             })
+            ->select('shifts.*')
             ->first();
 
-        // Jika sistem tidak menemukan jadwal yang cocok di jam ini pada tabel shift_user
         if (!$currentAssignedShift) {
             return response()->json([
-                'message' => 'Anda tidak memiliki jadwal shift pada jam ini.'
+                'message' => 'Anda tidak memiliki jadwal shift pada hari dan jam ini.'
             ], 403);
         }
 

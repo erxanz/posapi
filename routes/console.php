@@ -14,8 +14,8 @@ Artisan::command('inspire', function () {
 // SCHEDULER: RUTINITAS HARIAN
 // ==========================================
 Schedule::call(function () {
-    // 1. Reset Jadwal Shift (Dari fitur sebelumnya)
-    DB::table('shift_user')->truncate();
+    // 1. Reset Jadwal Shift Schedules
+    DB::table('shift_schedules')->whereDate('date', now()->toDateString())->delete();
 
     // 2. Auto-Delete Promo yang sudah lewat tanggal End Date-nya
     Discount::whereDate('end_date', '<', now()->format('Y-m-d'))->delete();

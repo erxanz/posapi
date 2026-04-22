@@ -13,7 +13,8 @@ class Shift extends Model
         'outlet_id',
         'name',
         'start_time',
-        'end_time'
+        'end_time',
+        'color'
     ];
 
     public function outlet()
@@ -21,8 +22,14 @@ class Shift extends Model
         return $this->belongsTo(Outlet::class);
     }
 
-    public function users()
+    public function schedules()
     {
-        return $this->belongsToMany(User::class, 'shift_user');
+        return $this->hasMany(Schedule::class);
     }
+
+    // DEPRECATED: Old pivot relation
+    // public function users()
+    // {
+    //     return $this->belongsToMany(User::class, 'shift_user');
+    // }
 }

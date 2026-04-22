@@ -99,11 +99,17 @@ class User extends Authenticatable
         return $this->role === 'karyawan';
     }
 
-    // Relasi ke tabel karyawan
-    public function shifts()
+    // Relasi ke jadwal shift (new calendar system)
+    public function schedules()
     {
-        return $this->belongsToMany(Shift::class, 'shift_user');
+        return $this->hasMany(Schedule::class);
     }
+
+    // DEPRECATED: Old pivot relation
+    // public function shifts()
+    // {
+    //     return $this->belongsToMany(Shift::class, 'shift_user');
+    // }
 
     public function shiftKaryawans()
     {

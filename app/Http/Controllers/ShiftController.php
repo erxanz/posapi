@@ -14,7 +14,7 @@ class ShiftController extends Controller
     {
         try {
             $user = auth()->user();
-            $query = Shift::with(['users:id,name', 'outlet:id,name']);
+            $query = Shift::with('outlet:id,name');
 
             if ($user->role === 'manager') {
                 $outletIds = Outlet::where('owner_id', $user->id)->pluck('id');
@@ -43,8 +43,7 @@ class ShiftController extends Controller
             'name'       => 'required|string|max:255',
             'start_time' => 'required|date_format:H:i',
             'end_time'   => 'required|date_format:H:i',
-            'user_ids'   => 'nullable|array',
-            'user_ids.*' => 'exists:users,id',
+            'color'      => 'nullable|string|max:7',
         ]);
 
         $user = auth()->user();
@@ -53,33 +52,8 @@ class ShiftController extends Controller
             if (!$isMine) return response()->json(['message' => 'Akses ditolak.'], 403);
         }
 
-        if (!empty($validated['user_ids'])) {
-            $invalidUsersCount = User::whereIn('id', $validated['user_ids'])
-                ->where(function ($query) use ($validated) {
-                    $query->where('role', '!=', 'karyawan')
-                        ->orWhere('outlet_id', '!=', $validated['outlet_id']);
-                })
-                ->count();
-
-            if ($invalidUsersCount > 0) {
-                return response()->json([
-                    'message' => 'Hanya user role karyawan pada outlet yang sama yang boleh ditugaskan ke shift.'
-                ], 422);
-            }
-        }
-
-        // --- CEGAK DOUBLE SHIFT ---
-        if (!empty($validated['user_ids'])) {
-            $hasOtherShift = DB::table('shift_user')
-                ->join('shifts', 'shift_user.shift_id', '=', 'shifts.id')
-                ->whereIn('shift_user.user_id', $validated['user_ids'])
-                ->where('shifts.outlet_id', $validated['outlet_id'])
-                ->exists();
-
-            if ($hasOtherShift) {
-                return response()->json(['message' => 'Gagal: Salah satu karyawan sudah memiliki jadwal shift.'], 400);
-            }
-        }
+        // Master shift now has no user assignments (use /schedules endpoint instead)
+        // Double shift checks handled in ScheduleController
 
         DB::beginTransaction();
         try {
@@ -88,16 +62,13 @@ class ShiftController extends Controller
                 'name'       => $validated['name'],
                 'start_time' => $validated['start_time'],
                 'end_time'   => $validated['end_time'],
+                'color'      => $validated['color'] ?? null,
             ]);
 
-            if (!empty($validated['user_ids'])) {
-                $shift->users()->sync($validated['user_ids']);
-            }
-
             DB::commit();
-            $shift->load(['users:id,name', 'outlet:id,name']);
+            $shift->load(['outlet:id,name']);
 
-            return response()->json(['message' => 'Jadwal berhasil dibuat', 'data' => $shift], 201);
+            return response()->json(['message' => 'Master shift berhasil dibuat (tugaskan karyawan via /schedules)', 'data' => $shift], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
             return response()->json(['message' => 'Gagal menyimpan', 'error' => $e->getMessage()], 500);
@@ -111,8 +82,7 @@ class ShiftController extends Controller
             'name'       => 'required|string|max:255',
             'start_time' => 'required|date_format:H:i',
             'end_time'   => 'required|date_format:H:i',
-            'user_ids'   => 'nullable|array',
-            'user_ids.*' => 'exists:users,id',
+            'color'      => 'nullable|string|max:7',
         ]);
 
         $shift = Shift::findOrFail($id);
@@ -126,34 +96,8 @@ class ShiftController extends Controller
             if (!$isTargetOutletMine) return response()->json(['message' => 'Akses ditolak untuk outlet tujuan.'], 403);
         }
 
-        if (!empty($validated['user_ids'])) {
-            $invalidUsersCount = User::whereIn('id', $validated['user_ids'])
-                ->where(function ($query) use ($validated) {
-                    $query->where('role', '!=', 'karyawan')
-                        ->orWhere('outlet_id', '!=', $validated['outlet_id']);
-                })
-                ->count();
-
-            if ($invalidUsersCount > 0) {
-                return response()->json([
-                    'message' => 'Hanya user role karyawan pada outlet yang sama yang boleh ditugaskan ke shift.'
-                ], 422);
-            }
-        }
-
-        // --- CEGAK DOUBLE SHIFT (Kecuali di shift yang sedang di-edit) ---
-        if (!empty($validated['user_ids'])) {
-            $hasOtherShift = DB::table('shift_user')
-                ->join('shifts', 'shift_user.shift_id', '=', 'shifts.id')
-                ->whereIn('shift_user.user_id', $validated['user_ids'])
-                ->where('shifts.outlet_id', $validated['outlet_id'])
-                ->where('shift_user.shift_id', '!=', $id) // Abaikan shift ini sendiri
-                ->exists();
-
-            if ($hasOtherShift) {
-                return response()->json(['message' => 'Gagal: Salah satu karyawan sudah memiliki jadwal di shift lain.'], 400);
-            }
-        }
+        // Master shift now has no user assignments (use /schedules endpoint instead)
+        // Double shift checks handled in ScheduleController
 
         DB::beginTransaction();
         try {
@@ -162,12 +106,11 @@ class ShiftController extends Controller
                 'name'       => $validated['name'],
                 'start_time' => $validated['start_time'],
                 'end_time'   => $validated['end_time'],
+                'color'      => $validated['color'] ?? null,
             ]);
 
-            $shift->users()->sync($request->input('user_ids', []));
-
             DB::commit();
-            $shift->load(['users:id,name', 'outlet:id,name']);
+            $shift->load(['outlet:id,name']);
 
             return response()->json(['message' => 'Jadwal diperbarui', 'data' => $shift], 200);
         } catch (\Throwable $e) {
@@ -187,7 +130,6 @@ class ShiftController extends Controller
                 if (!$isMine) return response()->json(['message' => 'Akses ditolak.'], 403);
             }
 
-            $shift->users()->detach();
             $shift->delete();
 
             return response()->json(['message' => 'Jadwal dihapus'], 200);
@@ -226,21 +168,11 @@ class ShiftController extends Controller
 
         DB::beginTransaction();
         try {
-            // 1. Reset jadwal lama di outlet ini
-            $shiftIds = $shifts->pluck('id');
-            DB::table('shift_user')->whereIn('shift_id', $shiftIds)->delete();
+            // TODO: Adapt autoGenerate to generate schedules for a date range
+            // For now, reset existing schedules for outlet (no new assignments)
+            Schedule::where('outlet_id', $outletId)->delete();
 
-            // 2. Bagi rata karyawan ke masing-masing shift
-            // Contoh: 5 Karyawan, 2 Shift. Maka Shift 1 dapat 3, Shift 2 dapat 2.
-            $karyawans = $karyawans->shuffle(); // Acak agar adil
-            $chunkSize = ceil($karyawans->count() / $shifts->count());
-            $chunks = $karyawans->chunk($chunkSize)->values();
-
-            foreach ($shifts as $index => $shift) {
-                if (isset($chunks[$index])) {
-                    $shift->users()->sync($chunks[$index]);
-                }
-            }
+            return response()->json(['message' => 'Jadwal lama di-reset. Gunakan /schedules untuk penugasan manual.']);
 
             DB::commit();
             return response()->json(['message' => 'Jadwal berhasil digenerate otomatis secara merata.']);
@@ -265,18 +197,23 @@ class ShiftController extends Controller
         }
 
         // Ambil jadwal shift yang ditugaskan kepada karyawan yang sedang login
-        $myShifts = $user->shifts()->with('outlet:id,name')->get();
+        $todaySchedules = Schedule::where('user_id', $user->id)
+            ->where('date', now()->toDateString())
+            ->with('shift.outlet:id,name', 'shift:id,name,start_time,end_time,color')
+            ->get()
+            ->pluck('shift', 'shift.id')
+            ->values();
 
-        if ($myShifts->isEmpty()) {
+        if ($todaySchedules->isEmpty()) {
             return response()->json([
-                'message' => 'Anda tidak memiliki jadwal shift yang ditugaskan saat ini.',
+                'message' => 'Anda tidak memiliki jadwal shift hari ini.',
                 'data' => []
             ], 200);
         }
 
         return response()->json([
-            'message' => 'Berhasil mengambil jadwal saya',
-            'data' => $myShifts
+            'message' => 'Berhasil mengambil jadwal saya hari ini',
+            'data' => $todaySchedules
         ], 200);
     }
 }

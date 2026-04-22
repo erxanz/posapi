@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('name'); // "shift pagi", "shift malam"
             $table->time('start_time');
             $table->time('end_time');
+            $table->string('color')->nullable(); // e.g. #2E7DD6
             $table->timestamps();
         });
     }

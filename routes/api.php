@@ -91,6 +91,13 @@ Route::prefix('v1')->group(function () {
         Route::post('shift-karyawans/start', [ShiftKaryawanController::class, 'startShift']);
         Route::post('shift-karyawans/end', [ShiftKaryawanController::class, 'endShift']);
 
+        // Schedules (Calendar)
+        Route::prefix('schedules')->group(function () {
+            Route::get('/', [\App\Http\Controllers\ScheduleController::class, 'index']);
+            Route::post('/', [\App\Http\Controllers\ScheduleController::class, 'store']);
+            Route::delete('{id}', [\App\Http\Controllers\ScheduleController::class, 'destroy']);
+        });
+
         // Tambahkan di dalam blok middleware auth:sanctum
         Route::post('/shifts/auto-generate', [App\Http\Controllers\ShiftController::class, 'autoGenerate']);
         Route::get('/shifts/my-schedule', [App\Http\Controllers\ShiftController::class, 'mySchedule']);

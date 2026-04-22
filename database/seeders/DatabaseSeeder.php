@@ -280,7 +280,7 @@ class DatabaseSeeder extends Seeder
             }
         }
 
-        // ================= SHIFT USER PIVOT (shift_user table) - 1 bulan data =================
+        // ================= SHIFT SCHEDULES SEED (DEMO DATA - 1 bulan) =================
         $faker = fake();
         $shifts = Shift::all();
         $karyawans = User::where('role', 'karyawan')->get();
@@ -288,33 +288,18 @@ class DatabaseSeeder extends Seeder
         foreach ($karyawans as $karyawan) {
             $outletShifts = $shifts->where('outlet_id', $karyawan->outlet_id);
             foreach ($outletShifts as $shift) {
-                DB::table('shift_user')->updateOrInsert(
-                    ['shift_id' => $shift->id, 'user_id' => $karyawan->id],
-                    ['created_at' => now()->subMonths(1)->addDays($faker->numberBetween(1, 30)), 'updated_at' => now()]
-                );
-            }
-
-            // Generate 30 days data for this karyawan-shift combo
-            for ($day = 0; $day < 30; $day++) {
-                $date = now()->subMonths(1)->addDays($day);
-                $randomShift = $outletShifts->random();
-                DB::table('shift_karyawans')->insert([
-                    'outlet_id' => $karyawan->outlet_id,
-                    'user_id' => $karyawan->id,
-                    'shift_id' => $randomShift->id,
-                    'started_at' => $date->copy()->setTime(
-                        (int) explode(':', $randomShift->start_time)[0],
-                        (int) explode(':', $randomShift->start_time)[1]
-                    ),
-                    'ended_at' => $date->copy()->setTime(
-                        (int) explode(':', $randomShift->end_time)[0],
-                        (int) explode(':', $randomShift->end_time)[1]
-                    ),
-                    'opening_balance' => $faker->numberBetween(100000, 500000),
-                    'status' => 'closed',
-                    'created_at' => $date,
-                    'updated_at' => $date,
-                ]);
+                // Seed for 30 days
+                for ($day = 0; $day < 30; $day++) {
+                    $date = now()->subMonths(1)->addDays($day);
+                    DB::table('shift_schedules')->insert([
+                        'outlet_id' => $karyawan->outlet_id,
+                        'shift_id' => $shift->id,
+                        'user_id' => $karyawan->id,
+                        'date' => $date->toDateString(),
+                        'created_at' => $date,
+                        'updated_at' => $date,
+                    ]);
+                }
             }
         }
 
@@ -359,7 +344,7 @@ class DatabaseSeeder extends Seeder
             ]);
         }
 
-// Cancelled orders history handled in factory section
+        // Cancelled orders history handled in factory section
 
 
 
