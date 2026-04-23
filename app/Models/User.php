@@ -106,10 +106,10 @@ class User extends Authenticatable
     }
 
     // DEPRECATED: Old pivot relation
-    // public function shifts()
-    // {
-    //     return $this->belongsToMany(Shift::class, 'shift_user');
-    // }
+    public function shifts()
+    {
+        return $this->belongsToMany(Shift::class, 'shift_user');
+    }
 
     public function shiftKaryawans()
     {
