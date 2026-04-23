@@ -13,6 +13,7 @@ use App\Models\Tax;
 use App\Models\Discount;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
+use App\Models\InvoiceCounter;
 
 class OrderService
 {
@@ -439,43 +440,34 @@ class OrderService
 
     private function generateInvoiceNumber(int $outletId): string
     {
-        $date = now()->format('Ymd');
-        $prefix = "INV-{$date}";
+        return DB::transaction(function () use ($outletId) {
 
-        // Kita gunakan transaksi database untuk memastikan keutuhan data
-        return DB::transaction(function () use ($outletId, $date, $prefix) {
+            $date = now()->format('Ymd');
 
-            // 1. Cari atau buat record sequence untuk hari ini & outlet ini
-            // lockForUpdate() memastikan tidak ada proses lain yang membaca baris ini secara bersamaan
-            $sequence = DB::table('invoice_sequences')
-                ->where('outlet_id', $outletId)
-                ->where('date_key', $date)
-                ->lockForUpdate()
-                ->first();
+            // ambil / buat row khusus outlet + tanggal
+            $counter = InvoiceCounter::lockForUpdate()
+                ->firstOrCreate(
+                    [
+                        'outlet_id' => $outletId,
+                        'date' => $date
+                    ],
+                    [
+                        'last_number' => 0
+                    ]
+                );
 
-            if (!$sequence) {
-                // Jika belum ada data hari ini, buat baru dimulai dari 1
-                DB::table('invoice_sequences')->insert([
-                    'outlet_id' => $outletId,
-                    'date_key' => $date,
-                    'last_number' => 1
-                ]);
-                $nextNumber = 1;
-            } else {
-                // Jika sudah ada, naikkan angkanya
-                $nextNumber = $sequence->last_number + 1;
+            // increment AMAN (tidak bisa bentrok)
+            $counter->increment('last_number');
 
-                if ($nextNumber > 9999) {
-                    throw new \Exception('Invoice limit harian tercapai');
-                }
+            $number = $counter->last_number;
 
-                DB::table('invoice_sequences')
-                    ->where('id', $sequence->id)
-                    ->update(['last_number' => $nextNumber]);
+            if ($number > 9999) {
+                throw new \Exception('Invoice limit harian tercapai');
             }
 
-            $sequenceStr = str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
-            return "{$prefix}-{$sequenceStr}";
+            $sequence = str_pad($number, 4, '0', STR_PAD_LEFT);
+
+            return "INV-{$date}-{$sequence}";
         });
     }
 

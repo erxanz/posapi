@@ -11,12 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('invoice_sequences', function (Blueprint $table) {
+        Schema::create('invoice_counters', function (Blueprint $table) {
             $table->id();
-            $table->integer('outlet_id');
-            $table->string('date_key'); // Format: 20260423
+            $table->unsignedBigInteger('outlet_id');
+            $table->string('date'); // YYYYMMDD
             $table->integer('last_number')->default(0);
-            $table->unique(['outlet_id', 'date_key']); // Pastikan unik
+            $table->timestamps();
+
+            $table->unique(['outlet_id', 'date']);
         });
     }
 
@@ -25,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('invoice_sequences');
+        Schema::dropIfExists('invoice_counters');
     }
 };
