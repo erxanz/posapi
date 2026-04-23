@@ -81,9 +81,9 @@ class ShiftKaryawanController extends Controller
         $today = now()->toDateString();
 
         // 1. CARI JADWAL OTOMATIS: Cek tabel shift_schedules untuk hari ini + cocokkan jam
-        $currentAssignedShift = Schedule::where('user_id', $user->id)
-            ->where('outlet_id', $validated['outlet_id'])
-            ->where('date', $today)
+        $currentAssignedShift = Schedule::where('shift_schedules.user_id', $user->id)
+            ->where('shift_schedules.outlet_id', $validated['outlet_id'])
+            ->where('shift_schedules.date', $today)
             ->join('shifts', 'shift_schedules.shift_id', '=', 'shifts.id')
             ->where(function ($query) use ($currentTime) {
                 $query
