@@ -13,7 +13,6 @@ use Illuminate\Support\Facades\Mail;
 
 class AuthController extends Controller
 {
-    // Mengambil data Shift aktif berdasarkan jam saat ini
     private function getActiveShift(User $user, int $outletId)
     {
         $currentTime = now()->format('H:i:s');
@@ -22,13 +21,11 @@ class AuthController extends Controller
             ->where('outlet_id', $outletId)
             ->where(function ($query) use ($currentTime) {
                 $query
-                    // Shift normal (contoh: 08:00-16:00)
                     ->where(function ($q) use ($currentTime) {
                         $q->whereColumn('start_time', '<=', 'end_time')
                             ->whereTime('start_time', '<=', $currentTime)
                             ->whereTime('end_time', '>=', $currentTime);
                     })
-                    // Shift lintas tengah malam (contoh: 22:00-06:00)
                     ->orWhere(function ($q) use ($currentTime) {
                         $q->whereColumn('start_time', '>', 'end_time')
                             ->where(function ($q2) use ($currentTime) {
@@ -40,9 +37,6 @@ class AuthController extends Controller
             ->first();
     }
 
-    /**
-     * REGISTER (Manager)
-     */
     public function register(Request $request)
     {
         $request->validate([
@@ -71,9 +65,6 @@ class AuthController extends Controller
         ], 201);
     }
 
-    /**
-     * LOGIN EMAIL (MANAGER, DEVELOPER, & WEB KARYAWAN)
-     */
     public function login(Request $request)
     {
         $request->validate([
@@ -91,7 +82,6 @@ class AuthController extends Controller
 
         $shiftId = null;
 
-        // Cek khusus karyawan
         if ($user->role === 'karyawan') {
             if (!$user->is_active) {
                 return response()->json([
@@ -101,8 +91,6 @@ class AuthController extends Controller
 
             $activeShift = $this->getActiveShift($user, (int) $user->outlet_id);
 
-            // PERBAIKAN: Tidak diblokir dengan 403.
-            // Tetap izinkan login agar bisa akses /my-schedule di Flutter.
             if ($activeShift) {
                 $shiftId = $activeShift->id;
             }
@@ -118,9 +106,6 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * LOGIN PIN (KARYAWAN - FLUTTER)
-     */
     public function loginPin(Request $request)
     {
         $request->validate([
@@ -128,18 +113,18 @@ class AuthController extends Controller
             'outlet_id' => 'required|exists:outlets,id'
         ]);
 
+        // Fix: Role karyawan tidak lagi di-hardcode agar fleksibel
         $user = User::where('pin', $request->pin)
             ->where('outlet_id', $request->outlet_id)
-            ->where('role', 'karyawan')
             ->first();
 
         if (!$user) {
             return response()->json([
-                'message' => 'PIN salah atau karyawan tidak terdaftar di outlet ini.'
+                'message' => 'PIN salah atau user tidak terdaftar di outlet ini.'
             ], 401);
         }
 
-        if (!$user->is_active) {
+        if ($user->role === 'karyawan' && !$user->is_active) {
             return response()->json([
                 'message' => 'Akun karyawan tidak aktif'
             ], 403);
@@ -147,8 +132,6 @@ class AuthController extends Controller
 
         $activeShift = $this->getActiveShift($user, (int) $request->outlet_id);
 
-        // PERBAIKAN: Karyawan tetap diizinkan login walaupun belum jam shift-nya.
-        // Jika belum jam shift, shift_id akan dikirim null.
         $shiftId = $activeShift ? $activeShift->id : null;
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -161,9 +144,6 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * GET USER LOGIN
-     */
     public function me(Request $request)
     {
         return response()->json([
@@ -171,9 +151,6 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Update user profile.
-     */
     public function updateProfile(Request $request)
     {
         $user = $request->user();
@@ -210,9 +187,6 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * FORGOT PASSWORD
-     */
     public function forgotPassword(Request $request)
     {
         $request->validate([
@@ -258,9 +232,6 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * RESET PASSWORD
-     */
     public function resetPassword(Request $request)
     {
         $request->validate([
@@ -318,9 +289,6 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * LOGOUT (CURRENT DEVICE ONLY)
-     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
