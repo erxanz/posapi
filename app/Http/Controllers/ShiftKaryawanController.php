@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Payment;
 use App\Models\ShiftKaryawan;
+use App\Models\Schedule;
 use Illuminate\Http\Request;
 
 class ShiftKaryawanController extends Controller
