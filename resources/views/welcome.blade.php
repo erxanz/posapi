@@ -399,6 +399,48 @@
                         <code class="api-path">/api/v1/shifts/{id}</code>
                         <span class="note">Auth Required</span>
                     </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/shifts/auto-generate</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/shifts/my-schedule</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Schedules Section - CLOSED by default -->
+        <div class="section-card">
+            <details>
+                <summary
+                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Schedules</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-calendar" style="color: #f97316; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down"
+                            style="color: #f97316; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/schedules</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/schedules</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-delete">DELETE</span>
+                        <code class="api-path">/api/v1/schedules/{id}</code>
+                        <span class="note">Auth Required</span>
+                    </div>
                 </div>
             </details>
         </div>
