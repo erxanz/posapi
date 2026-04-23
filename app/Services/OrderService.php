@@ -19,7 +19,6 @@ class OrderService
     public function createCheckoutOrder(array $validated, ?int $outletId = null): array
     {
         $user = $this->currentUser();
-
         $outletId ??= $validated['outlet_id'] ?? null;
 
         if (!$outletId && !empty($validated['table_id'])) {
@@ -27,7 +26,6 @@ class OrderService
         }
 
         $outletId ??= $user->outlet_id;
-
         $outlet = Outlet::findOrFail($outletId);
 
         if (!$this->canAccessOutlet($outlet->id)) {
@@ -52,9 +50,7 @@ class OrderService
             ]);
 
             $this->createOrderItems($order, $validated['items'], $outlet);
-
             $this->handleAdjustments($order, $validated);
-
             $order->recalculateTotals($validated);
 
             $amountPaid = (int) $validated['amount_paid'];
@@ -63,9 +59,7 @@ class OrderService
             }
 
             $this->createPayment($order, $amountPaid, $validated['payment_method']);
-
             $this->storeHistoryTransaction($order);
-
             $table->update(['status' => 'available']);
 
             DB::commit();
@@ -199,10 +193,7 @@ class OrderService
             }
 
             $price = (int) (
-                $product->pivot->price
-                ?? ($item['price'] ?? null)
-                ?? $product->cost_price
-                ?? 0
+                $product->pivot->price ?? ($item['price'] ?? null) ?? $product->cost_price ?? 0
             );
 
             if ($price <= 0) {
@@ -269,45 +260,49 @@ class OrderService
                 ->first();
 
             if ($discount) {
-                // Hitung total dari items yang baru saja disimpan di database
-                $subtotal = $order->items()->sum('total_price');
+                $order->loadMissing('items.product'); // Load produk untuk ngecek kategori
+                $subtotal = $order->items->sum('total_price');
 
-                // 1. Cek Syarat Minimum Belanja
                 if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
                     throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
                 }
 
                 $discountValue = (int) $discount->value;
+                $eligibleTotal = 0;
 
-                // 2. Cek Scope (Produk vs Global)
-                if ($discount->scope === 'product' && $discount->product_id) {
-                    $productTotal = $order->items()->where('product_id', $discount->product_id)->sum('total_price');
-                    $calculatedNominal = 0;
+                // PERBAIKAN: Hitung total khusus item yang kena diskon (Multiple Products atau Categories)
+                if ($discount->scope === 'products' && !empty($discount->product_ids)) {
+                    $eligibleTotal = $order->items->whereIn('product_id', $discount->product_ids)->sum('total_price');
+                } elseif ($discount->scope === 'categories' && !empty($discount->category_ids)) {
+                    $eligibleTotal = $order->items->filter(function ($item) use ($discount) {
+                        return in_array($item->product->category_id, $discount->category_ids);
+                    })->sum('total_price');
+                }
 
-                    if ($productTotal > 0) {
+                if ($discount->scope !== 'global') {
+                    if ($eligibleTotal > 0) {
                         if ($discount->type === 'percentage') {
-                            $calc = $productTotal * ($discountValue / 100);
-                            // Terapkan max_discount jika ada
+                            $calc = $eligibleTotal * ($discountValue / 100);
                             if ($discount->max_discount && $calc > $discount->max_discount) {
                                 $calc = $discount->max_discount;
                             }
-                            $calculatedNominal = (int) $calc;
+                            $updates['manual_discount_type'] = 'nominal';
+                            $updates['manual_discount_value'] = (int) $calc;
                         } else {
-                            // Untuk nominal, dipotong dari total produk tersebut (tidak melebihi harga produk)
-                            $calculatedNominal = min($discountValue, $productTotal);
+                            $updates['manual_discount_type'] = 'nominal';
+                            // Diskon nominal tidak boleh melebihi harga produk yg didiskon itu sendiri
+                            $updates['manual_discount_value'] = min($discountValue, $eligibleTotal);
                         }
+                    } else {
+                        // Jika produk/kategori yg didiskon tidak ada di keranjang
+                        $updates['manual_discount_type'] = 'nominal';
+                        $updates['manual_discount_value'] = 0;
                     }
-
-                    // Kita set sebagai potongan nominal di order agar struk/perhitungan lama tidak rusak
-                    $updates['manual_discount_type'] = 'nominal';
-                    $updates['manual_discount_value'] = $calculatedNominal;
-
                 } else {
                     // Global Scope
                     if ($discount->type === 'percentage') {
                         $calc = $subtotal * ($discountValue / 100);
                         if ($discount->max_discount && $calc > $discount->max_discount) {
-                            // Convert ke nominal karena cap limit telah tercapai
                             $updates['manual_discount_type'] = 'nominal';
                             $updates['manual_discount_value'] = (int) $discount->max_discount;
                         } else {
@@ -322,27 +317,17 @@ class OrderService
             }
         }
 
+        // --- Tax Logic (Sama seperti aslinya) ---
         if (isset($data['tax_id'])) {
             $updates['tax_id'] = $data['tax_id'];
         } elseif (isset($data['tax_type']) && isset($data['tax_value'])) {
             $taxType = (string) $data['tax_type'];
             $taxValue = (int) $data['tax_value'];
-
-            $matchedTax = Tax::query()
-                ->where('type', $taxType)
-                ->where('active', true)
-                ->get()
-                ->first(function (Tax $tax) use ($taxValue) {
-                    $expectedValue = $tax->type === 'percentage'
-                        ? (int) round(((float) $tax->rate) * 100)
-                        : (int) round((float) $tax->rate);
-
+            $matchedTax = Tax::query()->where('type', $taxType)->where('active', true)->get()->first(function (Tax $tax) use ($taxValue) {
+                    $expectedValue = $tax->type === 'percentage' ? (int) round(((float) $tax->rate) * 100) : (int) round((float) $tax->rate);
                     return $expectedValue === $taxValue;
                 });
-
-            if ($matchedTax) {
-                $updates['tax_id'] = $matchedTax->id;
-            }
+            if ($matchedTax) $updates['tax_id'] = $matchedTax->id;
         }
 
         if (array_key_exists('tax_breakdown', $data)) {
@@ -376,7 +361,6 @@ class OrderService
     private function storeHistoryTransaction(Order $order): void
     {
         $order->load(['payments', 'items.product']);
-
         $lastPayment = $order->payments->sortByDesc('id')->first();
         $methods = $order->payments->pluck('method')->unique()->values()->all();
         $paymentMethod = count($methods) === 1 ? $methods[0] : (count($methods) > 1 ? 'split' : null);
@@ -428,13 +412,8 @@ class OrderService
     private function canAccessOutlet(int $outletId): bool
     {
         $user = $this->currentUser();
-
         if ($user->role === 'developer') return true;
-
-        if ($user->role === 'manager') {
-            return Outlet::where('id', $outletId)->where('owner_id', $user->id)->exists();
-        }
-
+        if ($user->role === 'manager') return Outlet::where('id', $outletId)->where('owner_id', $user->id)->exists();
         return (int) $user->outlet_id === $outletId;
     }
 
@@ -446,11 +425,7 @@ class OrderService
     private function currentUser(): User
     {
         $user = auth()->user();
-
-        if (!$user instanceof User) {
-            throw new \RuntimeException('Unauthenticated');
-        }
-
+        if (!$user instanceof User) throw new \RuntimeException('Unauthenticated');
         return $user;
     }
 }
