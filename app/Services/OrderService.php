@@ -442,40 +442,41 @@ class OrderService
         $date = now()->format('Ymd');
         $prefix = "INV-{$date}";
 
-        // global lock per outlet + tanggal (hindari race condition)
-        $lockName = "invoice_{$outletId}_{$date}";
+        // Kita gunakan transaksi database untuk memastikan keutuhan data
+        return DB::transaction(function () use ($outletId, $date, $prefix) {
 
-        // ambil lock (max tunggu 5 detik)
-        $locked = DB::selectOne("SELECT GET_LOCK(?, 5) as l", [$lockName])->l ?? 0;
+            // 1. Cari atau buat record sequence untuk hari ini & outlet ini
+            // lockForUpdate() memastikan tidak ada proses lain yang membaca baris ini secara bersamaan
+            $sequence = DB::table('invoice_sequences')
+                ->where('outlet_id', $outletId)
+                ->where('date_key', $date)
+                ->lockForUpdate()
+                ->first();
 
-        if (!$locked) {
-            throw new \Exception('Tidak bisa mendapatkan lock invoice, coba lagi');
-        }
+            if (!$sequence) {
+                // Jika belum ada data hari ini, buat baru dimulai dari 1
+                DB::table('invoice_sequences')->insert([
+                    'outlet_id' => $outletId,
+                    'date_key' => $date,
+                    'last_number' => 1
+                ]);
+                $nextNumber = 1;
+            } else {
+                // Jika sudah ada, naikkan angkanya
+                $nextNumber = $sequence->last_number + 1;
 
-        try {
-            // AMBIL NOMOR TERAKHIR (SEKARANG AMAN)
-            $last = Order::where('invoice_number', 'like', $prefix . '%')
-                ->orderByDesc('invoice_number')
-                ->value('invoice_number');
+                if ($nextNumber > 9999) {
+                    throw new \Exception('Invoice limit harian tercapai');
+                }
 
-            $nextNumber = 1;
-
-            if ($last && preg_match('/-(\d{4})$/', $last, $m)) {
-                $nextNumber = (int) $m[1] + 1;
+                DB::table('invoice_sequences')
+                    ->where('id', $sequence->id)
+                    ->update(['last_number' => $nextNumber]);
             }
 
-            if ($nextNumber > 9999) {
-                throw new \Exception('Invoice limit harian tercapai');
-            }
-
-            $sequence = str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
-
-            return "{$prefix}-{$sequence}";
-
-        } finally {
-            // lepas lock
-            DB::selectOne("SELECT RELEASE_LOCK(?)", [$lockName]);
-        }
+            $sequenceStr = str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+            return "{$prefix}-{$sequenceStr}";
+        });
     }
 
     private function canAccessOutlet(int $outletId): bool
