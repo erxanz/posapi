@@ -15,12 +15,12 @@ class DiscountController extends Controller
 
         $user = auth()->user();
 
-        // 1. DEVELOPER (Bisa melihat semua diskon)
+        // 1. DEVELOPER
         if ($user->role === 'developer') {
             return response()->json(Discount::latest()->get());
         }
 
-        // 2. KARYAWAN / KASIR FLUTTER (Hanya melihat diskon yang AKTIF dan belum kedaluwarsa)
+        // 2. KARYAWAN / KASIR FLUTTER
         if ($user->role === 'karyawan') {
             $outlet = Outlet::find($user->outlet_id);
 
@@ -37,19 +37,19 @@ class DiscountController extends Controller
             return response()->json($discounts);
         }
 
-        // 3. MANAGER (Melihat semua diskon buatannya yang masih belum dihapus sistem)
+        // 3. MANAGER
         return response()->json(Discount::where('owner_id', $user->id)->latest()->get());
     }
 
     public function store(Request $request) {
         $data = $request->validate([
             'name' => 'required|string',
-            'scope' => 'required|in:global,products,categories', // Validasi scope baru
-            'product_ids' => 'nullable|array', // Validasi array produk
-            'category_ids' => 'nullable|array', // Validasi array kategori
+            'scope' => 'required|in:global,products,categories',
+            'product_ids' => 'nullable|array',    // <-- Mengizinkan array masuk
+            'category_ids' => 'nullable|array',   // <-- Mengizinkan array masuk
             'type' => 'required|in:percentage,nominal',
             'value' => 'required|integer',
-            'max_discount' => 'nullable|integer', // Batas maksimal
+            'max_discount' => 'nullable|integer',
             'min_purchase' => 'nullable|integer',
             'start_date' => 'required|date',
             'end_date' => 'required|date',
@@ -58,7 +58,7 @@ class DiscountController extends Controller
 
         $data['owner_id'] = auth()->id();
 
-        // Bersihkan data jika scope bukan spesifik agar database tetap bersih
+        // Bersihkan array jika scope tidak sesuai (agar DB bersih)
         if ($data['scope'] !== 'products') {
             $data['product_ids'] = null;
         }
