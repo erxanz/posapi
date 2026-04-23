@@ -439,31 +439,43 @@ class OrderService
 
     private function generateInvoiceNumber(int $outletId): string
     {
-        return DB::transaction(function () {
+        $date = now()->format('Ymd');
+        $prefix = "INV-{$date}";
 
-            $date = now()->format('Ymd');
-            $prefix = "INV-{$date}";
+        // global lock per outlet + tanggal (hindari race condition)
+        $lockName = "invoice_{$outletId}_{$date}";
 
+        // ambil lock (max tunggu 5 detik)
+        $locked = DB::selectOne("SELECT GET_LOCK(?, 5) as l", [$lockName])->l ?? 0;
+
+        if (!$locked) {
+            throw new \Exception('Tidak bisa mendapatkan lock invoice, coba lagi');
+        }
+
+        try {
+            // AMBIL NOMOR TERAKHIR (SEKARANG AMAN)
             $last = Order::where('invoice_number', 'like', $prefix . '%')
                 ->orderByDesc('invoice_number')
-                ->lockForUpdate()
-                ->first();
+                ->value('invoice_number');
 
             $nextNumber = 1;
 
-            if ($last && preg_match('/-(\d{4})$/', $last->invoice_number, $matches)) {
-                $nextNumber = (int) $matches[1] + 1;
+            if ($last && preg_match('/-(\d{4})$/', $last, $m)) {
+                $nextNumber = (int) $m[1] + 1;
             }
 
-            // Safety max 9999
             if ($nextNumber > 9999) {
-                throw new \Exception('Invoice limit harian tercapai (9999)');
+                throw new \Exception('Invoice limit harian tercapai');
             }
 
             $sequence = str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
 
             return "{$prefix}-{$sequence}";
-        });
+
+        } finally {
+            // lepas lock
+            DB::selectOne("SELECT RELEASE_LOCK(?)", [$lockName]);
+        }
     }
 
     private function canAccessOutlet(int $outletId): bool
