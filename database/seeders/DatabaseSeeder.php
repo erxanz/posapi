@@ -148,12 +148,12 @@ class DatabaseSeeder extends Seeder
 
 
             // ================= DISCOUNTS & TAXES PER OUTLET =================
-            Discount::factory()->lunchSpecial()->create(['owner_id' => $outlet->owner_id]);
-            Discount::factory()->happyHour()->create(['owner_id' => $outlet->owner_id]);
-            Discount::factory()->weekdayPromo()->create(['owner_id' => $outlet->owner_id]);
-
+            Discount::factory()->lunchSpecial()->limitedQuota(50)->create(['owner_id' => $outlet->owner_id]);
+            Discount::factory()->happyHour()->categoriesScope([1,2])->create(['owner_id' => $outlet->owner_id]);
+            Discount::factory()->weekdayPromo()->productsScope([1,2])->create(['owner_id' => $outlet->owner_id]);
 
             Tax::factory()->ppn()->create(['outlet_id' => $outlet->id]);
+
             Tax::factory()->serviceCharge()->create(['outlet_id' => $outlet->id]);
 
 
@@ -240,8 +240,10 @@ class DatabaseSeeder extends Seeder
                 ]);
 
             // Additional discounts using factory states
-            Discount::factory()->happyHour()->create(['owner_id' => $outlet->owner_id]);
-            Discount::factory()->buy1Get1()->create(['owner_id' => $outlet->owner_id]);
+            Discount::factory()->happyHour()->limitedQuota(100)->create(['owner_id' => $outlet->owner_id]);
+
+            Discount::factory()->buy1Get1()->productsScope([1,2,3])->create(['owner_id' => $outlet->owner_id]);
+
 
 // Rapi history transactions using factory - sequential, non-random
             $paidOrders = Order::where('outlet_id', $outlet->id)

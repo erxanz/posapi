@@ -33,15 +33,20 @@ class DiscountFactory extends Factory
                 'Flash Sale Siang Ini',
             ]),
 
+            'scope' => 'global',
+            'product_ids' => null,
+            'category_ids' => null,
             'type' => $type,
             'value' => $type === 'percentage' ? fake()->numberBetween(5, 50) : fake()->numberBetween(5000, 50000),
+            'max_discount' => null,
             'min_purchase' => fake()->numberBetween(50000, 300000),
-            'start_date' => fake()->dateTimeBetween('-1 month', 'now'),
-            'end_date' => fake()->dateTimeBetween('now', '+1 month'),
-            'is_active' => true,
             'used_count' => 0,
             'max_usage' => null,
+            'start_date' => fake()->date(),
+            'end_date' => fake()->dateTimeBetween('now', '+1 month')->format('Y-m-d'),
+            'is_active' => true,
         ];
+
     }
 
     /**
@@ -51,14 +56,17 @@ class DiscountFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'name' => 'Special Makan Siang 20%',
+            'scope' => 'global',
             'type' => 'percentage',
             'value' => 20,
+            'max_discount' => 50000,
             'min_purchase' => 50000,
-            'start_date' => now()->startOfWeek(),
-            'end_date' => now()->endOfWeek()->addHours(14),
+            'start_date' => now()->startOfWeek()->format('Y-m-d'),
+            'end_date' => now()->endOfWeek()->addHours(14)->format('Y-m-d'),
 
         ]);
     }
+
 
     public function happyHour(): static
     {
@@ -115,5 +123,24 @@ class DiscountFactory extends Factory
             'used_count' => fake()->numberBetween(0, $quota - 1),
         ]);
     }
+
+    public function productsScope(array $ids = [1,2,3]): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'scope' => 'products',
+            'product_ids' => json_encode($ids),
+            'category_ids' => null,
+        ]);
+    }
+
+    public function categoriesScope(array $ids = [1,2]): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'scope' => 'categories',
+            'category_ids' => json_encode($ids),
+            'product_ids' => null,
+        ]);
+    }
 }
+
 
