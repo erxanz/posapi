@@ -16,27 +16,20 @@ use App\Models\User;
 
 class OrderService
 {
-    /**
-     * Create checkout order with payment
-     */
     public function createCheckoutOrder(array $validated, ?int $outletId = null): array
     {
         $user = $this->currentUser();
 
-        // 1. Ambil outlet_id dari validasi (jika dikirim)
         $outletId ??= $validated['outlet_id'] ?? null;
 
-        // 2. Jika masih null (misal akun Manager/Dev), cari outlet berdasarkan Meja yang dipilih
         if (!$outletId && !empty($validated['table_id'])) {
             $outletId = Table::find($validated['table_id'])?->outlet_id;
         }
 
-        // 3. Fallback terakhir ke outlet_id karyawan yang sedang login
         $outletId ??= $user->outlet_id;
 
         $outlet = Outlet::findOrFail($outletId);
 
-        // Validasi akses manager / developer
         if (!$this->canAccessOutlet($outlet->id)) {
             throw new \Exception('Forbidden: Anda tidak memiliki akses ke Cabang ini.');
         }
@@ -60,10 +53,8 @@ class OrderService
 
             $this->createOrderItems($order, $validated['items'], $outlet);
 
-            // Simpan data diskon & pajak
             $this->handleAdjustments($order, $validated);
 
-            // Kalkulasi otomatis subtotal, total, diskon & pajak
             $order->recalculateTotals($validated);
 
             $amountPaid = (int) $validated['amount_paid'];
@@ -73,7 +64,6 @@ class OrderService
 
             $this->createPayment($order, $amountPaid, $validated['payment_method']);
 
-            // Simpan ke riwayat transaksi secara otomatis menggunakan total yang baru dihitung
             $this->storeHistoryTransaction($order);
 
             $table->update(['status' => 'available']);
@@ -92,9 +82,6 @@ class OrderService
         }
     }
 
-    /**
-     * Create public order (QR)
-     */
     public function createPublicOrder(array $validated): array
     {
         $outlet = Outlet::findOrFail($validated['outlet_id']);
@@ -129,9 +116,6 @@ class OrderService
         }
     }
 
-    /**
-     * Process payments (supports split)
-     */
     public function processPayments(Order $order, array $payments): array
     {
         $user = $this->currentUser();
@@ -200,7 +184,6 @@ class OrderService
         $this->storeHistoryTransaction($order);
     }
 
-    // Private helpers...
     private function createOrderItems(Order $order, array $items, Outlet $outlet, bool $checkStock = true): void
     {
         $user = $this->currentUser();
@@ -215,8 +198,6 @@ class OrderService
                 throw new \Exception("Stok {$product->name} tidak cukup (Sisa: {$stock})");
             }
 
-            // Primary source is outlet-specific price on pivot.
-            // If empty, fallback to payload price (Flutter) then product cost price.
             $price = (int) (
                 $product->pivot->price
                 ?? ($item['price'] ?? null)
@@ -265,7 +246,6 @@ class OrderService
             $updates['discount_id'] = $data['discount_id'] ? (int) $data['discount_id'] : null;
         }
 
-        // Support payload baru dan legacy agar Flutter lama tetap kompatibel.
         if (isset($data['manual_discount_type'])) {
             $updates['manual_discount_type'] = $data['manual_discount_type'];
         } elseif (isset($data['discount_type'])) {
@@ -278,8 +258,6 @@ class OrderService
             $updates['manual_discount_value'] = (int) $data['discount_value'];
         }
 
-        // Jika promo dikirim sebagai discount_id tanpa manual override,
-        // map ke manual discount agar perhitungan order tetap jalan.
         $shouldResolvePromoDiscount = isset($updates['discount_id'])
             && !isset($updates['manual_discount_type'])
             && !isset($updates['manual_discount_value']);
@@ -291,8 +269,56 @@ class OrderService
                 ->first();
 
             if ($discount) {
-                $updates['manual_discount_type'] = $discount->type;
-                $updates['manual_discount_value'] = (int) $discount->value;
+                // Hitung total dari items yang baru saja disimpan di database
+                $subtotal = $order->items()->sum('total_price');
+
+                // 1. Cek Syarat Minimum Belanja
+                if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
+                    throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
+                }
+
+                $discountValue = (int) $discount->value;
+
+                // 2. Cek Scope (Produk vs Global)
+                if ($discount->scope === 'product' && $discount->product_id) {
+                    $productTotal = $order->items()->where('product_id', $discount->product_id)->sum('total_price');
+                    $calculatedNominal = 0;
+
+                    if ($productTotal > 0) {
+                        if ($discount->type === 'percentage') {
+                            $calc = $productTotal * ($discountValue / 100);
+                            // Terapkan max_discount jika ada
+                            if ($discount->max_discount && $calc > $discount->max_discount) {
+                                $calc = $discount->max_discount;
+                            }
+                            $calculatedNominal = (int) $calc;
+                        } else {
+                            // Untuk nominal, dipotong dari total produk tersebut (tidak melebihi harga produk)
+                            $calculatedNominal = min($discountValue, $productTotal);
+                        }
+                    }
+
+                    // Kita set sebagai potongan nominal di order agar struk/perhitungan lama tidak rusak
+                    $updates['manual_discount_type'] = 'nominal';
+                    $updates['manual_discount_value'] = $calculatedNominal;
+
+                } else {
+                    // Global Scope
+                    if ($discount->type === 'percentage') {
+                        $calc = $subtotal * ($discountValue / 100);
+                        if ($discount->max_discount && $calc > $discount->max_discount) {
+                            // Convert ke nominal karena cap limit telah tercapai
+                            $updates['manual_discount_type'] = 'nominal';
+                            $updates['manual_discount_value'] = (int) $discount->max_discount;
+                        } else {
+                            $updates['manual_discount_type'] = 'percentage';
+                            $updates['manual_discount_value'] = $discountValue;
+                        }
+                    } else {
+                        $updates['manual_discount_type'] = 'nominal';
+                        $updates['manual_discount_value'] = $discountValue;
+                    }
+                }
             }
         }
 
@@ -405,7 +431,6 @@ class OrderService
 
         if ($user->role === 'developer') return true;
 
-        // FIX: Izinkan Manager mengakses jika dia adalah owner outlet tsb
         if ($user->role === 'manager') {
             return Outlet::where('id', $outletId)->where('owner_id', $user->id)->exists();
         }

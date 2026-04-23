@@ -18,8 +18,11 @@ return new class extends Migration
             $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete()->index();
 
             $table->string('name');
+            $table->enum('scope', ['global', 'product'])->default('global'); // Baru: Tipe cakupan diskon
+            $table->foreignId('product_id')->nullable()->constrained('products')->nullOnDelete(); // Baru: Untuk diskon per produk
             $table->enum('type', ['percentage', 'nominal']); // Persen atau Potongan Langsung
             $table->integer('value'); // Angka diskon (misal: 10 untuk 10% atau 15000 untuk Rp 15rb)
+            $table->integer('max_discount')->nullable(); // Baru: Batas maksimal potongan untuk persentase
             $table->integer('min_purchase')->default(0);
             $table->integer('used_count')->default(0);
             $table->integer('max_usage')->nullable();

@@ -9,14 +9,20 @@ class Discount extends Model
 {
     use HasFactory;
 
-    // PERBAIKAN: owner_id wajib dimasukkan
     protected $fillable = [
-        'owner_id', 'name', 'type', 'value', 'min_purchase', 'start_date', 'end_date', 'is_active'
+        'owner_id', 'name', 'scope', 'product_id', 'type', 'value',
+        'max_discount', 'min_purchase', 'start_date', 'end_date', 'is_active'
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'value' => 'integer',
-        'min_purchase' => 'integer'
+        'min_purchase' => 'integer',
+        'max_discount' => 'integer'
     ];
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
 }
