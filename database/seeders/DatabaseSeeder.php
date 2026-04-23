@@ -2,23 +2,23 @@
 
 namespace Database\Seeders;
 
-use App\Models\Category;
-use App\Models\Discount;
-use App\Models\HistoryTransaction;
-use App\Models\Order;
-use App\Models\Outlet;
-use App\Models\Product;
-use App\Models\ShiftKaryawan;
-use App\Models\Shift;
-use App\Models\Station;
-use App\Models\Table;
-use App\Models\Tax;
-use App\Models\User;
-use Database\Factories\ShiftUserFactory;
-use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Faker;
+use Illuminate\Database\Seeder;
+use App\Models\Outlet;
+use App\Models\User;
+use App\Models\Shift;
+// use App\Models\Category;
+// use App\Models\Discount;
+// use App\Models\HistoryTransaction;
+// use App\Models\Order;
+// use App\Models\Product;
+// use App\Models\ShiftKaryawan;
+// use App\Models\Station;
+// use App\Models\Table;
+// use App\Models\Tax;
+// use Database\Factories\ShiftUserFactory;
+// use Illuminate\Support\Facades\DB;
+// use Illuminate\Support\Facades\Faker;
 
 class DatabaseSeeder extends Seeder
 {
