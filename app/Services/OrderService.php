@@ -39,15 +39,48 @@ class OrderService
         DB::beginTransaction();
 
         try {
-            $order = Order::create([
-                'outlet_id' => $outlet->id,
-                'user_id' => $user->id,
-                'table_id' => $table->id,
-                'customer_name' => $validated['customer_name'] ?? null,
-                'invoice_number' => $this->generateInvoiceNumber($outlet->id),
-                'status' => Order::STATUS_PAID,
-                'total_price' => 0,
-            ]);
+
+            // RETRY UNTUK INVOICE DUPLICATE
+            $maxRetry = 5;
+            $attempt = 0;
+
+            do {
+                try {
+
+                    $invoice = $this->generateInvoiceNumber($outlet->id);
+
+                    $order = Order::create([
+                        'outlet_id' => $outlet->id,
+                        'user_id' => $user->id,
+                        'table_id' => $table->id,
+                        'customer_name' => $validated['customer_name'] ?? null,
+                        'invoice_number' => $invoice,
+                        'status' => Order::STATUS_PAID,
+                        'total_price' => 0,
+                    ]);
+
+                    break; // sukses → keluar loop
+
+                } catch (\Illuminate\Database\QueryException $e) {
+
+                    if (str_contains($e->getMessage(), 'Duplicate entry')) {
+                        $attempt++;
+                        usleep(100000); // delay 0.1 detik
+                    } else {
+                        throw $e;
+                    }
+
+                }
+
+            } while ($attempt < $maxRetry);
+
+            if (!isset($order)) {
+                throw new \Exception('Gagal generate invoice unik, coba lagi');
+            }
+
+            // ===============================
+            // LANJUT PROSES NORMAL
+            // ===============================
 
             $this->createOrderItems($order, $validated['items'], $outlet);
             $this->handleAdjustments($order, $validated);
