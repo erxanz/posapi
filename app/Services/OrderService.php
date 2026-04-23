@@ -408,23 +408,28 @@ class OrderService
     {
         return DB::transaction(function () {
 
-            $prefix = 'INV-' . now()->format('Ymd'); // ❗ hanya tanggal
+            $date = now()->format('Ymd');
+            $prefix = "INV-{$date}";
 
             $last = Order::where('invoice_number', 'like', $prefix . '%')
-                ->lockForUpdate()
                 ->orderByDesc('invoice_number')
-                ->value('invoice_number');
+                ->lockForUpdate()
+                ->first();
 
-            if ($last) {
-                $lastNumber = (int) substr($last, -4);
-                $nextNumber = $lastNumber + 1;
-            } else {
-                $nextNumber = 1;
+            $nextNumber = 1;
+
+            if ($last && preg_match('/-(\d{4})$/', $last->invoice_number, $matches)) {
+                $nextNumber = (int) $matches[1] + 1;
+            }
+
+            // Safety max 9999
+            if ($nextNumber > 9999) {
+                throw new \Exception('Invoice limit harian tercapai (9999)');
             }
 
             $sequence = str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
 
-            return $prefix . '-' . $sequence;
+            return "{$prefix}-{$sequence}";
         });
     }
 
