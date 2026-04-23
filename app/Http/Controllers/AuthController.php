@@ -136,6 +136,9 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * LOGIN PIN (KARYAWAN - FLUTTER)
+     */
     public function loginPin(Request $request)
     {
         $request->validate([
@@ -143,26 +146,47 @@ class AuthController extends Controller
             'outlet_id' => 'required|exists:outlets,id'
         ]);
 
-        // Fix: Role karyawan tidak lagi di-hardcode agar fleksibel
         $user = User::where('pin', $request->pin)
             ->where('outlet_id', $request->outlet_id)
+            ->where('role', 'karyawan')
             ->first();
 
         if (!$user) {
             return response()->json([
-                'message' => 'PIN salah atau user tidak terdaftar di outlet ini.'
+                'message' => 'PIN salah atau karyawan tidak terdaftar di outlet ini.'
             ], 401);
         }
 
-        if ($user->role === 'karyawan' && !$user->is_active) {
+        if (!$user->is_active) {
             return response()->json([
                 'message' => 'Akun karyawan tidak aktif'
             ], 403);
         }
 
+        // Cek Master Shift (Apakah ada jadwal jam kerja?)
         $activeShift = $this->getActiveShift($user, (int) $request->outlet_id);
-
         $shiftId = $activeShift ? $activeShift->id : null;
+
+        // ==============================================================
+        // 🌟 PERBAIKAN: CEK VALIDASI KAS AWAL LANGSUNG DARI DATABASE
+        // ==============================================================
+        $openingBalance = null; // Default null (belum isi kas awal)
+
+        if ($activeShift) {
+            // Cek ke tabel transaksi (shift_karyawans) apakah sesi kasir sudah dibuka hari ini
+            $shiftTransaksi = \App\Models\ShiftKaryawan::where('user_id', $user->id)
+                ->where('shift_id', $activeShift->id)
+                ->where('outlet_id', $request->outlet_id)
+                ->whereNull('ended_at') // Jika null, berarti kasir BELUM ditutup (End Shift)
+                ->whereDate('started_at', now()->format('Y-m-d')) // Pastikan ini transaksi hari ini
+                ->first();
+
+            // Jika datanya ada di database, ambil nominal kas awalnya
+            if ($shiftTransaksi) {
+                $openingBalance = $shiftTransaksi->opening_balance;
+            }
+        }
+        // ==============================================================
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -170,6 +194,7 @@ class AuthController extends Controller
             'message' => 'Login berhasil',
             'token' => $token,
             'shift_id' => $shiftId,
+            'opening_balance' => $openingBalance, // <-- SEKARANG BACKEND MENGIRIM INI KE FLUTTER
             'user' => $user->load('outlet')
         ]);
     }
