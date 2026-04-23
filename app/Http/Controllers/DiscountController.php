@@ -9,9 +9,7 @@ use Illuminate\Http\Request;
 class DiscountController extends Controller
 {
     public function index() {
-        // =========================================================
-        // FITUR BARU: AUTO-DELETE PROMO KEDALUWARSA SECARA REALTIME
-        // =========================================================
+        // Auto-delete promo kedaluwarsa secara realtime
         $today = now()->format('Y-m-d');
         Discount::whereDate('end_date', '<', $today)->delete();
 
@@ -30,7 +28,6 @@ class DiscountController extends Controller
                 return response()->json([]);
             }
 
-            // Ambil diskon buatan manager yang masih aktif (end_date sudah difilter hapus di atas)
             $discounts = Discount::where('owner_id', $outlet->owner_id)
                 ->where('is_active', true)
                 ->whereDate('start_date', '<=', $today)
@@ -47,8 +44,12 @@ class DiscountController extends Controller
     public function store(Request $request) {
         $data = $request->validate([
             'name' => 'required|string',
+            'scope' => 'required|in:global,products,categories', // Validasi scope baru
+            'product_ids' => 'nullable|array', // Validasi array produk
+            'category_ids' => 'nullable|array', // Validasi array kategori
             'type' => 'required|in:percentage,nominal',
             'value' => 'required|integer',
+            'max_discount' => 'nullable|integer', // Batas maksimal
             'min_purchase' => 'nullable|integer',
             'start_date' => 'required|date',
             'end_date' => 'required|date',
@@ -57,6 +58,14 @@ class DiscountController extends Controller
 
         $data['owner_id'] = auth()->id();
 
+        // Bersihkan data jika scope bukan spesifik agar database tetap bersih
+        if ($data['scope'] !== 'products') {
+            $data['product_ids'] = null;
+        }
+        if ($data['scope'] !== 'categories') {
+            $data['category_ids'] = null;
+        }
+
         $discount = Discount::create($data);
         return response()->json(['message' => 'Promo berhasil dibuat', 'data' => $discount], 201);
     }
@@ -64,13 +73,24 @@ class DiscountController extends Controller
     public function update(Request $request, Discount $discount) {
         $data = $request->validate([
             'name' => 'required|string',
+            'scope' => 'required|in:global,products,categories',
+            'product_ids' => 'nullable|array',
+            'category_ids' => 'nullable|array',
             'type' => 'required|in:percentage,nominal',
             'value' => 'required|integer',
+            'max_discount' => 'nullable|integer',
             'min_purchase' => 'nullable|integer',
             'start_date' => 'required|date',
             'end_date' => 'required|date',
             'is_active' => 'required|boolean'
         ]);
+
+        if ($data['scope'] !== 'products') {
+            $data['product_ids'] = null;
+        }
+        if ($data['scope'] !== 'categories') {
+            $data['category_ids'] = null;
+        }
 
         $discount->update($data);
         return response()->json(['message' => 'Promo berhasil diupdate', 'data' => $discount]);
