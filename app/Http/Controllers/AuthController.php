@@ -13,10 +13,40 @@ use Illuminate\Support\Facades\Mail;
 
 class AuthController extends Controller
 {
+// Mengambil data Shift aktif berdasarkan jam DAN tanggal saat ini
     private function getActiveShift(User $user, int $outletId)
     {
+        $currentDate = now()->format('Y-m-d');
         $currentTime = now()->format('H:i:s');
 
+        // 1. Cek sistem jadwal harian (tabel shift_schedules)
+        $scheduleToday = DB::table('shift_schedules')
+            ->where('user_id', $user->id)
+            ->where('outlet_id', $outletId)
+            ->where('date', $currentDate)
+            ->first();
+
+        if ($scheduleToday) {
+            // Jika ada jadwal hari ini, ambil master shift-nya dan cocokkan jamnya
+            return \App\Models\Shift::where('id', $scheduleToday->shift_id)
+                ->where(function ($query) use ($currentTime) {
+                    $query
+                        ->where(function ($q) use ($currentTime) {
+                            $q->whereColumn('start_time', '<=', 'end_time')
+                              ->whereTime('start_time', '<=', $currentTime)
+                              ->whereTime('end_time', '>=', $currentTime);
+                        })
+                        ->orWhere(function ($q) use ($currentTime) {
+                            $q->whereColumn('start_time', '>', 'end_time')
+                              ->where(function ($q2) use ($currentTime) {
+                                  $q2->whereTime('start_time', '<=', $currentTime)
+                                     ->orWhereTime('end_time', '>=', $currentTime);
+                              });
+                        });
+                })->first();
+        }
+
+        // 2. Fallback: Jika tidak ada jadwal harian, cek tabel lama (shift_user)
         return $user->shifts()
             ->where('outlet_id', $outletId)
             ->where(function ($query) use ($currentTime) {
