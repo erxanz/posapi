@@ -7,52 +7,39 @@ use Illuminate\Http\Request;
 
 class DiscountController extends Controller
 {
-    public function index()
-    {
-        $today = now();
-        $user = auth()->user();
+    public function index() {
+        $today = now()->format('Y-m-d');
 
-        // Base query (ambil kolom penting saja biar ringan)
-        $query = Discount::query()
-            ->select([
-                'id',
-                'name',
-                'owner_id',
-                'scope',
-                'type',
-                'value',
-                'max_discount',
-                'min_purchase',
-                'start_date',
-                'end_date',
-                'is_active',
-                'created_at'
-            ])
-            ->latest();
+        // Sebaiknya pindahkan ke scheduler (biar tidak berat)
+        Discount::whereDate('end_date', '<', $today)->delete();
+
+        // EAGER LOADING outlet (hindari query tambahan)
+        $user = auth()->user()->load('outlet');
 
         // 1. DEVELOPER
         if ($user->role === 'developer') {
             return response()->json(
-                $query->limit(50)->get()
+                Discount::with([]) // siap kalau nanti ada relasi
+                    ->latest()
+                    ->get()
             );
         }
 
-        // 2. KARYAWAN / KASIR
+        // 2. KARYAWAN / KASIR FLUTTER
         if ($user->role === 'karyawan') {
 
-            // Gunakan relasi (hindari query manual Outlet::find)
-            $ownerId = optional($user->outlet)->owner_id;
+            // tidak perlu query Outlet lagi
+            $outlet = $user->outlet;
 
-            if (!$ownerId) {
+            if (!$outlet) {
                 return response()->json([]);
             }
 
-            $discounts = $query
-                ->where('owner_id', $ownerId)
+            $discounts = Discount::with([]) // bisa tambah relasi nanti
+                ->where('owner_id', $outlet->owner_id)
                 ->where('is_active', true)
-                ->where('start_date', '<=', $today)
-                ->where('end_date', '>=', $today)
-                ->limit(50)
+                ->whereDate('start_date', '<=', $today)
+                ->latest()
                 ->get();
 
             return response()->json($discounts);
@@ -60,15 +47,14 @@ class DiscountController extends Controller
 
         // 3. MANAGER
         return response()->json(
-            $query
+            Discount::with([])
                 ->where('owner_id', $user->id)
-                ->limit(50)
+                ->latest()
                 ->get()
         );
     }
 
-    public function store(Request $request)
-    {
+    public function store(Request $request) {
         $data = $request->validate([
             'name' => 'required|string',
             'scope' => 'required|in:global,products,categories',
@@ -79,17 +65,23 @@ class DiscountController extends Controller
             'max_discount' => 'nullable|integer',
             'min_purchase' => 'nullable|integer',
             'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
+            'end_date' => 'required|date',
             'is_active' => 'required|boolean'
         ]);
 
         $data['owner_id'] = auth()->id();
 
-        // Bersihkan data sesuai scope
-        $data['product_ids'] = $data['scope'] === 'products' ? $data['product_ids'] : null;
-        $data['category_ids'] = $data['scope'] === 'categories' ? $data['category_ids'] : null;
+        if ($data['scope'] !== 'products') {
+            $data['product_ids'] = null;
+        }
+        if ($data['scope'] !== 'categories') {
+            $data['category_ids'] = null;
+        }
 
         $discount = Discount::create($data);
+
+        // lazy loading (kalau nanti ada relasi)
+        $discount->load([]);
 
         return response()->json([
             'message' => 'Promo berhasil dibuat',
@@ -97,8 +89,7 @@ class DiscountController extends Controller
         ], 201);
     }
 
-    public function update(Request $request, Discount $discount)
-    {
+    public function update(Request $request, Discount $discount) {
         $data = $request->validate([
             'name' => 'required|string',
             'scope' => 'required|in:global,products,categories',
@@ -109,15 +100,21 @@ class DiscountController extends Controller
             'max_discount' => 'nullable|integer',
             'min_purchase' => 'nullable|integer',
             'start_date' => 'required|date',
-            'end_date' => 'required|date|after_or_equal:start_date',
+            'end_date' => 'required|date',
             'is_active' => 'required|boolean'
         ]);
 
-        // Bersihkan data sesuai scope
-        $data['product_ids'] = $data['scope'] === 'products' ? $data['product_ids'] : null;
-        $data['category_ids'] = $data['scope'] === 'categories' ? $data['category_ids'] : null;
+        if ($data['scope'] !== 'products') {
+            $data['product_ids'] = null;
+        }
+        if ($data['scope'] !== 'categories') {
+            $data['category_ids'] = null;
+        }
 
         $discount->update($data);
+
+        // lazy loading setelah update
+        $discount->load([]);
 
         return response()->json([
             'message' => 'Promo berhasil diupdate',
@@ -125,8 +122,7 @@ class DiscountController extends Controller
         ]);
     }
 
-    public function destroy(Discount $discount)
-    {
+    public function destroy(Discount $discount) {
         $discount->delete();
 
         return response()->json([
