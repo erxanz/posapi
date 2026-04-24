@@ -122,32 +122,42 @@ class HistoryTransactionController extends Controller
 
     public function update(Request $request, HistoryTransaction $historyTransaction): JsonResponse
     {
+        // 1. Validasi Akses (Otorisasi)
         $forbiddenResponse = $this->authorizeHistoryTransactionAccess($historyTransaction);
         if ($forbiddenResponse instanceof JsonResponse) {
             return $forbiddenResponse;
         }
 
+        // 2. Validasi Input
         $validated = $request->validate([
-            'invoice_number' => 'sometimes|nullable|string|max:255',
-            'customer_name' => 'sometimes|nullable|string|max:255',
-            'payment_method' => 'sometimes|nullable|string|max:50',
-            'paid_at' => 'sometimes|nullable|date',
-            'status' => 'sometimes|required|in:paid,cancelled',
-            'subtotal_price' => 'sometimes|required|integer|min:0',
-            'discount_amount' => 'sometimes|required|integer|min:0',
-            'tax_amount' => 'sometimes|nullable|integer|min:0', // tetap divalidasi (opsional)
-            'total_price' => 'sometimes|required|integer|min:0',
-            'paid_amount' => 'sometimes|required|integer|min:0',
-            'change_amount' => 'sometimes|required|integer|min:0',
-            'metadata' => 'sometimes|nullable|array',
+            'invoice_number'    => 'sometimes|nullable|string|max:255',
+            'customer_name'     => 'sometimes|nullable|string|max:255',
+            'payment_method'    => 'sometimes|nullable|string|max:50',
+            'paid_at'           => 'sometimes|nullable|date',
+            'status'            => 'sometimes|required|in:paid,cancelled',
+            'subtotal_price'    => 'sometimes|required|integer|min:0',
+            'discount_amount'   => 'sometimes|required|integer|min:0',
+            'tax_amount'        => 'sometimes|nullable|integer|min:0',
+            'total_price'       => 'sometimes|required|integer|min:0',
+            'paid_amount'       => 'sometimes|required|integer|min:0',
+            'change_amount'     => 'sometimes|required|integer|min:0',
+            'metadata'          => 'sometimes|nullable|array',
             'order_items_summary' => 'sometimes|nullable|array',
         ]);
 
-        // KUNCI UTAMA: HAPUS tax_amount AGAR TIDAK PERNAH DIUPDATE
-        unset($validated['tax_amount']);
+        /**
+         * PERBAIKAN:
+         * Jangan gunakan unset() jika ingin mempertahankan nilai.
+         * Jika frontend tidak mengirim tax_amount, kita isi dengan nilai yang sudah ada di DB.
+         */
+        if (!$request->has('tax_amount')) {
+            $validated['tax_amount'] = $historyTransaction->tax_amount;
+        }
 
+        // 3. Eksekusi Update
         $historyTransaction->update($validated);
 
+        // 4. Return Response dengan data terbaru (fresh)
         return response()->json([
             'message' => 'History transaction berhasil diupdate',
             'data' => $historyTransaction->fresh()->load([

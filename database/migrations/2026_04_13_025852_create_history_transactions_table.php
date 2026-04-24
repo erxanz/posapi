@@ -22,7 +22,7 @@ return new class extends Migration
 
             $table->integer('subtotal_price')->default(0);
             $table->integer('discount_amount')->default(0);
-            $table->integer('tax_amount')->default(0);
+            $table->integer('tax_amount');
             $table->integer('total_price')->default(0);
 
             $table->integer('paid_amount')->default(0);
