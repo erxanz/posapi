@@ -6,6 +6,7 @@ use App\Models\Payment;
 use App\Models\ShiftKaryawan;
 use App\Models\Schedule;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 
 class ShiftKaryawanController extends Controller
 {
@@ -69,7 +70,6 @@ class ShiftKaryawanController extends Controller
 
         $validated = $request->validate([
             'outlet_id' => 'required|exists:outlets,id',
-            // 'shift_id' dihapus dari sini karena Flutter tidak mengirimkannya lagi
             'opening_balance' => 'required|integer|min:0',
         ]);
 
@@ -80,20 +80,17 @@ class ShiftKaryawanController extends Controller
         $currentTime = now()->format('H:i:s');
         $today = now()->toDateString();
 
-        // 1. CARI JADWAL OTOMATIS: Cek tabel shift_schedules untuk hari ini + cocokkan jam
         $currentAssignedShift = Schedule::where('shift_schedules.user_id', $user->id)
             ->where('shift_schedules.outlet_id', $validated['outlet_id'])
             ->where('shift_schedules.date', $today)
             ->join('shifts', 'shift_schedules.shift_id', '=', 'shifts.id')
             ->where(function ($query) use ($currentTime) {
                 $query
-                    // Shift normal
                     ->where(function ($q) use ($currentTime) {
                         $q->whereColumn('shifts.start_time', '<=', 'shifts.end_time')
                             ->whereTime('shifts.start_time', '<=', $currentTime)
                             ->whereTime('shifts.end_time', '>=', $currentTime);
                     })
-                    // Shift lintas malam
                     ->orWhere(function ($q) use ($currentTime) {
                         $q->whereColumn('shifts.start_time', '>', 'shifts.end_time')
                             ->where(function ($q2) use ($currentTime) {
@@ -111,7 +108,6 @@ class ShiftKaryawanController extends Controller
             ], 403);
         }
 
-        // 2. Cek apakah karyawan masih punya sesi kasir yang belum ditutup
         $activeSession = ShiftKaryawan::where('user_id', $user->id)
             ->where('status', 'active')
             ->first();
@@ -120,11 +116,10 @@ class ShiftKaryawanController extends Controller
             return response()->json(['message' => 'Anda masih memiliki shift aktif yang belum ditutup'], 400);
         }
 
-        // 3. Buat sesi kasir menggunakan ID shift yang ditemukan secara otomatis
         $shiftKaryawan = ShiftKaryawan::create([
             'user_id' => $user->id,
             'outlet_id' => $validated['outlet_id'],
-            'shift_id' => $currentAssignedShift->id, // Diambil otomatis dari sistem
+            'shift_id' => $currentAssignedShift->id,
             'opening_balance' => $validated['opening_balance'],
             'started_at' => now(),
             'status' => 'active',
@@ -156,7 +151,6 @@ class ShiftKaryawanController extends Controller
             return response()->json(['message' => 'Tidak ada shift aktif'], 404);
         }
 
-        // Ambil penjualan CASH saja untuk drawer
         $cashSales = Payment::where('method', 'cash')
             ->whereHas('order', function($query) use ($shift) {
                 $query->where('user_id', $shift->user_id)
@@ -170,11 +164,9 @@ class ShiftKaryawanController extends Controller
                 return $payment->amount_paid - $payment->change_amount;
             });
 
-        // Kalkulasi ekspektasi sistem dan selisih
         $systemBalance = $shift->opening_balance + $cashSales;
         $difference = $validated['actual_closing_balance'] - $systemBalance;
 
-        // Update data shift
         $shift->update([
             'ended_at' => now(),
             'status' => 'closed',
@@ -195,6 +187,72 @@ class ShiftKaryawanController extends Controller
                 'status_laci' => $difference === 0 ? 'Balance' : ($difference > 0 ? 'Uang Lebih' : 'Uang Kurang')
             ],
             'data' => $shift
+        ]);
+    }
+
+    // ==========================================
+    // 3. TAMBAHAN: CEK STATUS & AUTO-CLOSE
+    // ==========================================
+    public function checkStatus(Request $request)
+    {
+        $user = auth()->user();
+        $outletId = $request->query('outlet_id');
+        $today = now()->toDateString();
+
+        // Cari shift yang masih 'active'
+        $activeShift = ShiftKaryawan::where('user_id', $user->id)
+            ->where('outlet_id', $outletId)
+            ->where('status', 'active')
+            ->first();
+
+        if (!$activeShift) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tidak ada shift aktif hari ini.'
+            ]);
+        }
+
+        // Cek apakah shift tersebut berasal dari hari yang lalu
+        $shiftDate = Carbon::parse($activeShift->started_at)->toDateString();
+
+        if ($shiftDate !== $today) {
+            // --- PROSES AUTO-CLOSE ---
+            // Hitung penjualan cash terakhir agar laporan tetap sinkron
+            $cashSales = Payment::where('method', 'cash')
+                ->whereHas('order', function($query) use ($activeShift) {
+                    $query->where('user_id', $activeShift->user_id)
+                          ->where('outlet_id', $activeShift->outlet_id)
+                          ->where('status', 'paid')
+                          ->where('created_at', '>=', $activeShift->started_at);
+                })
+                ->get()
+                ->sum(function($payment) {
+                    return $payment->amount_paid - $payment->change_amount;
+                });
+
+            $systemBalance = $activeShift->opening_balance + $cashSales;
+
+            // Tutup shift secara otomatis
+            $activeShift->update([
+                'ended_at' => now(),
+                'status' => 'closed',
+                'closing_balance_system' => $systemBalance,
+                'closing_balance_actual' => $systemBalance,
+                'difference' => 0,
+                'notes' => 'Auto-closed by System (Forgot to close on ' . $shiftDate . ')',
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Shift kemarin telah ditutup otomatis. Silakan input kas awal baru.'
+            ]);
+        }
+
+        // Jika shift hari ini, kembalikan data untuk bypass kas awal
+        return response()->json([
+            'success' => true,
+            'message' => 'Shift aktif ditemukan.',
+            'data' => $activeShift->load(['shift', 'outlet'])
         ]);
     }
 }
