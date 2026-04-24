@@ -150,8 +150,15 @@ class HistoryTransactionController extends Controller
             }
         }
 
-        $historyTransaction->fill($validated);
-        $historyTransaction->save();
+        // HARD PROTECTION
+        if (isset($validated['tax_amount'])) {
+            if ((int)$validated['tax_amount'] === 0) {
+                // pakai nilai lama, jangan overwrite
+                $validated['tax_amount'] = $historyTransaction->tax_amount;
+            }
+        }
+
+        $historyTransaction->update($validated);
 
         return response()->json([
             'message' => 'History transaction berhasil diupdate',
