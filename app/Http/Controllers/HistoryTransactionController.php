@@ -135,7 +135,7 @@ class HistoryTransactionController extends Controller
             'status' => 'sometimes|required|in:paid,cancelled',
             'subtotal_price' => 'sometimes|required|integer|min:0',
             'discount_amount' => 'sometimes|required|integer|min:0',
-            'tax_amount' => 'sometimes|nullable|integer|min:0', // ubah ini
+            'tax_amount' => 'sometimes|nullable|integer|min:0', // tetap divalidasi (opsional)
             'total_price' => 'sometimes|required|integer|min:0',
             'paid_amount' => 'sometimes|required|integer|min:0',
             'change_amount' => 'sometimes|required|integer|min:0',
@@ -143,20 +143,8 @@ class HistoryTransactionController extends Controller
             'order_items_summary' => 'sometimes|nullable|array',
         ]);
 
-        // FILTER AGAR TAX TIDAK KE-RESET JADI 0
-        if (array_key_exists('tax_amount', $validated)) {
-            if ((int)$validated['tax_amount'] === 0 && $historyTransaction->tax_amount > 0) {
-                unset($validated['tax_amount']);
-            }
-        }
-
-        // HARD PROTECTION
-        if (isset($validated['tax_amount'])) {
-            if ((int)$validated['tax_amount'] === 0) {
-                // pakai nilai lama, jangan overwrite
-                $validated['tax_amount'] = $historyTransaction->tax_amount;
-            }
-        }
+        // KUNCI UTAMA: HAPUS tax_amount AGAR TIDAK PERNAH DIUPDATE
+        unset($validated['tax_amount']);
 
         $historyTransaction->update($validated);
 
