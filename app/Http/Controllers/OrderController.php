@@ -432,7 +432,58 @@ class OrderController extends Controller
                     'by' => auth()->user()->name ?? 'system',
                 ]);
                 $order->update(['logs' => $logs]);
-                $order->recalculateTotals();
+
+                // --- PERBAIKAN: Hitung ulang Subtotal, Diskon & Pajak secara Dinamis ---
+                $order->refresh(); // Ambil data item terbaru setelah ada yang di-void
+                $newSubtotal = $order->items->sum('total_price');
+
+                // 1. Hitung ulang diskon (menyesuaikan subtotal baru)
+                $newDiscountAmount = 0;
+                if ($order->manual_discount_type === 'percentage') {
+                    $calc = $newSubtotal * ($order->manual_discount_value / 100);
+                    if ($order->discount_id) {
+                        $discountModel = \App\Models\Discount::find($order->discount_id);
+                        if ($discountModel && $discountModel->max_discount && $calc > $discountModel->max_discount) {
+                            $calc = $discountModel->max_discount;
+                        }
+                    }
+                    $newDiscountAmount = (int) $calc;
+                } else {
+                    // Jika diskon nominal (tetap), pastikan diskon tidak membuat minus
+                    $oldDiscount = $order->discount_amount ?? 0;
+                    $newDiscountAmount = (int) min($oldDiscount, $newSubtotal);
+                }
+
+                $amountAfterDiscount = max(0, $newSubtotal - $newDiscountAmount);
+
+                // 2. Hitung ulang pajak secara dinamis dari subtotal setelah diskon
+                $newTaxAmount = 0;
+                if ($order->tax_id) {
+                    $tax = \App\Models\Tax::find($order->tax_id);
+                    if ($tax) {
+                        if ($tax->type === 'percentage') {
+                            // Hitung persen dari sisa tagihan
+                            $newTaxAmount = (int) round($amountAfterDiscount * ((float) $tax->rate / 100));
+                        } else {
+                            // Pajak nominal tetap (misal biaya admin)
+                            $newTaxAmount = (int) $tax->rate;
+                        }
+                    }
+                } elseif ($order->tax_amount > 0 && $order->subtotal_price > 0) {
+                    // Fallback proporsional jika tidak ada ID pajak tapi transaksi aslinya punya pajak
+                    $oldAmountAfterDiscount = max(0, $order->subtotal_price - $order->discount_amount);
+                    if ($oldAmountAfterDiscount > 0) {
+                        $rate = $order->tax_amount / $oldAmountAfterDiscount;
+                        $newTaxAmount = (int) round($amountAfterDiscount * $rate);
+                    }
+                }
+
+                // Masukkan hasil perhitungan dinamis ke fungsi recalculateTotals
+                $order->recalculateTotals([
+                    'discount_amount' => $newDiscountAmount,
+                    'tax_amount' => $newTaxAmount
+                ]);
+                // --- END PERBAIKAN ---
 
                 // Keep transaction history consistent after void/restore on paid orders.
                 if ($order->status === Order::STATUS_PAID) {
