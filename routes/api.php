@@ -88,6 +88,8 @@ Route::prefix('v1')->group(function () {
 
         // ================= SHIFT KARYAWAN =================
         // Khusus untuk Flutter (Action Kasir)
+        Route::get('/shift/status', [ShiftController::class, 'status']);
+        Route::post('/shift/start', [ShiftController::class, 'start']);
         Route::post('shift-karyawans/start', [ShiftKaryawanController::class, 'startShift']);
         Route::post('shift-karyawans/end', [ShiftKaryawanController::class, 'endShift']);
 

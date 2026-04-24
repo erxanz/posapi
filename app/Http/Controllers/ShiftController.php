@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Schedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 
 class ShiftController extends Controller
@@ -247,5 +248,46 @@ class ShiftController extends Controller
             'message' => 'Berhasil mengambil jadwal saya hari ini',
             'data' => $todaySchedules
         ], 200);
+    }
+
+        public function status()
+    {
+        $shift = Shift::where('user_id', Auth::id())
+            ->where('is_closed', false)
+            ->latest()
+            ->first();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'is_active' => $shift ? true : false,
+                'opening_balance' => $shift->opening_balance ?? 0
+            ]
+        ]);
+    }
+
+    public function start(Request $request)
+    {
+        $existingShift = Shift::where('user_id', Auth::id())
+            ->where('is_closed', false)
+            ->first();
+
+        if ($existingShift) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda masih memiliki shift aktif yang belum ditutup'
+            ], 400);
+        }
+
+        $shift = Shift::create([
+            'user_id' => Auth::id(),
+            'opening_balance' => $request->opening_balance,
+            'is_closed' => false
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $shift
+        ]);
     }
 }
