@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Models\Schedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 
 class ShiftController extends Controller
