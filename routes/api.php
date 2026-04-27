@@ -26,6 +26,9 @@ Route::prefix('v1')->group(function () {
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.forgot');
     Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');
 
+    // ================= MIDTRANS WEBHOOK (PUBLIC) =================
+    Route::post('/midtrans/callback', [OrderController::class, 'midtransCallback'])->name('midtrans.callback');
+
     // ================= PUBLIC API (QR) =================
     Route::prefix('public')->group(function () {
 

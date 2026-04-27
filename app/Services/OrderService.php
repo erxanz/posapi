@@ -110,6 +110,86 @@ class OrderService
         }
     }
 
+    /**
+     * Create order untuk Midtrans payment (status: PENDING)
+     */
+    public function createCheckoutOrderForMidtrans(array $validated, ?int $outletId = null): array
+    {
+        $user = $this->currentUser();
+        $outletId ??= $validated['outlet_id'] ?? null;
+
+        if (!$outletId && !empty($validated['table_id'])) {
+            $outletId = Table::find($validated['table_id'])?->outlet_id;
+        }
+
+        $outletId ??= $user->outlet_id;
+        $outlet = Outlet::findOrFail($outletId);
+
+        if (!$this->canAccessOutlet($outlet->id)) {
+            throw new \Exception('Forbidden: Anda tidak memiliki akses ke Cabang ini.');
+        }
+
+        $table = Table::where('id', $validated['table_id'])
+            ->where('outlet_id', $outlet->id)
+            ->firstOrFail();
+
+        DB::beginTransaction();
+
+        try {
+            $maxRetry = 5;
+            $attempt = 0;
+
+            do {
+                try {
+                    $invoice = $this->generateInvoiceNumber($outlet->id);
+
+                    $order = Order::create([
+                        'outlet_id' => $outlet->id,
+                        'user_id' => $user->id,
+                        'table_id' => $table->id,
+                        'customer_name' => $validated['customer_name'] ?? null,
+                        'invoice_number' => $invoice,
+                        'status' => Order::STATUS_PENDING, // PENDING karena menunggu pembayaran Midtrans
+                        'total_price' => 0,
+                    ]);
+
+                    break;
+
+                } catch (\Illuminate\Database\QueryException $e) {
+                    if (str_contains($e->getMessage(), 'Duplicate entry')) {
+                        $attempt++;
+                        usleep(100000);
+                    } else {
+                        throw $e;
+                    }
+                }
+
+            } while ($attempt < $maxRetry);
+
+            if (!isset($order)) {
+                throw new \Exception('Gagal generate invoice unik, coba lagi');
+            }
+
+            $this->createOrderItems($order, $validated['items'], $outlet);
+            $this->handleAdjustments($order, $validated);
+            $order->recalculateTotals($validated);
+
+            // Jangan buat payment di sini, tunggu webhook dari Midtrans
+
+            DB::commit();
+
+            return [
+                'success' => true,
+                'message' => 'Order dibuat, silakan lanjut ke pembayaran Midtrans',
+                'order' => $order->load('items.product', 'table'),
+            ];
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     public function createPublicOrder(array $validated): array
     {
         $outlet = Outlet::findOrFail($validated['outlet_id']);

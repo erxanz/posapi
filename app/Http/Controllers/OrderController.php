@@ -8,6 +8,8 @@ use App\Models\Tax;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Midtrans\Config;
+use Midtrans\Snap;
 
 class OrderController extends Controller
 {
@@ -248,9 +250,68 @@ class OrderController extends Controller
         $validated = $this->normalizeLegacyAdjustmentPayload($validated);
 
         try {
-            $result = $this->orderService->createCheckoutOrder($validated, $validated['outlet_id'] ?? null);
+            $redirectUrl = null;
 
-            return response()->json($result, 201);
+            // Cek jika pembayaran pakai QRIS atau Card (bukan Cash)
+            if (in_array($validated['payment_method'], ['Qris', 'Card'])) {
+
+                // Untuk Midtrans, buat order dengan status pending dulu
+                $result = $this->orderService->createCheckoutOrderForMidtrans($validated, $validated['outlet_id'] ?? null);
+                $order = $result['order'];
+
+                // Konfigurasi Midtrans
+                Config::$serverKey = env('MIDTRANS_SERVER_KEY');
+                Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
+                Config::$isSanitized = true;
+                Config::$is3ds = true;
+
+                // Siapkan payload untuk Midtrans
+                $params = [
+                    'transaction_details' => [
+                        'order_id' => $order->invoice_number,
+                        'gross_amount' => $order->total_price,
+                    ],
+                    'customer_details' => [
+                        'first_name' => $order->customer_name ?: 'Customer POS',
+                    ],
+                    'item_details' => $order->items->map(function ($item) {
+                        return [
+                            'id' => (string) $item->product_id,
+                            'name' => $item->product->name,
+                            'price' => (int) $item->price,
+                            'quantity' => (int) $item->qty,
+                        ];
+                    })->toArray(),
+                ];
+
+                try {
+                    // Generate Redirect URL dari Midtrans
+                    $paymentUrl = Snap::createTransaction($params)->redirect_url;
+                    $redirectUrl = $paymentUrl;
+
+                } catch (\Exception $e) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Gagal generate token Midtrans: ' . $e->getMessage()
+                    ], 500);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Order berhasil dibuat. Silakan lanjutkan ke pembayaran Midtrans',
+                    'data' => [
+                        'order' => $order->load('items.product', 'table'),
+                        'redirect_url' => $redirectUrl
+                    ]
+                ], 201);
+
+            } else {
+                // Untuk Cash, gunakan logika original
+                $result = $this->orderService->createCheckoutOrder($validated, $validated['outlet_id'] ?? null);
+
+                return response()->json($result, 201);
+            }
+
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
@@ -594,5 +655,60 @@ class OrderController extends Controller
         }
 
         return $payload;
+    }
+
+    /**
+     * Webhook callback dari Midtrans
+     */
+    public function midtransCallback(Request $request)
+    {
+        $serverKey = env('MIDTRANS_SERVER_KEY');
+        $hashed = hash("sha512", $request->order_id . $request->status_code . $request->gross_amount . $serverKey);
+
+        // Verifikasi kalau request beneran dari Midtrans
+        if ($hashed == $request->signature_key) {
+            $order = Order::where('invoice_number', $request->order_id)->first();
+
+            if ($order) {
+                DB::beginTransaction();
+
+                try {
+                    if ($request->transaction_status == 'capture' || $request->transaction_status == 'settlement') {
+                        // Pembayaran sukses
+                        $order->update(['status' => Order::STATUS_PAID]);
+
+                        // Buat payment record
+                        \App\Models\Payment::create([
+                            'order_id' => $order->id,
+                            'amount_paid' => (int) $request->gross_amount,
+                            'change_amount' => 0,
+                            'method' => 'midtrans',
+                            'reference_no' => $request->transaction_id ?? null,
+                            'paid_at' => now(),
+                            'paid_by' => null, // Dari Midtrans, bukan dari user manual
+                        ]);
+
+                        // Update table status
+                        if ($order->table_id) {
+                            $order->table->update(['status' => 'available']);
+                        }
+
+                        // Store history transaction
+                        $this->orderService->syncHistoryTransaction($order->fresh());
+
+                    } else if ($request->transaction_status == 'cancel' || $request->transaction_status == 'deny' || $request->transaction_status == 'expire') {
+                        // Pembayaran dibatalkan/ditolak/expired
+                        $order->update(['status' => Order::STATUS_CANCELLED]);
+                    }
+
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    \Log::error('Midtrans callback error: ' . $e->getMessage());
+                }
+            }
+        }
+
+        return response()->json(['message' => 'Callback received']);
     }
 }
