@@ -255,13 +255,11 @@ class OrderController extends Controller
             // Cek jika pembayaran pakai QRIS atau Card (bukan Cash)
             if (in_array($validated['payment_method'], ['Qris', 'Card'])) {
 
-                $result = $this->orderService->createCheckoutOrderForMidtrans(
-                    $validated,
-                    $validated['outlet_id'] ?? null
-                );
+                // Untuk Midtrans, buat order dengan status pending dulu
+                $result = $this->orderService->createCheckoutOrderForMidtrans($validated, $validated['outlet_id'] ?? null);
+                $order = $result['order'];
 
-                $order = $result['order']->fresh()->load('items.product', 'table');
-
+                // Konfigurasi Midtrans
                 Config::$serverKey = env('MIDTRANS_SERVER_KEY');
                 Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
                 Config::$isSanitized = true;
@@ -274,10 +272,18 @@ class OrderController extends Controller
                         'price' => (int) $item->price,
                         'quantity' => (int) $item->qty,
                     ];
-                })->values()->toArray();
+                })->toArray();
 
-                // Pajak boleh ditambahkan
-                if ((int) $order->tax_amount > 0) {
+                if ($order->discount_amount > 0) {
+                    $itemDetails[] = [
+                        'id' => 'DISCOUNT',
+                        'name' => 'Discount',
+                        'price' => -((int) $order->discount_amount),
+                        'quantity' => 1,
+                    ];
+                }
+
+                if ($order->tax_amount > 0) {
                     $itemDetails[] = [
                         'id' => 'TAX',
                         'name' => 'Tax',
@@ -286,10 +292,11 @@ class OrderController extends Controller
                     ];
                 }
 
+                // Siapkan payload untuk Midtrans
                 $params = [
                     'transaction_details' => [
                         'order_id' => $order->invoice_number,
-                        'gross_amount' => (int) $order->total_price, // subtotal - discount + tax
+                        'gross_amount' => (int) $order->total_price,
                     ],
                     'customer_details' => [
                         'first_name' => $order->customer_name ?: 'Customer POS',
@@ -298,29 +305,31 @@ class OrderController extends Controller
                 ];
 
                 try {
+                    // Generate Redirect URL dari Midtrans
                     $paymentUrl = Snap::createTransaction($params)->redirect_url;
+                    $redirectUrl = $paymentUrl;
 
-                    return response()->json([
-                        'success' => true,
-                        'message' => 'Order berhasil dibuat. Silakan lanjutkan ke pembayaran Midtrans',
-                        'data' => [
-                            'order' => $order,
-                            'redirect_url' => $paymentUrl,
-                        ]
-                    ], 201);
-
-                } catch (\Throwable $e) {
-
-                    // batalin order kalau gagal generate snap
-                    $order->update([
-                        'status' => Order::STATUS_CANCELLED
-                    ]);
-
+                } catch (\Exception $e) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Gagal generate Midtrans: ' . $e->getMessage()
+                        'message' => 'Gagal generate token Midtrans: ' . $e->getMessage()
                     ], 500);
                 }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Order berhasil dibuat. Silakan lanjutkan ke pembayaran Midtrans',
+                    'data' => [
+                        'order' => $order->load('items.product', 'table'),
+                        'redirect_url' => $redirectUrl
+                    ]
+                ], 201);
+
+            } else {
+                // Untuk Cash, gunakan logika original
+                $result = $this->orderService->createCheckoutOrder($validated, $validated['outlet_id'] ?? null);
+
+                return response()->json($result, 201);
             }
 
         } catch (\Throwable $e) {
@@ -674,105 +683,52 @@ class OrderController extends Controller
     public function midtransCallback(Request $request)
     {
         $serverKey = env('MIDTRANS_SERVER_KEY');
+        $hashed = hash("sha512", $request->order_id . $request->status_code . $request->gross_amount . $serverKey);
 
-        $hashed = hash(
-            'sha512',
-            $request->order_id .
-            $request->status_code .
-            $request->gross_amount .
-            $serverKey
-        );
+        // Verifikasi kalau request beneran dari Midtrans
+        if ($hashed == $request->signature_key) {
+            $order = Order::where('invoice_number', $request->order_id)->first();
 
-        if ($hashed !== $request->signature_key) {
-            return response()->json([
-                'message' => 'Invalid signature'
-            ], 403);
-        }
+            if ($order) {
+                DB::beginTransaction();
 
-        $order = Order::where('invoice_number', $request->order_id)->first();
+                try {
+                    if ($request->transaction_status == 'capture' || $request->transaction_status == 'settlement') {
+                        // Pembayaran sukses
+                        $order->update(['status' => Order::STATUS_PAID]);
 
-        if (!$order) {
-            return response()->json([
-                'message' => 'Order not found'
-            ], 404);
-        }
-
-        DB::beginTransaction();
-
-        try {
-
-            // ===============================
-            // SUCCESS PAYMENT
-            // ===============================
-            if (in_array($request->transaction_status, ['capture', 'settlement'])) {
-
-                // cegah duplicate callback
-                if ($order->status !== Order::STATUS_PAID) {
-
-                    $order->update([
-                        'status' => Order::STATUS_PAID
-                    ]);
-
-                    $exists = \App\Models\Payment::where(
-                        'reference_no',
-                        $request->transaction_id
-                    )->exists();
-
-                    if (!$exists) {
+                        // Buat payment record
                         \App\Models\Payment::create([
-                            'order_id'      => $order->id,
-                            'amount_paid'   => (int) $request->gross_amount,
+                            'order_id' => $order->id,
+                            'amount_paid' => (int) $request->gross_amount,
                             'change_amount' => 0,
-                            'method'        => 'midtrans',
-                            'reference_no'  => $request->transaction_id,
-                            'paid_at'       => now(),
-                            'paid_by'       => null,
+                            'method' => 'midtrans',
+                            'reference_no' => $request->transaction_id ?? null,
+                            'paid_at' => now(),
+                            'paid_by' => null, // Dari Midtrans, bukan dari user manual
                         ]);
+
+                        // Update table status
+                        if ($order->table_id) {
+                            $order->table->update(['status' => 'available']);
+                        }
+
+                        // Store history transaction
+                        $this->orderService->syncHistoryTransaction($order->fresh());
+
+                    } else if ($request->transaction_status == 'cancel' || $request->transaction_status == 'deny' || $request->transaction_status == 'expire') {
+                        // Pembayaran dibatalkan/ditolak/expired
+                        $order->update(['status' => Order::STATUS_CANCELLED]);
                     }
 
-                    if ($order->table_id) {
-                        $order->table->update([
-                            'status' => 'available'
-                        ]);
-                    }
-
-                    $this->orderService->syncHistoryTransaction(
-                        $order->fresh()
-                    );
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    \Log::error('Midtrans callback error: ' . $e->getMessage());
                 }
             }
-
-            // ===============================
-            // FAILED / EXPIRED
-            // ===============================
-            elseif (in_array($request->transaction_status, [
-                'cancel',
-                'deny',
-                'expire'
-            ])) {
-
-                if ($order->status !== Order::STATUS_PAID) {
-                    $order->update([
-                        'status' => Order::STATUS_CANCELLED
-                    ]);
-                }
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Callback processed'
-            ]);
-
-        } catch (\Throwable $e) {
-
-            DB::rollBack();
-
-            \Log::error('Midtrans callback error: ' . $e->getMessage());
-
-            return response()->json([
-                'message' => 'Callback failed'
-            ], 500);
         }
+
+        return response()->json(['message' => 'Callback received']);
     }
 }
