@@ -11,41 +11,15 @@ use App\Models\Table;
 use App\Models\StockHistory;
 use App\Models\Tax;
 use App\Models\Discount;
+use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\InvoiceCounter;
-use Illuminate\Support\Facades\DB;
 
 class OrderService
 {
-    /*
-    |--------------------------------------------------------------------------
-    | CHECKOUT CASH / MANUAL PAYMENT
-    |--------------------------------------------------------------------------
-    */
     public function createCheckoutOrder(array $validated, ?int $outletId = null): array
     {
-        return $this->createOrder($validated, false, $outletId);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | CHECKOUT MIDTRANS
-    |--------------------------------------------------------------------------
-    */
-    public function createCheckoutOrderForMidtrans(array $validated, ?int $outletId = null): array
-    {
-        return $this->createOrder($validated, true, $outletId);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | MAIN ORDER CREATOR
-    |--------------------------------------------------------------------------
-    */
-    private function createOrder(array $validated, bool $isMidtrans = false, ?int $outletId = null): array
-    {
         $user = $this->currentUser();
-
         $outletId ??= $validated['outlet_id'] ?? null;
 
         if (!$outletId && !empty($validated['table_id'])) {
@@ -53,11 +27,10 @@ class OrderService
         }
 
         $outletId ??= $user->outlet_id;
-
         $outlet = Outlet::findOrFail($outletId);
 
         if (!$this->canAccessOutlet($outlet->id)) {
-            throw new \Exception('Tidak memiliki akses outlet');
+            throw new \Exception('Forbidden: Anda tidak memiliki akses ke Cabang ini.');
         }
 
         $table = Table::where('id', $validated['table_id'])
@@ -67,493 +40,534 @@ class OrderService
         DB::beginTransaction();
 
         try {
-            $invoice = $this->generateInvoiceNumber($outlet->id);
 
-            $order = Order::create([
-                'outlet_id'      => $outlet->id,
-                'user_id'        => $user->id,
-                'table_id'       => $table->id,
-                'customer_name'  => $validated['customer_name'] ?? null,
-                'invoice_number' => $invoice,
-                'status'         => $isMidtrans
-                    ? Order::STATUS_PENDING
-                    : Order::STATUS_PAID,
-                'total_price'    => 0,
-            ]);
+            // RETRY UNTUK INVOICE DUPLICATE
+            $maxRetry = 5;
+            $attempt = 0;
 
-            $this->createOrderItems($order, $validated['items'], $outlet);
+            do {
+                try {
 
-            $this->handleAdjustments($order, $validated);
+                    $invoice = $this->generateInvoiceNumber($outlet->id);
 
-            $order->recalculateTotals($validated);
+                    $order = Order::create([
+                        'outlet_id' => $outlet->id,
+                        'user_id' => $user->id,
+                        'table_id' => $table->id,
+                        'customer_name' => $validated['customer_name'] ?? null,
+                        'invoice_number' => $invoice,
+                        'status' => Order::STATUS_PAID,
+                        'total_price' => 0,
+                    ]);
 
-            if (!$isMidtrans) {
-                $amountPaid = (int) $validated['amount_paid'];
+                    break; // sukses → keluar loop
 
-                if ($amountPaid < $order->total_price) {
-                    throw new \Exception('Nominal bayar kurang');
+                } catch (\Illuminate\Database\QueryException $e) {
+
+                    if (str_contains($e->getMessage(), 'Duplicate entry')) {
+                        $attempt++;
+                        usleep(100000); // delay 0.1 detik
+                    } else {
+                        throw $e;
+                    }
+
                 }
 
-                $this->createPayment(
-                    $order,
-                    $amountPaid,
-                    $validated['payment_method']
-                );
+            } while ($attempt < $maxRetry);
 
-                $this->storeHistoryTransaction($order);
-
-                $table->update([
-                    'status' => 'available'
-                ]);
+            if (!isset($order)) {
+                throw new \Exception('Gagal generate invoice unik, coba lagi');
             }
+
+            // ===============================
+            // LANJUT PROSES NORMAL
+            // ===============================
+
+            $this->createOrderItems($order, $validated['items'], $outlet);
+            $this->handleAdjustments($order, $validated);
+            $order->recalculateTotals($validated);
+
+            $amountPaid = (int) $validated['amount_paid'];
+            if ($amountPaid < (int) $order->total_price) {
+                throw new \Exception('Nominal bayar kurang dari total tagihan');
+            }
+
+            $this->createPayment($order, $amountPaid, $validated['payment_method']);
+            $this->storeHistoryTransaction($order);
+            $table->update(['status' => 'available']);
 
             DB::commit();
 
             return [
                 'success' => true,
-                'message' => $isMidtrans
-                    ? 'Order dibuat, lanjut pembayaran'
-                    : 'Checkout berhasil',
-                'order' => $order->load(
-                    'items.product',
-                    'table',
-                    'payments'
-                )
+                'message' => 'Checkout dan pembayaran berhasil',
+                'order' => $order->load('items.product', 'table', 'payments'),
             ];
+
         } catch (\Throwable $e) {
             DB::rollBack();
             throw $e;
         }
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | PAYMENT SPLIT / MANUAL
-    |--------------------------------------------------------------------------
-    */
+    /**
+     * Create order untuk Midtrans payment (status: PENDING)
+     */
+    public function createCheckoutOrderForMidtrans(array $validated, ?int $outletId = null): array
+    {
+        $user = $this->currentUser();
+        $outletId ??= $validated['outlet_id'] ?? null;
+
+        if (!$outletId && !empty($validated['table_id'])) {
+            $outletId = Table::find($validated['table_id'])?->outlet_id;
+        }
+
+        $outletId ??= $user->outlet_id;
+        $outlet = Outlet::findOrFail($outletId);
+
+        if (!$this->canAccessOutlet($outlet->id)) {
+            throw new \Exception('Forbidden: Anda tidak memiliki akses ke Cabang ini.');
+        }
+
+        $table = Table::where('id', $validated['table_id'])
+            ->where('outlet_id', $outlet->id)
+            ->firstOrFail();
+
+        DB::beginTransaction();
+
+        try {
+            $maxRetry = 5;
+            $attempt = 0;
+
+            do {
+                try {
+                    $invoice = $this->generateInvoiceNumber($outlet->id);
+
+                    $order = Order::create([
+                        'outlet_id' => $outlet->id,
+                        'user_id' => $user->id,
+                        'table_id' => $table->id,
+                        'customer_name' => $validated['customer_name'] ?? null,
+                        'invoice_number' => $invoice,
+                        'status' => Order::STATUS_PENDING, // PENDING karena menunggu pembayaran Midtrans
+                        'total_price' => 0,
+                    ]);
+
+                    break;
+
+                } catch (\Illuminate\Database\QueryException $e) {
+                    if (str_contains($e->getMessage(), 'Duplicate entry')) {
+                        $attempt++;
+                        usleep(100000);
+                    } else {
+                        throw $e;
+                    }
+                }
+
+            } while ($attempt < $maxRetry);
+
+            if (!isset($order)) {
+                throw new \Exception('Gagal generate invoice unik, coba lagi');
+            }
+
+            $this->createOrderItems($order, $validated['items'], $outlet);
+            $this->handleAdjustments($order, $validated);
+            $order->recalculateTotals($validated);
+
+            // Jangan buat payment di sini, tunggu webhook dari Midtrans
+
+            DB::commit();
+
+            return [
+                'success' => true,
+                'message' => 'Order dibuat, silakan lanjut ke pembayaran Midtrans',
+                'order' => $order->load('items.product', 'table'),
+            ];
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    public function createPublicOrder(array $validated): array
+    {
+        $outlet = Outlet::findOrFail($validated['outlet_id']);
+        $table = Table::where('id', $validated['table_id'])->where('outlet_id', $outlet->id)->firstOrFail();
+
+        DB::beginTransaction();
+
+        try {
+            $order = Order::create([
+                'outlet_id' => $validated['outlet_id'],
+                'table_id' => $table->id,
+                'customer_name' => $validated['customer_name'],
+                'status' => Order::STATUS_PENDING,
+            ]);
+
+            $this->createOrderItems($order, $validated['items'], $outlet, false);
+            $this->handleAdjustments($order, $validated);
+            $order->recalculateTotals($validated);
+
+            $order->update(['invoice_number' => 'INV-' . strtoupper(uniqid())]);
+
+            DB::commit();
+
+            return [
+                'message' => 'Public order berhasil',
+                'order' => $order->load('items.product'),
+            ];
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     public function processPayments(Order $order, array $payments): array
     {
-        if (!$this->canAccessOrder($order)) {
+        $user = $this->currentUser();
+
+        if (! $this->canAccessOrder($order)) {
             throw new \Exception('Forbidden');
+        }
+
+        if ($order->status === Order::STATUS_PAID || $order->status === Order::STATUS_CANCELLED) {
+            throw new \Exception('Order cannot be paid');
         }
 
         DB::beginTransaction();
 
         try {
-            $order = Order::lockForUpdate()->findOrFail($order->id);
+            $alreadyPaid = $order->payments()->sum('amount_paid') - $order->payments()->sum('change_amount');
+            $remaining = max(0, $order->total_price - $alreadyPaid);
 
-            if (
-                $order->status === Order::STATUS_PAID ||
-                $order->status === Order::STATUS_CANCELLED
-            ) {
-                throw new \Exception('Order tidak bisa dibayar');
-            }
+            foreach ($payments as $paymentData) {
+                if ($remaining <= 0) break;
 
-            $user = $this->currentUser();
-
-            $alreadyPaid =
-                $order->payments()->sum('amount_paid') -
-                $order->payments()->sum('change_amount');
-
-            $remaining = $order->total_price - $alreadyPaid;
-
-            foreach ($payments as $pay) {
-                if ($remaining <= 0) {
-                    break;
-                }
-
-                $amount = (int) $pay['amount_paid'];
-
+                $amount = (int) $paymentData['amount_paid'];
                 $applied = min($amount, $remaining);
-
                 $change = max(0, $amount - $applied);
 
                 Payment::create([
-                    'order_id'      => $order->id,
-                    'amount_paid'   => $amount,
+                    'order_id' => $order->id,
+                    'amount_paid' => $amount,
                     'change_amount' => $change,
-                    'method'        => strtolower($pay['method']),
-                    'reference_no'  => $pay['reference_no'] ?? null,
-                    'paid_at'       => now(),
-                    'paid_by'       => $user->id,
+                    'method' => $paymentData['method'],
+                    'reference_no' => $paymentData['reference_no'] ?? null,
+                    'paid_at' => now(),
+                    'paid_by' => $user->id,
                 ]);
 
                 $remaining -= $applied;
             }
 
-            $effectivePaid =
-                $order->payments()->sum('amount_paid') -
-                $order->payments()->sum('change_amount');
+            $effectivePaid = $order->payments()->sum('amount_paid') - $order->payments()->sum('change_amount');
+            $isFullyPaid = $effectivePaid >= $order->total_price;
 
-            $isPaid = $effectivePaid >= $order->total_price;
-
-            if ($isPaid) {
-                $order->update([
-                    'status' => Order::STATUS_PAID
-                ]);
-
-                if ($order->table_id) {
-                    $order->table()->update([
-                        'status' => 'available'
-                    ]);
-                }
-
+            if ($isFullyPaid) {
+                $order->update(['status' => Order::STATUS_PAID]);
                 $this->storeHistoryTransaction($order);
+                if ($order->table_id) {
+                    $order->table->update(['status' => 'available']);
+                }
             }
 
             DB::commit();
 
             return [
-                'is_paid'   => $isPaid,
-                'remaining' => max(
-                    0,
-                    $order->total_price - $effectivePaid
-                ),
-                'order' => $order->fresh()->load(
-                    'items.product',
-                    'payments'
-                ),
+                'is_paid' => $isFullyPaid,
+                'remaining' => max(0, $order->total_price - $effectivePaid),
+                'order' => $order->fresh()->load('items.product', 'payments'),
             ];
+
         } catch (\Throwable $e) {
             DB::rollBack();
             throw $e;
         }
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | MIDTRANS SUCCESS CALLBACK
-    |--------------------------------------------------------------------------
-    */
-    public function markAsPaidByGateway(
-        Order $order,
-        int $amount,
-        string $trxId
-    ): void {
-        DB::beginTransaction();
-
-        try {
-            $order = Order::lockForUpdate()->findOrFail($order->id);
-
-            if ($order->status === Order::STATUS_PAID) {
-                DB::commit();
-                return;
-            }
-
-            $alreadyExists = Payment::where(
-                'reference_no',
-                $trxId
-            )->exists();
-
-            if (!$alreadyExists) {
-                Payment::create([
-                    'order_id'      => $order->id,
-                    'amount_paid'   => $amount,
-                    'change_amount' => 0,
-                    'method'        => 'midtrans',
-                    'reference_no'  => $trxId,
-                    'paid_at'       => now(),
-                    'paid_by'       => null,
-                ]);
-            }
-
-            $order->update([
-                'status' => Order::STATUS_PAID
-            ]);
-
-            if ($order->table_id) {
-                $order->table()->update([
-                    'status' => 'available'
-                ]);
-            }
-
-            $this->storeHistoryTransaction($order);
-
-            DB::commit();
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            throw $e;
-        }
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | MIDTRANS CANCEL / EXPIRE
-    |--------------------------------------------------------------------------
-    */
-    public function cancelGatewayOrder(Order $order): void
-    {
-        DB::beginTransaction();
-
-        try {
-            $order = Order::lockForUpdate()->findOrFail($order->id);
-
-            if ($order->status === Order::STATUS_CANCELLED) {
-                DB::commit();
-                return;
-            }
-
-            $this->restoreStock($order);
-
-            $order->update([
-                'status' => Order::STATUS_CANCELLED
-            ]);
-
-            DB::commit();
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            throw $e;
-        }
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | CREATE ITEMS
-    |--------------------------------------------------------------------------
-    */
-    private function createOrderItems(
-        Order $order,
-        array $items,
-        Outlet $outlet,
-        bool $checkStock = true
-    ): void {
-        $user = $this->currentUser();
-
-        foreach ($items as $item) {
-            $product = $outlet->products()
-                ->where('products.id', $item['product_id'])
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $stock = (int) $product->pivot->stock;
-            $qty   = (int) $item['qty'];
-
-            if ($checkStock && $stock < $qty) {
-                throw new \Exception(
-                    "Stok {$product->name} tidak cukup"
-                );
-            }
-
-            $price = (int) $product->pivot->price;
-
-            OrderItem::create([
-                'order_id'    => $order->id,
-                'product_id'  => $product->id,
-                'qty'         => $qty,
-                'price'       => $price,
-                'total_price' => $price * $qty,
-                'notes'       => $item['notes'] ?? null,
-            ]);
-
-            if ($checkStock) {
-                $newStock = $stock - $qty;
-
-                $outlet->products()
-                    ->updateExistingPivot(
-                        $product->id,
-                        ['stock' => $newStock]
-                    );
-
-                StockHistory::create([
-                    'outlet_id'   => $outlet->id,
-                    'product_id'  => $product->id,
-                    'user_id'     => $user->id,
-                    'type'        => 'sale',
-                    'quantity'    => -$qty,
-                    'final_stock' => $newStock,
-                    'reference'   => $order->invoice_number,
-                ]);
-            }
-        }
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | RESTORE STOCK
-    |--------------------------------------------------------------------------
-    */
-    private function restoreStock(Order $order): void
-    {
-        foreach ($order->items as $item) {
-            $pivot = $order->outlet
-                ->products()
-                ->where('products.id', $item->product_id)
-                ->first();
-
-            if (!$pivot) {
-                continue;
-            }
-
-            $stock = (int) $pivot->pivot->stock;
-
-            $newStock = $stock + $item->qty;
-
-            $order->outlet->products()
-                ->updateExistingPivot(
-                    $item->product_id,
-                    ['stock' => $newStock]
-                );
-        }
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | PAYMENT CREATE
-    |--------------------------------------------------------------------------
-    */
-    private function createPayment(
-        Order $order,
-        int $amount,
-        string $method
-    ): Payment {
-        return Payment::create([
-            'order_id'      => $order->id,
-            'amount_paid'   => $amount,
-            'change_amount' => max(
-                0,
-                $amount - $order->total_price
-            ),
-            'method'        => strtolower($method),
-            'paid_at'       => now(),
-            'paid_by'       => $this->currentUser()->id,
-        ]);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | HISTORY
-    |--------------------------------------------------------------------------
-    */
     public function syncHistoryTransaction(Order $order): void
     {
         $this->storeHistoryTransaction($order);
     }
 
+    private function createOrderItems(Order $order, array $items, Outlet $outlet, bool $checkStock = true): void
+    {
+        $user = $this->currentUser();
+
+        foreach ($items as $item) {
+            $product = $outlet->products()->where('products.id', $item['product_id'])->wherePivot('is_active', true)->lockForUpdate()->firstOrFail();
+
+            $stock = (int) $product->pivot->stock;
+            $qty = (int) $item['qty'];
+
+            if ($checkStock && $stock < $qty) {
+                throw new \Exception("Stok {$product->name} tidak cukup (Sisa: {$stock})");
+            }
+
+            $price = (int) (
+                $product->pivot->price ?? ($item['price'] ?? null) ?? $product->cost_price ?? 0
+            );
+
+            if ($price <= 0) {
+                throw new \Exception("Harga {$product->name} belum diatur");
+            }
+
+            $stationId = $product->pivot->station_id ?? $product->station_id;
+
+            OrderItem::create([
+                'order_id' => $order->id,
+                'product_id' => $product->id,
+                'station_id' => $stationId,
+                'qty' => $qty,
+                'price' => $price,
+                'total_price' => $price * $qty,
+                'notes' => $item['notes'] ?? null,
+            ]);
+
+            if ($checkStock) {
+                $newStock = $stock - $qty;
+                $outlet->products()->updateExistingPivot($product->id, ['stock' => $newStock]);
+
+                StockHistory::create([
+                    'outlet_id' => $outlet->id,
+                    'product_id' => $product->id,
+                    'user_id' => $user->id,
+                    'type' => 'sale',
+                    'quantity' => -$qty,
+                    'final_stock' => $newStock,
+                    'reference' => 'Order: ' . $order->invoice_number,
+                ]);
+            }
+        }
+    }
+
+    private function handleAdjustments(Order $order, array $data): void
+    {
+        $updates = [];
+
+        if (array_key_exists('discount_id', $data)) {
+            $updates['discount_id'] = $data['discount_id'] ? (int) $data['discount_id'] : null;
+        }
+
+        if (isset($data['manual_discount_type'])) {
+            $updates['manual_discount_type'] = $data['manual_discount_type'];
+        } elseif (isset($data['discount_type'])) {
+            $updates['manual_discount_type'] = $data['discount_type'];
+        }
+
+        if (isset($data['manual_discount_value'])) {
+            $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
+        } elseif (isset($data['discount_value'])) {
+            $updates['manual_discount_value'] = (int) $data['discount_value'];
+        }
+
+        $shouldResolvePromoDiscount = isset($updates['discount_id'])
+            && !isset($updates['manual_discount_type'])
+            && !isset($updates['manual_discount_value']);
+
+        if ($shouldResolvePromoDiscount && $updates['discount_id']) {
+            $discount = Discount::query()
+                ->whereKey($updates['discount_id'])
+                ->where('is_active', true)
+                ->first();
+
+            if ($discount) {
+                $order->loadMissing('items.product'); // Load produk untuk ngecek kategori
+                $subtotal = $order->items->sum('total_price');
+
+                if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
+                    throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
+                }
+
+                $discountValue = (int) $discount->value;
+                $eligibleTotal = 0;
+
+                // PERBAIKAN: Hitung total khusus item yang kena diskon (Multiple Products atau Categories)
+                if ($discount->scope === 'products' && !empty($discount->product_ids)) {
+                    $eligibleTotal = $order->items->whereIn('product_id', $discount->product_ids)->sum('total_price');
+                } elseif ($discount->scope === 'categories' && !empty($discount->category_ids)) {
+                    $eligibleTotal = $order->items->filter(function ($item) use ($discount) {
+                        return in_array($item->product->category_id, $discount->category_ids);
+                    })->sum('total_price');
+                }
+
+                if ($discount->scope !== 'global') {
+                    if ($eligibleTotal > 0) {
+                        if ($discount->type === 'percentage') {
+                            $calc = $eligibleTotal * ($discountValue / 100);
+                            if ($discount->max_discount && $calc > $discount->max_discount) {
+                                $calc = $discount->max_discount;
+                            }
+                            $updates['manual_discount_type'] = 'nominal';
+                            $updates['manual_discount_value'] = (int) $calc;
+                        } else {
+                            $updates['manual_discount_type'] = 'nominal';
+                            // Diskon nominal tidak boleh melebihi harga produk yg didiskon itu sendiri
+                            $updates['manual_discount_value'] = min($discountValue, $eligibleTotal);
+                        }
+                    } else {
+                        // Jika produk/kategori yg didiskon tidak ada di keranjang
+                        $updates['manual_discount_type'] = 'nominal';
+                        $updates['manual_discount_value'] = 0;
+                    }
+                } else {
+                    // Global Scope
+                    if ($discount->type === 'percentage') {
+                        $calc = $subtotal * ($discountValue / 100);
+                        if ($discount->max_discount && $calc > $discount->max_discount) {
+                            $updates['manual_discount_type'] = 'nominal';
+                            $updates['manual_discount_value'] = (int) $discount->max_discount;
+                        } else {
+                            $updates['manual_discount_type'] = 'percentage';
+                            $updates['manual_discount_value'] = $discountValue;
+                        }
+                    } else {
+                        $updates['manual_discount_type'] = 'nominal';
+                        $updates['manual_discount_value'] = $discountValue;
+                    }
+                }
+            }
+        }
+
+        // --- Tax Logic (Sama seperti aslinya) ---
+        if (isset($data['tax_id'])) {
+            $updates['tax_id'] = $data['tax_id'];
+        } elseif (isset($data['tax_type']) && isset($data['tax_value'])) {
+            $taxType = (string) $data['tax_type'];
+            $taxValue = (int) $data['tax_value'];
+            $matchedTax = Tax::query()->where('type', $taxType)->where('active', true)->get()->first(function (Tax $tax) use ($taxValue) {
+                    $expectedValue = $tax->type === 'percentage' ? (int) round(((float) $tax->rate) * 100) : (int) round((float) $tax->rate);
+                    return $expectedValue === $taxValue;
+                });
+            if ($matchedTax) $updates['tax_id'] = $matchedTax->id;
+        }
+
+        if (array_key_exists('tax_breakdown', $data)) {
+            $updates['tax_breakdown'] = $data['tax_breakdown'];
+        }
+
+        if (array_key_exists('tax_amount', $data)) {
+            $updates['tax_amount'] = max(0, (int) $data['tax_amount']);
+        }
+
+        if (!empty($updates)) {
+            $order->update($updates);
+        }
+    }
+
+    private function createPayment(Order $order, int $amountPaid, string $method): Payment
+    {
+        $change = max(0, $amountPaid - $order->total_price);
+        $user = $this->currentUser();
+
+        return Payment::create([
+            'order_id' => $order->id,
+            'amount_paid' => $amountPaid,
+            'change_amount' => $change,
+            'method' => strtolower($method),
+            'paid_at' => now(),
+            'paid_by' => $user->id,
+        ]);
+    }
+
     private function storeHistoryTransaction(Order $order): void
     {
         $order->load(['payments', 'items.product']);
-
-        $lastPayment = $order->payments
-            ->sortByDesc('id')
-            ->first();
+        $lastPayment = $order->payments->sortByDesc('id')->first();
+        $methods = $order->payments->pluck('method')->unique()->values()->all();
+        $paymentMethod = count($methods) === 1 ? $methods[0] : (count($methods) > 1 ? 'split' : null);
+        $paidAmount = $order->payments->sum(fn($p) => $p->amount_paid - $p->change_amount);
+        $changeAmount = $order->payments->sum('change_amount');
+        $orderItemsSummary = $order->items->map(function ($item) {
+            return [
+                'product_id' => (int) $item->product_id,
+                'product_name' => $item->product?->name,
+                'qty' => (int) $item->qty,
+                'price' => (int) $item->price,
+                'total_price' => (int) $item->total_price,
+                'cancelled_qty' => (int) ($item->cancelled_qty ?? 0),
+            ];
+        })->values()->all();
 
         HistoryTransaction::updateOrCreate(
             ['order_id' => $order->id],
             [
-                'outlet_id'      => $order->outlet_id,
-                'payment_id'     => $lastPayment?->id,
+                'outlet_id' => $order->outlet_id,
+                'payment_id' => $lastPayment?->id,
                 'invoice_number' => $order->invoice_number,
-                'customer_name'  => $order->customer_name,
+                'customer_name' => $order->customer_name,
                 'subtotal_price' => $order->subtotal_price,
-                'discount_amount'=> $order->discount_amount,
-                'tax_amount'     => $order->tax_amount,
-                'total_price'    => $order->total_price,
-                'paid_amount'    => $order->payments->sum('amount_paid'),
-                'change_amount'  => $order->payments->sum('change_amount'),
-                'payment_method' => $lastPayment?->method,
-                'paid_at'        => $lastPayment?->paid_at,
-                'cashier_id'     => $lastPayment?->paid_by,
-                'status'         => Order::STATUS_PAID,
+                'discount_amount' => $order->discount_amount,
+                'tax_amount' => $order->tax_amount,
+                'total_price' => $order->total_price,
+                'paid_amount' => $paidAmount,
+                'change_amount' => $changeAmount,
+                'payment_method' => $paymentMethod,
+                'paid_at' => $lastPayment?->paid_at ?? now(),
+                'cashier_id' => $lastPayment?->paid_by,
+                'status' => Order::STATUS_PAID,
+                'metadata' => [
+                    'payments_count' => $order->payments->count(),
+                    'methods' => $methods,
+                    'items_count' => $order->items->count(),
+                ],
+                'order_items_summary' => $orderItemsSummary,
             ]
         );
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | INVOICE
-    |--------------------------------------------------------------------------
-    */
     private function generateInvoiceNumber(int $outletId): string
     {
-        $date = now()->format('Ymd');
+        return DB::transaction(function () use ($outletId) {
 
-        $counter = InvoiceCounter::lockForUpdate()
-            ->firstOrCreate(
-                [
-                    'outlet_id' => $outletId,
-                    'date'      => $date
-                ],
-                [
-                    'last_number' => 0
-                ]
-            );
+            $date = now()->format('Ymd');
 
-        $counter->increment('last_number');
+            // ambil / buat row khusus outlet + tanggal
+            $counter = InvoiceCounter::lockForUpdate()
+                ->firstOrCreate(
+                    [
+                        'outlet_id' => $outletId,
+                        'date' => $date
+                    ],
+                    [
+                        'last_number' => 0
+                    ]
+                );
 
-        $counter->refresh();
+            // increment AMAN (tidak bisa bentrok)
+            $counter->increment('last_number');
 
-        $num = str_pad(
-            $counter->last_number,
-            4,
-            '0',
-            STR_PAD_LEFT
-        );
+            $number = $counter->last_number;
 
-        return "INV-{$date}-{$num}";
+            if ($number > 9999) {
+                throw new \Exception('Invoice limit harian tercapai');
+            }
+
+            $sequence = str_pad($number, 4, '0', STR_PAD_LEFT);
+
+            return "INV-{$date}-{$sequence}";
+        });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | DISCOUNT + TAX
-    |--------------------------------------------------------------------------
-    */
-    private function handleAdjustments(
-        Order $order,
-        array $data
-    ): void {
-        $order->update([
-            'discount_id' => $data['discount_id'] ?? null,
-            'tax_id'      => $data['tax_id'] ?? null,
-            'manual_discount_type'
-                => $data['manual_discount_type'] ?? null,
-            'manual_discount_value'
-                => $data['manual_discount_value'] ?? 0,
-        ]);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | AUTH
-    |--------------------------------------------------------------------------
-    */
     private function canAccessOutlet(int $outletId): bool
     {
         $user = $this->currentUser();
-
-        if ($user->role === 'developer') {
-            return true;
-        }
-
-        if ($user->role === 'manager') {
-            return Outlet::where(
-                'owner_id',
-                $user->id
-            )->where(
-                'id',
-                $outletId
-            )->exists();
-        }
-
+        if ($user->role === 'developer') return true;
+        if ($user->role === 'manager') return Outlet::where('id', $outletId)->where('owner_id', $user->id)->exists();
         return (int) $user->outlet_id === $outletId;
     }
 
     private function canAccessOrder(Order $order): bool
     {
-        return $this->canAccessOutlet(
-            $order->outlet_id
-        );
+        return $this->canAccessOutlet($order->outlet_id);
     }
 
     private function currentUser(): User
     {
         $user = auth()->user();
-
-        if (!$user instanceof User) {
-            throw new \RuntimeException(
-                'Unauthenticated'
-            );
-        }
-
+        if (!$user instanceof User) throw new \RuntimeException('Unauthenticated');
         return $user;
     }
 }
