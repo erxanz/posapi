@@ -334,7 +334,6 @@ class OrderController extends Controller
                 $params = [
                     'transaction_details' => [
                         'order_id' => $order->invoice_number,
-                        // Gunakan $calculatedGrossAmount yang dirakit dari dalam array untuk 100% akurasi
                         'gross_amount' => $calculatedGrossAmount,
                     ],
                     'customer_details' => [
@@ -343,6 +342,24 @@ class OrderController extends Controller
                     'item_details' => $itemDetails,
                 ];
 
+                // ========================================================
+                // FITUR BARU: SKIP HALAMAN PEMILIHAN MIDTRANS
+                // Jika array enabled_payments isinya HANYA 1, Midtrans akan otomatis
+                // lompat (direct) ke halaman barcode QRIS atau form Kartu
+                // ========================================================
+                $methodStr = strtolower($validated['payment_method'] ?? '');
+
+                if ($methodStr === 'qris') {
+                    // 'gopay' di Midtrans secara default memunculkan barcode QRIS dinamis
+                    // yang bisa di-scan oleh semua dompet digital (ShopeePay, Dana, OVO, m-banking dll)
+                    $params['enabled_payments'] = ['gopay'];
+
+                    // Catatan: Jika di dashboard lu 'gopay' belum diaktifkan, ubah array di atas menjadi ['other_qris']
+                } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
+                    $params['enabled_payments'] = ['credit_card'];
+                }
+
+                // Terakhir, eksekusi pemanggilan Midtrans Snap
                 $paymentUrl = Snap::createTransaction($params)->redirect_url;
 
                 return response()->json([
