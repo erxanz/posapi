@@ -222,21 +222,29 @@ class OrderController extends Controller
             'outlet_id' => 'nullable|exists:outlets,id',
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
+
+            // DISKON
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
             'discount_id' => 'nullable|exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
+
+            // PAJAK
             'tax_id' => 'nullable|exists:taxes,id',
             'tax_type' => 'nullable|in:percentage,nominal,fixed',
             'tax_value' => 'nullable|integer|min:0',
             'tax_amount' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
+
+            // ITEM
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
             'items.*.price' => 'nullable|integer|min:1',
             'items.*.notes' => 'nullable|string|max:500',
+
+            // PAYMENT
             'payment_method' => 'required|string|max:50',
             'amount_paid' => 'nullable|numeric|min:0|required_without:paid_amount',
             'paid_amount' => 'nullable|numeric|min:0|required_without:amount_paid',
@@ -250,40 +258,60 @@ class OrderController extends Controller
         $validated = $this->normalizeLegacyAdjustmentPayload($validated);
 
         try {
-            $redirectUrl = null;
 
-            // Cek jika pembayaran pakai QRIS atau Card (bukan Cash)
+            /**
+             * MIDTRANS
+             */
             if (in_array($validated['payment_method'], ['Qris', 'Card'])) {
 
-                // Untuk Midtrans, buat order dengan status pending dulu
-                $result = $this->orderService->createCheckoutOrderForMidtrans($validated, $validated['outlet_id'] ?? null);
+                $result = $this->orderService
+                    ->createCheckoutOrderForMidtrans(
+                        $validated,
+                        $validated['outlet_id'] ?? null
+                    );
+
                 $order = $result['order'];
 
-                // Konfigurasi Midtrans
+                /**
+                 * WAJIB: refresh lalu hitung ulang total
+                 * supaya discount_amount & tax_amount terisi
+                 */
+                $order->refresh();
+                $order->recalculateTotals();
+                $order->refresh();
+
                 Config::$serverKey = env('MIDTRANS_SERVER_KEY');
                 Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
                 Config::$isSanitized = true;
                 Config::$is3ds = true;
 
-                $itemDetails = $order->items->map(function ($item) {
-                    return [
+                $itemDetails = [];
+
+                foreach ($order->items as $item) {
+                    $itemDetails[] = [
                         'id' => (string) $item->product_id,
                         'name' => substr($item->product->name, 0, 50),
                         'price' => (int) $item->price,
                         'quantity' => (int) $item->qty,
                     ];
-                })->toArray();
+                }
 
-                if ($order->discount_amount > 0) {
+                /**
+                 * DISKON MASUK MIDTRANS
+                 */
+                if ((int) $order->discount_amount > 0) {
                     $itemDetails[] = [
                         'id' => 'DISCOUNT',
                         'name' => 'Discount',
-                        'price' => -((int) $order->discount_amount),
+                        'price' => -abs((int) $order->discount_amount),
                         'quantity' => 1,
                     ];
                 }
 
-                if ($order->tax_amount > 0) {
+                /**
+                 * PAJAK MASUK MIDTRANS
+                 */
+                if ((int) $order->tax_amount > 0) {
                     $itemDetails[] = [
                         'id' => 'TAX',
                         'name' => 'Tax',
@@ -292,7 +320,6 @@ class OrderController extends Controller
                     ];
                 }
 
-                // Siapkan payload untuk Midtrans
                 $params = [
                     'transaction_details' => [
                         'order_id' => $order->invoice_number,
@@ -304,33 +331,27 @@ class OrderController extends Controller
                     'item_details' => $itemDetails,
                 ];
 
-                try {
-                    // Generate Redirect URL dari Midtrans
-                    $paymentUrl = Snap::createTransaction($params)->redirect_url;
-                    $redirectUrl = $paymentUrl;
-
-                } catch (\Exception $e) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Gagal generate token Midtrans: ' . $e->getMessage()
-                    ], 500);
-                }
+                $paymentUrl = Snap::createTransaction($params)->redirect_url;
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Order berhasil dibuat. Silakan lanjutkan ke pembayaran Midtrans',
+                    'message' => 'Order berhasil dibuat',
                     'data' => [
                         'order' => $order->load('items.product', 'table'),
-                        'redirect_url' => $redirectUrl
+                        'redirect_url' => $paymentUrl
                     ]
                 ], 201);
-
-            } else {
-                // Untuk Cash, gunakan logika original
-                $result = $this->orderService->createCheckoutOrder($validated, $validated['outlet_id'] ?? null);
-
-                return response()->json($result, 201);
             }
+
+            /**
+             * CASH
+             */
+            $result = $this->orderService->createCheckoutOrder(
+                $validated,
+                $validated['outlet_id'] ?? null
+            );
+
+            return response()->json($result, 201);
 
         } catch (\Throwable $e) {
             return response()->json([
