@@ -285,48 +285,57 @@ class OrderController extends Controller
                 Config::$is3ds = true;
 
                 $itemDetails = [];
+                $calculatedGrossAmount = 0; // KUNCI: Hitung total berbarengan dengan build array
 
                 foreach ($order->items as $item) {
+                    $itemPrice = (int) $item->price;
+                    $itemQty = (int) $item->qty;
+
                     $itemDetails[] = [
                         'id' => (string) $item->product_id,
                         'name' => substr($item->product->name, 0, 50),
-                        'price' => (int) $item->price,
-                        'quantity' => (int) $item->qty,
+                        'price' => $itemPrice,
+                        'quantity' => $itemQty,
                     ];
+
+                    $calculatedGrossAmount += ($itemPrice * $itemQty);
                 }
 
                 /**
                  * DISKON MASUK MIDTRANS
-                 * Pastikan discount_amount sudah terhitung
                  */
                 $discountAmount = (int) ($order->discount_amount ?? 0);
                 if ($discountAmount > 0) {
                     $itemDetails[] = [
                         'id' => 'DISCOUNT',
                         'name' => 'Discount',
-                        'price' => -abs($discountAmount),
+                        'price' => -$discountAmount, // Minus harga
                         'quantity' => 1,
                     ];
+                    // Kurangi total tagihan
+                    $calculatedGrossAmount -= $discountAmount;
                 }
 
                 /**
                  * PAJAK MASUK MIDTRANS
-                 * Pastikan tax_amount sudah terhitung
                  */
                 $taxAmount = (int) ($order->tax_amount ?? 0);
                 if ($taxAmount > 0) {
                     $itemDetails[] = [
                         'id' => 'TAX',
                         'name' => 'Tax',
-                        'price' => $taxAmount,
+                        'price' => $taxAmount, // Tambah harga
                         'quantity' => 1,
                     ];
+                    // Tambah ke total tagihan
+                    $calculatedGrossAmount += $taxAmount;
                 }
 
                 $params = [
                     'transaction_details' => [
                         'order_id' => $order->invoice_number,
-                        'gross_amount' => (int) $order->total_price,
+                        // Gunakan $calculatedGrossAmount yang dirakit dari dalam array untuk 100% akurasi
+                        'gross_amount' => $calculatedGrossAmount,
                     ],
                     'customer_details' => [
                         'first_name' => $order->customer_name ?: 'Customer POS',
@@ -486,9 +495,6 @@ class OrderController extends Controller
             'items.*.cancelled_qty' => 'required|integer|min:0|max:100', // Add max
         ]);
 
-        // Implementation remains similar but use $order->recalculateTotals() at end
-        // (shortened for brevity, full logic as original but cleaned)
-
         DB::beginTransaction();
         try {
             $actionDetails = [];
@@ -539,10 +545,9 @@ class OrderController extends Controller
                 $order->update(['logs' => $logs]);
 
                 // --- PERBAIKAN: Hitung ulang Subtotal, Diskon & Pajak secara Dinamis ---
-                $order->refresh(); // Ambil data item terbaru setelah ada yang di-void
+                $order->refresh();
                 $newSubtotal = $order->items->sum('total_price');
 
-                // 1. Hitung ulang diskon (menyesuaikan subtotal baru)
                 $newDiscountAmount = 0;
                 if ($order->manual_discount_type === 'percentage') {
                     $calc = $newSubtotal * ($order->manual_discount_value / 100);
@@ -554,28 +559,23 @@ class OrderController extends Controller
                     }
                     $newDiscountAmount = (int) $calc;
                 } else {
-                    // Jika diskon nominal (tetap), pastikan diskon tidak membuat minus
                     $oldDiscount = $order->discount_amount ?? 0;
                     $newDiscountAmount = (int) min($oldDiscount, $newSubtotal);
                 }
 
                 $amountAfterDiscount = max(0, $newSubtotal - $newDiscountAmount);
 
-                // 2. Hitung ulang pajak secara dinamis dari subtotal setelah diskon
                 $newTaxAmount = 0;
                 if ($order->tax_id) {
                     $tax = \App\Models\Tax::find($order->tax_id);
                     if ($tax) {
                         if ($tax->type === 'percentage') {
-                            // Hitung persen dari sisa tagihan
                             $newTaxAmount = (int) round($amountAfterDiscount * ((float) $tax->rate / 100));
                         } else {
-                            // Pajak nominal tetap (misal biaya admin)
                             $newTaxAmount = (int) $tax->rate;
                         }
                     }
                 } elseif ($order->tax_amount > 0 && $order->subtotal_price > 0) {
-                    // Fallback proporsional jika tidak ada ID pajak tapi transaksi aslinya punya pajak
                     $oldAmountAfterDiscount = max(0, $order->subtotal_price - $order->discount_amount);
                     if ($oldAmountAfterDiscount > 0) {
                         $rate = $order->tax_amount / $oldAmountAfterDiscount;
@@ -583,14 +583,12 @@ class OrderController extends Controller
                     }
                 }
 
-                // Masukkan hasil perhitungan dinamis ke fungsi recalculateTotals
                 $order->recalculateTotals([
                     'discount_amount' => $newDiscountAmount,
                     'tax_amount' => $newTaxAmount
                 ]);
                 // --- END PERBAIKAN ---
 
-                // Keep transaction history consistent after void/restore on paid orders.
                 if ($order->status === Order::STATUS_PAID) {
                     $this->orderService->syncHistoryTransaction($order->fresh());
                 }
