@@ -17,14 +17,23 @@ class Order extends Model
 {
     use HasFactory;
 
-    // Constants
-    public const STATUS_PENDING = 'pending';
-    public const STATUS_PAID = 'paid';
+    /*
+    |--------------------------------------------------------------------------
+    | Constants
+    |--------------------------------------------------------------------------
+    */
+    public const STATUS_PENDING   = 'pending';
+    public const STATUS_PAID      = 'paid';
     public const STATUS_CANCELLED = 'cancelled';
 
     public const DISCOUNT_TYPE_PERCENTAGE = 'percentage';
-    public const DISCOUNT_TYPE_NOMINAL = 'nominal';
+    public const DISCOUNT_TYPE_NOMINAL    = 'nominal';
 
+    /*
+    |--------------------------------------------------------------------------
+    | Fillable
+    |--------------------------------------------------------------------------
+    */
     protected $fillable = [
         'outlet_id',
         'user_id',
@@ -32,7 +41,7 @@ class Order extends Model
         'customer_name',
         'invoice_number',
 
-        // price
+        // subtotal
         'subtotal_price',
 
         // discount
@@ -53,17 +62,26 @@ class Order extends Model
         'logs',
     ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | Casts
+    |--------------------------------------------------------------------------
+    */
     protected $casts = [
-        'subtotal_price' => 'integer',
-        'discount_amount' => 'integer',
-        'manual_discount_value' => 'integer',
-        'tax_amount' => 'integer',
-        'tax_breakdown' => 'array',
-        'total_price' => 'integer',
-        'logs' => 'array',
+        'subtotal_price'       => 'integer',
+        'discount_amount'      => 'integer',
+        'manual_discount_value'=> 'integer',
+        'tax_amount'           => 'integer',
+        'tax_breakdown'        => 'array',
+        'total_price'          => 'integer',
+        'logs'                 => 'array',
     ];
 
-    // Relations
+    /*
+    |--------------------------------------------------------------------------
+    | Relations
+    |--------------------------------------------------------------------------
+    */
     public function items()
     {
         return $this->hasMany(OrderItem::class);
@@ -104,7 +122,11 @@ class Order extends Model
         return $this->belongsTo(Outlet::class);
     }
 
-    // Scopes
+    /*
+    |--------------------------------------------------------------------------
+    | Scopes
+    |--------------------------------------------------------------------------
+    */
     public function scopePending($query)
     {
         return $query->where('status', self::STATUS_PENDING);
@@ -120,7 +142,11 @@ class Order extends Model
         return $query->where('status', self::STATUS_CANCELLED);
     }
 
-    // Helpers
+    /*
+    |--------------------------------------------------------------------------
+    | Helpers
+    |--------------------------------------------------------------------------
+    */
     public function isPaid(): bool
     {
         return $this->status === self::STATUS_PAID;
@@ -131,17 +157,47 @@ class Order extends Model
         return $this->status === self::STATUS_PENDING;
     }
 
-    /**
-     * Recalculate totals based on items, manual discount, tax
-     */
+    /*
+    |--------------------------------------------------------------------------
+    | Recalculate Total
+    |--------------------------------------------------------------------------
+    | FIX:
+    | Pajak sekarang dihitung dari subtotal setelah diskon
+    |--------------------------------------------------------------------------
+    */
     public function recalculateTotals(array $overrides = []): void
     {
-        $subtotal = (int) $this->items()->sum('total_price');
+        $this->loadMissing('items');
 
-        $manualDiscountType = $overrides['manual_discount_type'] ?? $this->manual_discount_type;
-        $manualDiscountValue = $overrides['manual_discount_value'] ?? ($this->manual_discount_value ?? 0);
-        $discountId = $overrides['discount_id'] ?? $this->discount_id;
+        /*
+        |--------------------------------------------------------------------------
+        | 1. Subtotal
+        |--------------------------------------------------------------------------
+        */
+        $subtotal = (int) $this->items->sum('total_price');
 
+        /*
+        |--------------------------------------------------------------------------
+        | 2. Ambil Diskon
+        |--------------------------------------------------------------------------
+        */
+        $manualDiscountType = $overrides['manual_discount_type']
+            ?? $this->manual_discount_type;
+
+        $manualDiscountValue = (int) (
+            $overrides['manual_discount_value']
+            ?? $this->manual_discount_value
+            ?? 0
+        );
+
+        $discountId = $overrides['discount_id']
+            ?? $this->discount_id;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Jika pakai discount master
+        |--------------------------------------------------------------------------
+        */
         if (!$manualDiscountType && $discountId) {
             $discount = Discount::query()
                 ->whereKey($discountId)
@@ -149,63 +205,136 @@ class Order extends Model
                 ->first();
 
             if ($discount && $subtotal >= (int) $discount->min_purchase) {
-                $manualDiscountType = $discount->type;
+                $manualDiscountType  = $discount->type;
                 $manualDiscountValue = (int) $discount->value;
             }
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | 3. Hitung Diskon
+        |--------------------------------------------------------------------------
+        */
+        $discountAmount = $this->computeAdjustmentAmount(
+            $manualDiscountType,
+            $manualDiscountValue,
+            $subtotal
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | 4. Sisa setelah diskon
+        |--------------------------------------------------------------------------
+        */
+        $afterDiscount = max(0, $subtotal - $discountAmount);
+
+        /*
+        |--------------------------------------------------------------------------
+        | 5. Ambil Pajak
+        |--------------------------------------------------------------------------
+        */
         $taxId = $overrides['tax_id'] ?? $this->tax_id;
-        $tax = $taxId ? Tax::where('id', $taxId)->where('active', true)->first() : null;
 
-        // Discount
-        $discountAmount = $this->computeAdjustmentAmount($manualDiscountType, (int) $manualDiscountValue, $subtotal);
+        $tax = $taxId
+            ? Tax::query()
+                ->where('id', $taxId)
+                ->where('active', true)
+                ->first()
+            : null;
 
-        // Tax
-        $baseAfterDiscount = max(0, $subtotal - $discountAmount);
-        $taxRateValue = 0.0;
-        if ($tax) {
-            $taxRateValue = $tax->type === self::DISCOUNT_TYPE_PERCENTAGE
-                ? (float) $tax->rate * 100
-                : (float) $tax->rate;
-        }
-
+        /*
+        |--------------------------------------------------------------------------
+        | 6. Hitung Pajak
+        |--------------------------------------------------------------------------
+        | Persentase = dari nilai setelah diskon
+        |--------------------------------------------------------------------------
+        */
         $taxAmount = 0;
+
         if ($tax) {
-            $taxAmount = $this->computeAdjustmentAmount($tax->type, $taxRateValue, $baseAfterDiscount);
+
+            if ($tax->type === 'percentage') {
+
+                $taxAmount = (int) round(
+                    $afterDiscount * ((float) $tax->rate / 100)
+                );
+
+            } else {
+
+                $taxAmount = (int) $tax->rate;
+            }
+
         } elseif (array_key_exists('tax_amount', $overrides)) {
-            // Fallback untuk payload mobile yang kirim nominal pajak langsung.
+
             $taxAmount = max(0, (int) $overrides['tax_amount']);
-        } elseif (array_key_exists('tax_breakdown', $overrides) && is_array($overrides['tax_breakdown'])) {
-            $taxAmount = max(0, (int) collect($overrides['tax_breakdown'])
-                ->sum(fn($taxItem) => (int) data_get($taxItem, 'amount', 0)));
+
+        } elseif (
+            array_key_exists('tax_breakdown', $overrides)
+            && is_array($overrides['tax_breakdown'])
+        ) {
+
+            $taxAmount = max(
+                0,
+                (int) collect($overrides['tax_breakdown'])->sum(
+                    fn($item) => (int) data_get($item, 'amount', 0)
+                )
+            );
         }
 
-        $total = max(0, $baseAfterDiscount + $taxAmount);
+        /*
+        |--------------------------------------------------------------------------
+        | 7. Grand Total
+        |--------------------------------------------------------------------------
+        */
+        $grandTotal = max(0, $afterDiscount + $taxAmount);
 
+        /*
+        |--------------------------------------------------------------------------
+        | 8. Save
+        |--------------------------------------------------------------------------
+        */
         $this->update([
-            'subtotal_price' => $subtotal,
-            'discount_id' => $discountId,
+            'subtotal_price'        => $subtotal,
+
+            'discount_id'          => $discountId,
             'manual_discount_type' => $manualDiscountType,
-            'manual_discount_value' => $manualDiscountType ? (int) $manualDiscountValue : null,
-            'discount_amount' => $discountAmount,
-            'tax_id' => $taxId,
-            'tax_amount' => $taxAmount,
-            'total_price' => $total,
+            'manual_discount_value'=> $manualDiscountType
+                ? $manualDiscountValue
+                : null,
+            'discount_amount'      => $discountAmount,
+
+            'tax_id'               => $taxId,
+            'tax_amount'           => $taxAmount,
+
+            'total_price'          => $grandTotal,
         ]);
     }
 
-    private function computeAdjustmentAmount(?string $type, float $value, int $baseAmount): int
-    {
+    /*
+    |--------------------------------------------------------------------------
+    | Helper Hitung Discount / Nominal
+    |--------------------------------------------------------------------------
+    */
+    private function computeAdjustmentAmount(
+        ?string $type,
+        float $value,
+        int $baseAmount
+    ): int {
         if (!$type || $baseAmount <= 0 || $value <= 0) {
             return 0;
         }
 
         if ($type === self::DISCOUNT_TYPE_PERCENTAGE) {
             $percent = min(100, max(0, $value));
-            return (int) round(($baseAmount * $percent) / 100);
+
+            return (int) round(
+                ($baseAmount * $percent) / 100
+            );
         }
 
-        return min($baseAmount, max(0, (int) $value));
+        return min(
+            $baseAmount,
+            max(0, (int) $value)
+        );
     }
 }
-
