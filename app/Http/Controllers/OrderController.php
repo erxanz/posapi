@@ -265,23 +265,43 @@ class OrderController extends Controller
                 Config::$isSanitized = true;
                 Config::$is3ds = true;
 
+                $itemDetails = $order->items->map(function ($item) {
+                    return [
+                        'id' => (string) $item->product_id,
+                        'name' => substr($item->product->name, 0, 50),
+                        'price' => (int) $item->price,
+                        'quantity' => (int) $item->qty,
+                    ];
+                })->toArray();
+
+                if ($order->discount_amount > 0) {
+                    $itemDetails[] = [
+                        'id' => 'DISCOUNT',
+                        'name' => 'Discount',
+                        'price' => -((int) $order->discount_amount),
+                        'quantity' => 1,
+                    ];
+                }
+
+                if ($order->tax_amount > 0) {
+                    $itemDetails[] = [
+                        'id' => 'TAX',
+                        'name' => 'Tax',
+                        'price' => (int) $order->tax_amount,
+                        'quantity' => 1,
+                    ];
+                }
+
                 // Siapkan payload untuk Midtrans
                 $params = [
                     'transaction_details' => [
                         'order_id' => $order->invoice_number,
-                        'gross_amount' => $order->total_price,
+                        'gross_amount' => (int) $order->total_price,
                     ],
                     'customer_details' => [
                         'first_name' => $order->customer_name ?: 'Customer POS',
                     ],
-                    'item_details' => $order->items->map(function ($item) {
-                        return [
-                            'id' => (string) $item->product_id,
-                            'name' => $item->product->name,
-                            'price' => (int) $item->price,
-                            'quantity' => (int) $item->qty,
-                        ];
-                    })->toArray(),
+                    'item_details' => $itemDetails,
                 ];
 
                 try {
