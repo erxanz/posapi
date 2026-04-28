@@ -105,7 +105,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/shifts/auto-generate', [App\Http\Controllers\ShiftController::class, 'autoGenerate']);
         Route::get('/shifts/my-schedule', [App\Http\Controllers\ShiftController::class, 'mySchedule']);
 
-        // Khusus untuk Dashboard Manager Vue (CRUD)
+        // Khusus untuk Dashboard Manager Vue (CRUD & Resolve)
+        Route::put('shift-karyawans/{id}/resolve', [ShiftKaryawanController::class, 'resolveAutoClose']);
         Route::apiResource('shift-karyawans', ShiftKaryawanController::class)->only(['index', 'destroy', 'show']);
 
         Route::get('/shifts', [ShiftController::class, 'index']);
