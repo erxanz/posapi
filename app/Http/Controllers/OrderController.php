@@ -273,12 +273,11 @@ class OrderController extends Controller
                 $order = $result['order'];
 
                 /**
-                 * WAJIB: refresh lalu hitung ulang total
-                 * supaya discount_amount & tax_amount terisi
+                 * PENTING: Reload order untuk memastikan discount_amount & tax_amount
+                 * terisi dengan benar dari database
                  */
-                $order->refresh();
-                $order->recalculateTotals();
-                $order->refresh();
+                $order = Order::with('items.product', 'table')
+                    ->findOrFail($order->id);
 
                 Config::$serverKey = env('MIDTRANS_SERVER_KEY');
                 Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
@@ -298,24 +297,28 @@ class OrderController extends Controller
 
                 /**
                  * DISKON MASUK MIDTRANS
+                 * Pastikan discount_amount sudah terhitung
                  */
-                if ((int) $order->discount_amount > 0) {
+                $discountAmount = (int) ($order->discount_amount ?? 0);
+                if ($discountAmount > 0) {
                     $itemDetails[] = [
                         'id' => 'DISCOUNT',
                         'name' => 'Discount',
-                        'price' => -abs((int) $order->discount_amount),
+                        'price' => -abs($discountAmount),
                         'quantity' => 1,
                     ];
                 }
 
                 /**
                  * PAJAK MASUK MIDTRANS
+                 * Pastikan tax_amount sudah terhitung
                  */
-                if ((int) $order->tax_amount > 0) {
+                $taxAmount = (int) ($order->tax_amount ?? 0);
+                if ($taxAmount > 0) {
                     $itemDetails[] = [
                         'id' => 'TAX',
                         'name' => 'Tax',
-                        'price' => (int) $order->tax_amount,
+                        'price' => $taxAmount,
                         'quantity' => 1,
                     ];
                 }
