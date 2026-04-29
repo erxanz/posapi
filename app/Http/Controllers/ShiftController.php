@@ -2,175 +2,315 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Shift;
+use App\Models\Outlet;
+use App\Models\User;
+use App\Models\Schedule;
 use App\Models\Payment;
 use App\Models\ShiftKaryawan;
-use App\Models\Schedule;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
-class ShiftKaryawanController extends Controller
+class ShiftController extends Controller
 {
-    // ==========================================
-    // 1. CRUD UNTUK DASHBOARD MANAGER / ADMIN
-    // ==========================================
+    // =====================================================
+    // 1. MASTER SHIFT (MANAGER / ADMIN)
+    // =====================================================
     public function index(Request $request)
     {
-        $user = auth()->user();
-        $query = ShiftKaryawan::with(['user', 'outlet', 'shift']);
+        try {
+            $user = auth()->user();
+            $query = Shift::with('outlet:id,name');
 
-        // Filter berdasarkan Role (Manager hanya melihat outlet miliknya)
-        if ($user->role === 'manager') {
-            $outletIds = \App\Models\Outlet::where('owner_id', $user->id)->pluck('id');
-            $query->whereIn('outlet_id', $outletIds);
+            if ($user->role === 'manager') {
+                $outletIds = Outlet::where('owner_id', $user->id)->pluck('id');
+                $query->whereIn('outlet_id', $outletIds);
+            } elseif ($user->role === 'karyawan') {
+                $query->where('outlet_id', $user->outlet_id);
+            }
+
+            if ($request->filled('outlet_id')) {
+                $query->where('outlet_id', $request->outlet_id);
+            }
+
+            return response()->json([
+                'data' => $query->latest()->get()
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil data',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // Filter dari dropdown Vue (opsional)
-        if ($request->filled('outlet_id')) {
-            $query->where('outlet_id', $request->outlet_id);
-        }
-
-        return response()->json($query->latest()->paginate($request->limit ?? 15));
     }
 
-    public function show($id)
+    public function store(Request $request)
     {
-        $authUser = auth()->user();
-        $shift = ShiftKaryawan::with(['user:id,name', 'outlet:id,name', 'shift:id,name,start_time,end_time,outlet_id'])->findOrFail($id);
+        $validated = $request->validate([
+            'outlet_id'  => 'required|exists:outlets,id',
+            'name'       => 'required|string|max:255',
+            'start_time' => 'required|date_format:H:i',
+            'end_time'   => 'required|date_format:H:i',
+            'color'      => 'nullable|string|max:7',
+        ]);
 
-        if ($authUser->role === 'karyawan' && (int) $shift->user_id !== (int) $authUser->id) {
-            return response()->json(['message' => 'Akses ditolak'], 403);
-        }
+        $user = auth()->user();
 
-        if ($authUser->role === 'manager') {
-            $ownsOutlet = \App\Models\Outlet::where('id', $shift->outlet_id)->where('owner_id', $authUser->id)->exists();
-            if (!$ownsOutlet) {
+        if ($user->role === 'manager') {
+            $isMine = Outlet::where('id', $validated['outlet_id'])
+                ->where('owner_id', $user->id)
+                ->exists();
+
+            if (!$isMine) {
                 return response()->json(['message' => 'Akses ditolak'], 403);
             }
         }
 
-        return response()->json(['data' => $shift], 200);
+        DB::beginTransaction();
+
+        try {
+            $shift = Shift::create($validated);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Shift berhasil dibuat',
+                'data' => $shift->load('outlet:id,name')
+            ], 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Gagal menyimpan',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function update(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'outlet_id'  => 'required|exists:outlets,id',
+            'name'       => 'required|string|max:255',
+            'start_time' => 'required|date_format:H:i',
+            'end_time'   => 'required|date_format:H:i',
+            'color'      => 'nullable|string|max:7',
+        ]);
+
+        $shift = Shift::findOrFail($id);
+
+        DB::beginTransaction();
+
+        try {
+            $shift->update($validated);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Shift berhasil diupdate',
+                'data' => $shift->load('outlet:id,name')
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Gagal update',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function destroy($id)
     {
-        $shift = ShiftKaryawan::findOrFail($id);
-        $shift->delete();
-        return response()->json(['message' => 'Data shift berhasil dihapus.']);
+        try {
+            Shift::findOrFail($id)->delete();
+
+            return response()->json([
+                'message' => 'Shift berhasil dihapus'
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal menghapus',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
-    // Fungsi baru untuk Manager verifikasi uang fisik dari Dashboard Vue
-    public function resolveAutoClose(Request $request, $id)
+    // =====================================================
+    // 2. AUTO GENERATE JADWAL BULANAN
+    // =====================================================
+    public function autoGenerate(Request $request)
+    {
+        $validated = $request->validate([
+            'outlet_id' => 'required|exists:outlets,id',
+            'month'     => 'nullable|integer|min:1|max:12',
+            'year'      => 'nullable|integer'
+        ]);
+
+        $outletId = $validated['outlet_id'];
+
+        $shifts = Shift::where('outlet_id', $outletId)->get();
+
+        if ($shifts->isEmpty()) {
+            return response()->json([
+                'message' => 'Belum ada master shift'
+            ], 400);
+        }
+
+        $karyawans = User::where('outlet_id', $outletId)
+            ->where('role', 'karyawan')
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($karyawans)) {
+            return response()->json([
+                'message' => 'Tidak ada karyawan'
+            ], 400);
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $targetDate = now();
+
+            if ($request->filled('month') && $request->filled('year')) {
+                $targetDate = Carbon::create(
+                    $validated['year'],
+                    $validated['month'],
+                    1
+                );
+            }
+
+            $start = $targetDate->copy()->startOfMonth();
+            $end   = $targetDate->copy()->endOfMonth();
+
+            Schedule::where('outlet_id', $outletId)
+                ->whereBetween('date', [$start, $end])
+                ->delete();
+
+            $newSchedules = [];
+            $empPerShift = ceil(count($karyawans) / $shifts->count());
+
+            for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
+
+                $daily = $karyawans;
+                shuffle($daily);
+
+                $chunks = array_chunk($daily, $empPerShift);
+
+                foreach ($shifts as $i => $shift) {
+                    foreach ($chunks[$i] ?? [] as $userId) {
+                        $newSchedules[] = [
+                            'outlet_id'  => $outletId,
+                            'shift_id'   => $shift->id,
+                            'user_id'    => $userId,
+                            'date'       => $date->toDateString(),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ];
+                    }
+                }
+            }
+
+            foreach (array_chunk($newSchedules, 100) as $chunk) {
+                Schedule::insert($chunk);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Jadwal berhasil digenerate'
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Gagal generate',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // =====================================================
+    // 3. JADWAL SAYA (KARYAWAN)
+    // =====================================================
+    public function mySchedule()
     {
         $user = auth()->user();
 
-        if (!in_array($user->role, ['manager', 'developer'])) {
-            return response()->json(['message' => 'Akses ditolak'], 403);
-        }
-
-        $validated = $request->validate([
-            'actual_closing_balance' => 'required|integer|min:0',
-        ]);
-
-        $shift = ShiftKaryawan::findOrFail($id);
-
-        if ($shift->closing_balance_actual !== null) {
-            return response()->json(['message' => 'Laporan shift ini sudah memiliki data uang aktual'], 400);
-        }
-
-        $difference = $validated['actual_closing_balance'] - $shift->closing_balance_system;
-
-        $shift->update([
-            'closing_balance_actual' => $validated['actual_closing_balance'],
-            'difference' => $difference,
-            'notes' => $shift->notes . ' | Telah diverifikasi manual oleh Manajer: ' . $user->name,
-        ]);
+        $data = Schedule::where('user_id', $user->id)
+            ->where('date', now()->toDateString())
+            ->with('shift.outlet:id,name', 'shift:id,name,start_time,end_time,color')
+            ->get()
+            ->pluck('shift')
+            ->values();
 
         return response()->json([
-            'message' => 'Laporan shift berhasil diverifikasi',
-            'data' => $shift
+            'data' => $data
         ]);
     }
 
-    // ==========================================
-    // 2. FUNGSI UNTUK APLIKASI KASIR (FLUTTER)
-    // ==========================================
+    // =====================================================
+    // 4. START SHIFT (KASIR)
+    // =====================================================
     public function startShift(Request $request)
     {
         $user = auth()->user();
-        if ($user->role !== 'karyawan') {
-            return response()->json(['message' => 'Hanya karyawan yang dapat memulai shift'], 403);
-        }
 
         $validated = $request->validate([
             'outlet_id' => 'required|exists:outlets,id',
             'opening_balance' => 'required|integer|min:0',
         ]);
 
-        if ((int) $user->outlet_id !== (int) $validated['outlet_id']) {
-            return response()->json(['message' => 'Outlet tidak sesuai dengan akun karyawan'], 403);
-        }
-
-        $currentTime = now()->format('H:i:s');
         $today = now()->toDateString();
+        $currentTime = now()->format('H:i:s');
 
-        $currentAssignedShift = Schedule::where('shift_schedules.user_id', $user->id)
-            ->where('shift_schedules.outlet_id', $validated['outlet_id'])
-            ->where('shift_schedules.date', $today)
+        $assignedShift = Schedule::where('user_id', $user->id)
+            ->where('outlet_id', $validated['outlet_id'])
+            ->where('date', $today)
             ->join('shifts', 'shift_schedules.shift_id', '=', 'shifts.id')
-            ->where(function ($query) use ($currentTime) {
-                $query
-                    ->where(function ($q) use ($currentTime) {
-                        $q->whereColumn('shifts.start_time', '<=', 'shifts.end_time')
-                            ->whereTime('shifts.start_time', '<=', $currentTime)
-                            ->whereTime('shifts.end_time', '>=', $currentTime);
-                    })
-                    ->orWhere(function ($q) use ($currentTime) {
-                        $q->whereColumn('shifts.start_time', '>', 'shifts.end_time')
-                            ->where(function ($q2) use ($currentTime) {
-                                $q2->whereTime('shifts.start_time', '<=', $currentTime)
-                                    ->orWhereTime('shifts.end_time', '>=', $currentTime);
-                            });
-                    });
-            })
+            ->whereTime('shifts.start_time', '<=', $currentTime)
+            ->whereTime('shifts.end_time', '>=', $currentTime)
             ->select('shifts.*')
             ->first();
 
-        if (!$currentAssignedShift) {
+        if (!$assignedShift) {
             return response()->json([
-                'message' => 'Anda tidak memiliki jadwal shift pada hari dan jam ini.'
+                'message' => 'Tidak ada jadwal shift saat ini'
             ], 403);
         }
 
-        $activeSession = ShiftKaryawan::where('user_id', $user->id)
+        $active = ShiftKaryawan::where('user_id', $user->id)
             ->where('status', 'active')
             ->first();
 
-        if ($activeSession) {
-            return response()->json(['message' => 'Anda masih memiliki shift aktif yang belum ditutup'], 400);
+        if ($active) {
+            return response()->json([
+                'message' => 'Masih ada shift aktif'
+            ], 400);
         }
 
-        $shiftKaryawan = ShiftKaryawan::create([
+        $shift = ShiftKaryawan::create([
             'user_id' => $user->id,
             'outlet_id' => $validated['outlet_id'],
-            'shift_id' => $currentAssignedShift->id,
+            'shift_id' => $assignedShift->id,
             'opening_balance' => $validated['opening_balance'],
             'started_at' => now(),
             'status' => 'active',
         ]);
 
         return response()->json([
-            'message' => 'Shift berhasil dimulai otomatis sesuai jadwal',
-            'data' => $shiftKaryawan->load(['shift:id,name,start_time,end_time,outlet_id', 'outlet:id,name'])
-        ], 201);
+            'message' => 'Shift dimulai',
+            'data' => $shift
+        ]);
     }
 
+    // =====================================================
+    // 5. END SHIFT
+    // =====================================================
     public function endShift(Request $request)
     {
-        $user = auth()->user();
-        if ($user->role !== 'karyawan') {
-            return response()->json(['message' => 'Hanya karyawan yang dapat mengakhiri shift'], 403);
-        }
-
         $validated = $request->validate([
             'actual_closing_balance' => 'required|integer|min:0',
             'notes' => 'nullable|string'
@@ -181,21 +321,14 @@ class ShiftKaryawanController extends Controller
             ->first();
 
         if (!$shift) {
-            return response()->json(['message' => 'Tidak ada shift aktif'], 404);
+            return response()->json([
+                'message' => 'Tidak ada shift aktif'
+            ], 404);
         }
 
         $cashSales = Payment::where('method', 'cash')
-            ->whereHas('order', function($query) use ($shift) {
-                $query->where('user_id', $shift->user_id)
-                      ->where('outlet_id', $shift->outlet_id)
-                      ->where('status', 'paid')
-                      ->where('created_at', '>=', $shift->started_at);
-            })
             ->where('paid_by', $shift->user_id)
-            ->get()
-            ->sum(function($payment) {
-                return $payment->amount_paid - $payment->change_amount;
-            });
+            ->sum(DB::raw('amount_paid - change_amount'));
 
         $systemBalance = $shift->opening_balance + $cashSales;
         $difference = $validated['actual_closing_balance'] - $systemBalance;
@@ -210,96 +343,55 @@ class ShiftKaryawanController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Shift berhasil diakhiri',
-            'summary' => [
-                'opening_balance' => $shift->opening_balance,
-                'total_cash_sales' => $cashSales,
-                'expected_in_drawer' => $systemBalance,
-                'actual_in_drawer' => $shift->closing_balance_actual,
-                'difference' => $difference,
-                'status_laci' => $difference === 0 ? 'Balance' : ($difference > 0 ? 'Uang Lebih' : 'Uang Kurang')
-            ],
+            'message' => 'Shift selesai',
             'data' => $shift
         ]);
     }
 
-    // ==========================================
-    // 3. TAMBAHAN: CEK STATUS & AUTO-CLOSE
-    // ==========================================
+    // =====================================================
+    // 6. CHECK STATUS
+    // =====================================================
     public function checkStatus(Request $request)
     {
-        $user = auth()->user();
-        $outletId = $request->query('outlet_id');
-        $today = now()->toDateString();
-
-        // 1. CEK "DOSA" MASA LALU (Akun ini punya shift yg auto-closed & belum diverifikasi manajer)
-        $unverifiedShift = ShiftKaryawan::where('user_id', $user->id)
-            ->where('status', 'closed')
-            ->whereNull('closing_balance_actual')
-            ->first();
-
-        if ($unverifiedShift) {
-            return response()->json([
-                'success' => false,
-                'status' => 'blocked_unverified',
-                'message' => 'Laporan shift Anda tanggal ' . Carbon::parse($unverifiedShift->started_at)->format('d-m-Y') . ' ditutup sistem dan belum divalidasi. Hubungi Manajer sebelum bisa memulai shift baru.',
-                'data' => $unverifiedShift
-            ], 403);
-        }
-
-        // 2. CEK SHIFT AKTIF SAAT INI
-        $activeShift = ShiftKaryawan::where('user_id', $user->id)
-            ->where('outlet_id', $outletId)
+        $active = ShiftKaryawan::where('user_id', auth()->id())
             ->where('status', 'active')
             ->first();
 
-        if (!$activeShift) {
+        if (!$active) {
             return response()->json([
                 'success' => false,
-                'message' => 'Tidak ada shift aktif hari ini.'
+                'message' => 'Tidak ada shift aktif'
             ]);
         }
 
-        // 3. PROSES AUTO-CLOSE JIKA SHIFT AKTIF ADALAH SHIFT KEMARIN
-        $shiftDate = Carbon::parse($activeShift->started_at)->toDateString();
-
-        if ($shiftDate !== $today) {
-            $cashSales = Payment::where('method', 'cash')
-                ->whereHas('order', function($query) use ($activeShift) {
-                    $query->where('user_id', $activeShift->user_id)
-                          ->where('outlet_id', $activeShift->outlet_id)
-                          ->where('status', 'paid')
-                          ->where('created_at', '>=', $activeShift->started_at);
-                })
-                ->get()
-                ->sum(function($payment) {
-                    return $payment->amount_paid - $payment->change_amount;
-                });
-
-            $systemBalance = $activeShift->opening_balance + $cashSales;
-
-            // Tutup shift secara otomatis dan biarkan uang aktual menjadi null
-            $activeShift->update([
-                'ended_at' => now(),
-                'status' => 'closed',
-                'closing_balance_system' => $systemBalance,
-                'closing_balance_actual' => null,
-                'difference' => null,
-                'notes' => 'Auto-closed by System (Forgot to close on ' . $shiftDate . ')',
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'status' => 'blocked_unverified',
-                'message' => 'Shift kemarin telah ditutup otomatis. Laporan Anda ditandai tidak valid karena fisik uang tidak dihitung. Hubungi Manajer.',
-            ], 403);
-        }
-
-        // Jika shift hari ini
         return response()->json([
             'success' => true,
-            'message' => 'Shift aktif ditemukan.',
-            'data' => $activeShift->load(['shift', 'outlet'])
+            'data' => $active->load('shift', 'outlet')
+        ]);
+    }
+
+    // =====================================================
+    // 7. VERIFIKASI MANAGER
+    // =====================================================
+    public function resolveAutoClose(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'actual_closing_balance' => 'required|integer|min:0',
+        ]);
+
+        $shift = ShiftKaryawan::findOrFail($id);
+
+        $difference = $validated['actual_closing_balance']
+            - $shift->closing_balance_system;
+
+        $shift->update([
+            'closing_balance_actual' => $validated['actual_closing_balance'],
+            'difference' => $difference,
+        ]);
+
+        return response()->json([
+            'message' => 'Berhasil diverifikasi',
+            'data' => $shift
         ]);
     }
 }
