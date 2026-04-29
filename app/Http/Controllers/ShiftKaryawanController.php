@@ -42,7 +42,7 @@ class ShiftKaryawanController extends Controller
     }
 
     // =========================================================================
-    // FUNGSI VERIFIKASI MANAGER (DENGAN FIX PERHITUNGAN SALDO SISTEM)
+    // FUNGSI VERIFIKASI MANAGER
     // =========================================================================
     public function resolveAutoClose(Request $request, $id)
     {
@@ -58,7 +58,7 @@ class ShiftKaryawanController extends Controller
 
         $shift = ShiftKaryawan::findOrFail($id);
 
-        // 1. HITUNG ULANG uang tunai masuk untuk memastikan data akurat!
+        // 1. HITUNG ULANG uang tunai masuk
         $cashSales = Payment::where('method', 'cash')
             ->whereHas('order', function($query) use ($shift) {
                 $query->where('user_id', $shift->user_id)
@@ -67,17 +67,15 @@ class ShiftKaryawanController extends Controller
             })
             ->sum(DB::raw('amount_paid - change_amount'));
 
-        // 2. Tetapkan saldo yang seharusnya ada (Modal Awal + Penjualan)
+        // 2. Tetapkan saldo sistem & selisih
         $systemBalance = $shift->opening_balance + $cashSales;
-
-        // 3. Hitung selisih yang BENAR (Aktual dari Manager - Sistem)
         $difference = $validated['actual_closing_balance'] - $systemBalance;
 
-        // 4. Update Database
+        // 3. Update Database (Kasir otomatis terbebas dari blokir karena actual balance terisi)
         $shift->update([
             'status' => 'closed',
             'ended_at' => $shift->ended_at ?? now(),
-            'closing_balance_system' => $systemBalance, // Pastikan ini tidak 0/Null lagi
+            'closing_balance_system' => $systemBalance,
             'closing_balance_actual' => $validated['actual_closing_balance'],
             'difference' => $difference,
             'notes' => $shift->notes . ' | Diverifikasi manual oleh: ' . $user->name,
@@ -92,6 +90,19 @@ class ShiftKaryawanController extends Controller
     public function startShift(Request $request)
     {
         $user = auth()->user();
+
+        // BLOKIR: Cek jika ada shift tertutup yang belum diverifikasi manajer
+        $unverifiedShift = ShiftKaryawan::where('user_id', $user->id)
+            ->where('status', 'closed')
+            ->whereNull('closing_balance_actual')
+            ->first();
+
+        if ($unverifiedShift) {
+            return response()->json([
+                'message' => 'Laporan shift sebelumnya ditutup paksa dan belum diverifikasi Manajer. Tidak bisa memulai shift baru.'
+            ], 403);
+        }
+
         $validated = $request->validate([
             'outlet_id' => 'required|exists:outlets,id',
             'opening_balance' => 'required|integer|min:0',
@@ -159,6 +170,22 @@ class ShiftKaryawanController extends Controller
         $user = auth()->user();
         $today = now()->toDateString();
 
+        // 1. BLOKIR SAAT BUKA APLIKASI KASIR: Cek shift yang belum diverifikasi
+        $unverifiedShift = ShiftKaryawan::where('user_id', $user->id)
+            ->where('status', 'closed')
+            ->whereNull('closing_balance_actual')
+            ->first();
+
+        if ($unverifiedShift) {
+            return response()->json([
+                'success' => false,
+                'status' => 'blocked_unverified',
+                'message' => 'Laporan shift Anda tanggal ' . Carbon::parse($unverifiedShift->started_at)->format('d-m-Y') . ' ditutup sistem dan belum diverifikasi. Hubungi Manajer.',
+                'data' => $unverifiedShift
+            ], 403);
+        }
+
+        // 2. CEK SHIFT AKTIF
         $activeShift = ShiftKaryawan::where('user_id', $user->id)
             ->where('status', 'active')
             ->first();
@@ -167,8 +194,8 @@ class ShiftKaryawanController extends Controller
 
         $shiftDate = Carbon::parse($activeShift->started_at)->toDateString();
 
+        // 3. AUTO-CLOSE JIKA KASIR BARU BUKA APLIKASI HARI INI
         if ($shiftDate !== $today) {
-            // FIX JUGA DI SINI: Jika auto-close karena aplikasi baru dibuka, hitung saldonya!
             $cashSales = Payment::where('method', 'cash')
                 ->whereHas('order', function($query) use ($activeShift) {
                     $query->where('user_id', $activeShift->user_id)
@@ -183,9 +210,16 @@ class ShiftKaryawanController extends Controller
                 'ended_at' => now(),
                 'status' => 'closed',
                 'closing_balance_system' => $systemBalance,
+                'closing_balance_actual' => null, // Biarkan null agar menjadi dosa (butuh verifikasi)
                 'notes' => 'Auto-closed (Lupa tutup shift tgl ' . $shiftDate . ')',
             ]);
-            return response()->json(['success' => false, 'message' => 'Shift kemarin telah ditutup otomatis.']);
+
+            // Langsung tolak akses karena statusnya kini butuh verifikasi
+            return response()->json([
+                'success' => false,
+                'status' => 'blocked_unverified',
+                'message' => 'Shift kemarin telah ditutup otomatis. Anda tidak bisa membuka shift baru sebelum laporan diverifikasi oleh Manajer.'
+            ], 403);
         }
 
         return response()->json(['success' => true, 'data' => $activeShift]);

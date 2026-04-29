@@ -37,17 +37,14 @@
     </nav>
 
     <main class="main-container">
-        <!-- Auth Section - OPEN by default -->
+        <!-- Auth Section -->
         <div class="section-card">
-            {{-- <details open> --}}
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+            <details open>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">Authentication</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-lock" style="color: #6366f1; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #6366f1; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #6366f1; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
@@ -86,21 +83,43 @@
                         <code class="api-path">/api/v1/me</code>
                         <span class="note">Auth Required</span>
                     </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-put">PUT</span>
+                        <code class="api-path">/api/v1/me</code>
+                        <span class="note">Auth Required</span>
+                    </div>
                 </div>
             </details>
         </div>
 
-        <!-- Public API (QR) Section - CLOSED by default -->
+        <!-- Midtrans Callback Section -->
         <div class="section-card">
             <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Public API <span
-                            style="font-weight: 400; color: #6b7280; font-size: 0.875rem;">(QR Menu)</span></h2>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Midtrans Callback</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-credit-card" style="color: #ec4899; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #ec4899; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/midtrans/callback</code>
+                        <span class="note">Public (Webhook)</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Public QR Section -->
+        <div class="section-card">
+            <details>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Public API <span style="font-weight: 400; color: #6b7280; font-size: 0.875rem;">(QR Menu)</span></h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-qrcode" style="color: #f43f5e; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #f43f5e; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #f43f5e; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
@@ -118,16 +137,14 @@
             </details>
         </div>
 
-        <!-- Users Section - CLOSED by default -->
+        <!-- Users Section -->
         <div class="section-card">
             <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">Users</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-users" style="color: #8b5cf6; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #8b5cf6; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #8b5cf6; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
@@ -135,48 +152,27 @@
                         <span class="badge badge-resource">API RES</span>
                         <code class="api-path">/api/v1/users</code>
                         <span class="api-method-list">POST, GET, GET /{id}, PUT /{id}, DELETE /{id}</span>
-                        <span class="note">Auth Required (Developer)</span>
+                        <span class="note">Auth Required</span>
                     </div>
                 </div>
             </details>
         </div>
 
-        <!-- Outlets Section - CLOSED by default -->
+        <!-- Outlets Section -->
         <div class="section-card">
             <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">Outlets</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-store" style="color: #10b981; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #10b981; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #10b981; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
                     <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
+                        <span class="badge badge-resource">API RES</span>
                         <code class="api-path">/api/v1/outlets</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-get">GET</span>
-                        <code class="api-path">/api/v1/outlets</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-get">GET</span>
-                        <code class="api-path">/api/v1/outlets/{outlet}</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-put">PUT</span>
-                        <code class="api-path">/api/v1/outlets/{outlet}</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-delete">DELETE</span>
-                        <code class="api-path">/api/v1/outlets/{outlet}</code>
+                        <span class="api-method-list">POST, GET, GET /{outlet}, PUT /{outlet}, DELETE /{outlet}</span>
                         <span class="note">Auth Required</span>
                     </div>
                     <div class="endpoint-row">
@@ -193,39 +189,145 @@
             </details>
         </div>
 
-        <!-- Tables Section - CLOSED by default -->
+        <!-- Master Data Section: Tables -->
         <div class="section-card">
             <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">Tables</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-chair" style="color: #64748b; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #64748b; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #64748b; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
                     <div class="endpoint-row">
                         <span class="badge badge-resource">API RES</span>
                         <code class="api-path">/api/v1/tables</code>
-                        <span class="api-method-list">GET, POST, GET {id}, PUT /{id}, DELETE /{id}</span>
+                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
             </details>
         </div>
 
-        <!-- Stations Section - CLOSED by default -->
+        <!-- Master Data Section: Categories -->
         <div class="section-card">
             <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Categories</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-tags" style="color: #f59e0b; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #f59e0b; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/categories</code>
+                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Master Data Section: Products -->
+        <div class="section-card">
+            <details>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Products</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-box-open" style="color: #f59e0b; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #f59e0b; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/products</code>
+                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Master Data Section: Discounts -->
+        <div class="section-card">
+            <details>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Discounts</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-tag" style="color: #10b981; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #10b981; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/discounts</code>
+                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Master Data Section: Taxes -->
+        <div class="section-card">
+            <details>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Taxes</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-percent" style="color: #3b82f6; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #3b82f6; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/taxes</code>
+                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Stocks Section -->
+        <div class="section-card">
+            <details>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Stocks</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-warehouse" style="color: #8b5cf6; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #8b5cf6; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES</span>
+                        <code class="api-path">/api/v1/stocks</code>
+                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/stocks/adjust</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Stations Section -->
+        <div class="section-card">
+            <details>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">Stations</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-layer-group" style="color: #8b5cf6; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #8b5cf6; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #8b5cf6; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
@@ -244,138 +346,14 @@
             </details>
         </div>
 
-        <!-- Products & Categories Section - CLOSED by default -->
+        <!-- Shifts Section -->
         <div class="section-card">
             <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Categories</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-tags" style="color: #f59e0b; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #f59e0b; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-resource">API RES</span>
-                        <code class="api-path">/api/v1/categories</code>
-                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
-                        <span class="note">Auth Required</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
-        <div class="section-card">
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Products</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-box-open" style="color: #f59e0b; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #f59e0b; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-resource">API RES</span>
-                        <code class="api-path">/api/v1/products</code>
-                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
-                        <span class="note">Auth Required</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
-        <div class="section-card">
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Discounts</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-tag" style="color: #10b981; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #10b981; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-resource">API RES</span>
-                        <code class="api-path">/api/v1/discounts</code>
-                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
-                        <span class="note">Auth Required</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
-        <div class="section-card">
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Taxes</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-percent" style="color: #3b82f6; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #3b82f6; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-resource">API RES</span>
-                        <code class="api-path">/api/v1/taxes</code>
-                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
-                        <span class="note">Auth Required</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
-        <!-- Shift Karyawans Section - CLOSED by default -->
-        <div class="section-card">
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Shift Karyawans</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-user-clock" style="color: #0ea5e9; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #0ea5e9; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
-                        <code class="api-path">/api/v1/shift-karyawans/start</code>
-                        <span class="note">Auth Required (Flutter)</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
-                        <code class="api-path">/api/v1/shift-karyawans/end</code>
-                        <span class="note">Auth Required (Flutter)</span>
-                    </div>
-                    <hr style="margin: 1rem 0; border: none; border-top: 1px solid #e5e7eb;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-resource">API RES (limited)</span>
-                        <code class="api-path">/api/v1/shift-karyawans</code>
-                        <span class="api-method-list">GET, GET /{id}, DELETE /{id}</span>
-                        <span class="note">Auth Required (Manager)</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
-        <div class="section-card">
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">Shifts</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-clock-rotate-left" style="color: #f97316; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #f97316; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #f97316; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
@@ -413,16 +391,55 @@
             </details>
         </div>
 
-        <!-- Schedules Section - CLOSED by default -->
+        <!-- Shift Karyawans Section -->
         <div class="section-card">
             <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Shift Karyawans</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-user-clock" style="color: #0ea5e9; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #0ea5e9; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/shift-karyawans/check-status</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/shift-karyawans/start</code>
+                        <span class="note">Auth Required (Flutter Cashier)</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/shift-karyawans/end</code>
+                        <span class="note">Auth Required (Flutter Cashier)</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-put">PUT</span>
+                        <code class="api-path">/api/v1/shift-karyawans/{id}/resolve</code>
+                        <span class="note">Auth Required (Manager)</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-resource">API RES (limited)</span>
+                        <code class="api-path">/api/v1/shift-karyawans</code>
+                        <span class="api-method-list">GET, GET /{id}, DELETE /{id}</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Schedules Section -->
+        <div class="section-card">
+            <details>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">Schedules</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-calendar" style="color: #f97316; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #f97316; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #f97316; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
@@ -445,23 +462,111 @@
             </details>
         </div>
 
-        <!-- History Transactions Section - CLOSED by default -->
+        <!-- Orders Section -->
         <div class="section-card">
             <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Orders</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-cart-shopping" style="color: #ec4899; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #ec4899; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/orders</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/orders/{order}</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/checkout</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/{id}/items</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-delete">DELETE</span>
+                        <code class="api-path">/api/v1/orders/{id}/items/{itemId}</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/{order}/checkout</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/{order}/payments</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-patch">PATCH</span>
+                        <code class="api-path">/api/v1/orders/{order}/adjustments</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/{order}/void-items</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-put">PUT</span>
+                        <code class="api-path">/api/v1/orders/{order}/items</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- Order Items (Kitchen) Section -->
+        <div class="section-card">
+            <details>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
+                    <h2 class="section-title" style="margin: 0;">Order Items (Kitchen)</h2>
+                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                        <i class="fa-solid fa-list" style="color: #f59e0b; font-size: 1.125rem;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #f59e0b; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                    </div>
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem;">
+                    <div class="endpoint-row">
+                        <span class="badge badge-patch">PATCH</span>
+                        <code class="api-path">/api/v1/order-items/{id}/status</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <!-- History Transactions Section -->
+        <div class="section-card">
+            <details>
+                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
                     <h2 class="section-title" style="margin: 0;">History Transactions</h2>
                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                         <i class="fa-solid fa-receipt" style="color: #14b8a6; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #14b8a6; font-size: 0.875rem; transition: transform 0.2s;"></i>
+                        <i class="fa-solid fa-chevron-down" style="color: #14b8a6; font-size: 0.875rem; transition: transform 0.2s;"></i>
                     </div>
                 </summary>
                 <div style="padding: 0 1rem 1rem 1rem;">
                     <div class="endpoint-row">
                         <span class="badge badge-resource">API RES (limited)</span>
                         <code class="api-path">/api/v1/history-transactions</code>
-                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
+                        <span class="api-method-list">GET, GET /{id}, PUT /{id}, DELETE /{id}</span>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
@@ -487,121 +592,6 @@
                     <div class="endpoint-row">
                         <span class="badge badge-get">GET</span>
                         <code class="api-path">/api/v1/reports/export</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
-        <!-- Orders Section - CLOSED by default -->
-        <div class="section-card">
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Orders</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-cart-shopping" style="color: #ec4899; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #ec4899; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-get">GET</span>
-                        <code class="api-path">/api/v1/orders</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
-                        <code class="api-path">/api/v1/orders</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-get">GET</span>
-                        <code class="api-path">/api/v1/orders/{id}</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
-                        <code class="api-path">/api/v1/orders/checkout</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
-                        <code class="api-path">/api/v1/orders/{id}/items</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-delete">DELETE</span>
-                        <code class="api-path">/api/v1/orders/{id}/items/{itemId}</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
-                        <code class="api-path">/api/v1/orders/{id}/checkout</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
-                        <code class="api-path">/api/v1/orders/{id}/payments</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-patch">PATCH</span>
-                        <code class="api-path">/api/v1/orders/{id}/adjustments</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
-                        <code class="api-path">/api/v1/orders/{id}/void-items</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
-        <div class="section-card">
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Stocks</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-warehouse" style="color: #8b5cf6; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #8b5cf6; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-resource">API RES</span>
-                        <code class="api-path">/api/v1/stocks</code>
-                        <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
-                        <span class="note">Auth Required</span>
-                    </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-post">POST</span>
-                        <code class="api-path">/api/v1/stocks/adjust</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
-        <div class="section-card">
-            <details>
-                <summary
-                    style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Order Items (Kitchen)</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-list" style="color: #f59e0b; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down"
-                            style="color: #f59e0b; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-patch">PATCH</span>
-                        <code class="api-path">/api/v1/order-items/{id}/status</code>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
@@ -638,4 +628,3 @@
 
 </html>
 
-</html>
