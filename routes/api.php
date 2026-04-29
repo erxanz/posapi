@@ -4,22 +4,22 @@ use Illuminate\Support\Facades\Route;
 
 // Controllers
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\OrderController;
-use App\Http\Controllers\UserController;
-use App\Http\Controllers\OutletController;
-use App\Http\Controllers\TableController;
 use App\Http\Controllers\CategoryController;
-use App\Http\Controllers\ProductController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DiscountController;
-use App\Http\Controllers\TaxController;
-use App\Http\Controllers\StationController;
-use App\Http\Controllers\StockController;
+use App\Http\Controllers\HistoryTransactionController;
+use App\Http\Controllers\OrderController;
+use App\Http\Controllers\OutletController;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\ScheduleController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\ShiftKaryawanController;
-use App\Http\Controllers\ScheduleController;
-use App\Http\Controllers\HistoryTransactionController;
-use App\Http\Controllers\ReportController;
-use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\StationController;
+use App\Http\Controllers\StockController;
+use App\Http\Controllers\TableController;
+use App\Http\Controllers\TaxController;
+use App\Http\Controllers\UserController;
 
 Route::prefix('v1')->group(function () {
 
@@ -29,22 +29,29 @@ Route::prefix('v1')->group(function () {
     |--------------------------------------------------------------------------
     */
 
-    // AUTH
+    // ================= AUTH =================
     Route::prefix('auth')->group(function () {
-        Route::post('/register', [AuthController::class, 'register']);
-        Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
-        Route::post('/login-pin', [AuthController::class, 'loginPin'])->middleware('throttle:5,1');
-        Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
-        Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+        Route::post('/register', [AuthController::class, 'register'])->name('register');
+        Route::post('/login', [AuthController::class, 'login'])
+            ->middleware('throttle:5,1')
+            ->name('login');
+
+        Route::post('/login-pin', [AuthController::class, 'loginPin'])
+            ->middleware('throttle:5,1')
+            ->name('login.pin');
+
+        Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])->name('password.forgot');
+        Route::post('/reset-password', [AuthController::class, 'resetPassword'])->name('password.reset');
     });
 
-    // MIDTRANS CALLBACK
-    Route::post('/midtrans/callback', [OrderController::class, 'midtransCallback']);
+    // ================= MIDTRANS CALLBACK =================
+    Route::post('/midtrans/callback', [OrderController::class, 'midtransCallback'])
+        ->name('midtrans.callback');
 
-    // PUBLIC QR MENU
+    // ================= PUBLIC QR =================
     Route::prefix('public')->group(function () {
-        Route::get('/menu/{token}', [ProductController::class, 'publicMenu']);
-        Route::post('/order', [OrderController::class, 'publicOrder']);
+        Route::get('/menu/{token}', [ProductController::class, 'publicMenu'])->name('public.menu');
+        Route::post('/order', [OrderController::class, 'publicOrder'])->name('public.order');
     });
 
     /*
@@ -62,10 +69,10 @@ Route::prefix('v1')->group(function () {
         */
 
         Route::prefix('auth')->group(function () {
-            Route::post('/logout', [AuthController::class, 'logout']);
-            Route::post('/logout-all', [AuthController::class, 'logoutAll']);
-            Route::get('/me', [AuthController::class, 'me']);
-            Route::put('/me', [AuthController::class, 'updateProfile']);
+            Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+            Route::post('/logout-all', [AuthController::class, 'logoutAll'])->name('logout.all');
+            Route::get('/me', [AuthController::class, 'me'])->name('me');
+            Route::put('/me', [AuthController::class, 'updateProfile'])->name('me.update');
         });
 
         /*
@@ -74,7 +81,8 @@ Route::prefix('v1')->group(function () {
         |--------------------------------------------------------------------------
         */
 
-        Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
+        Route::get('/dashboard/summary', [DashboardController::class, 'summary'])
+            ->name('dashboard.summary');
 
         /*
         |--------------------------------------------------------------------------
@@ -82,7 +90,13 @@ Route::prefix('v1')->group(function () {
         |--------------------------------------------------------------------------
         */
 
-        Route::apiResource('users', UserController::class);
+        Route::prefix('users')->group(function () {
+            Route::post('/', [UserController::class, 'createUser'])->name('users.create');
+            Route::get('/', [UserController::class, 'listUsers'])->name('users.list');
+            Route::get('/{id}', [UserController::class, 'showUser'])->name('users.show');
+            Route::put('/{id}', [UserController::class, 'updateUser'])->name('users.update');
+            Route::delete('/{id}', [UserController::class, 'deleteUser'])->name('users.delete');
+        });
 
         /*
         |--------------------------------------------------------------------------
@@ -90,10 +104,19 @@ Route::prefix('v1')->group(function () {
         |--------------------------------------------------------------------------
         */
 
-        Route::apiResource('outlets', OutletController::class);
+        Route::prefix('outlets')->group(function () {
+            Route::post('/', [OutletController::class, 'createOutlet'])->name('outlets.create');
+            Route::get('/', [OutletController::class, 'index'])->name('outlets.index');
+            Route::get('/{outlet}', [OutletController::class, 'show'])->name('outlets.show');
+            Route::put('/{outlet}', [OutletController::class, 'update'])->name('outlets.update');
+            Route::delete('/{outlet}', [OutletController::class, 'destroy'])->name('outlets.destroy');
 
-        Route::get('/outlets/{outlet}/products', [OutletController::class, 'getProducts']);
-        Route::post('/outlets/{outlet}/sync-products', [OutletController::class, 'syncProducts']);
+            Route::get('/{outlet}/products', [OutletController::class, 'getProducts'])
+                ->name('outlets.products');
+
+            Route::post('/{outlet}/sync-products', [OutletController::class, 'syncProducts'])
+                ->name('outlets.sync-products');
+        });
 
         /*
         |--------------------------------------------------------------------------
@@ -114,7 +137,9 @@ Route::prefix('v1')->group(function () {
         */
 
         Route::apiResource('stations', StationController::class);
-        Route::get('/stations/{id}/products', [StationController::class, 'products']);
+
+        Route::get('/stations/{id}/products', [StationController::class, 'products'])
+            ->name('stations.products');
 
         /*
         |--------------------------------------------------------------------------
@@ -122,12 +147,14 @@ Route::prefix('v1')->group(function () {
         |--------------------------------------------------------------------------
         */
 
-        Route::post('/stocks/adjust', [StockController::class, 'adjust']);
+        Route::post('/stocks/adjust', [StockController::class, 'adjust'])
+            ->name('stocks.adjust');
+
         Route::apiResource('stocks', StockController::class);
 
         /*
         |--------------------------------------------------------------------------
-        | MASTER SHIFT
+        | SHIFTS MASTER
         |--------------------------------------------------------------------------
         */
 
@@ -143,7 +170,7 @@ Route::prefix('v1')->group(function () {
 
         /*
         |--------------------------------------------------------------------------
-        | SHIFT KARYAWAN (FLUTTER / KASIR)
+        | SHIFT KARYAWAN
         |--------------------------------------------------------------------------
         */
 
@@ -156,7 +183,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/active', [ShiftKaryawanController::class, 'active']);
             Route::get('/history', [ShiftKaryawanController::class, 'history']);
 
-            // Manager Dashboard
+            // Manager
             Route::put('/{id}/resolve', [ShiftKaryawanController::class, 'resolveAutoClose']);
 
             // CRUD
@@ -203,14 +230,16 @@ Route::prefix('v1')->group(function () {
             // Adjustment
             Route::patch('/{order}/adjustments', [OrderController::class, 'updateAdjustments']);
 
-            // Void / Update Item
+            // Void
             Route::post('/{order}/void-items', [OrderController::class, 'voidItems']);
+
+            // Update Items
             Route::put('/{order}/items', [OrderController::class, 'updateItems']);
         });
 
         /*
         |--------------------------------------------------------------------------
-        | ORDER ITEMS (KITCHEN DISPLAY)
+        | ORDER ITEMS (KITCHEN)
         |--------------------------------------------------------------------------
         */
 
@@ -234,8 +263,8 @@ Route::prefix('v1')->group(function () {
         */
 
         Route::prefix('reports')->group(function () {
-            Route::get('/', [ReportController::class, 'index']);
-            Route::get('/export', [ReportController::class, 'export']);
+            Route::get('/', [ReportController::class, 'index'])->name('reports.index');
+            Route::get('/export', [ReportController::class, 'export'])->name('reports.export');
         });
     });
 });
