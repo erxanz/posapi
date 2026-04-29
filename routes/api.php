@@ -167,6 +167,8 @@ Route::prefix('v1')->group(function () {
 
         Route::prefix('shift-karyawans')->group(function () {
 
+            Route::get('/check-status', [ShiftKaryawanController::class, 'checkStatus']);
+
             // Flutter Cashier
             Route::post('/start', [ShiftKaryawanController::class, 'startShift']);
             Route::post('/end', [ShiftKaryawanController::class, 'endShift']);
