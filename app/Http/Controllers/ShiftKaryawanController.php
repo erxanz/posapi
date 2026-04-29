@@ -58,6 +58,39 @@ class ShiftKaryawanController extends Controller
         return response()->json(['message' => 'Data shift berhasil dihapus.']);
     }
 
+    // Fungsi untuk Manager verifikasi uang fisik dari Dashboard Vue (setelah auto-close)
+    public function resolveAutoClose(Request $request, $id)
+    {
+        $user = auth()->user();
+
+        if (!in_array($user->role, ['manager', 'developer'])) {
+            return response()->json(['message' => 'Akses ditolak'], 403);
+        }
+
+        $validated = $request->validate([
+            'actual_closing_balance' => 'required|integer|min:0',
+        ]);
+
+        $shift = ShiftKaryawan::findOrFail($id);
+
+        if ($shift->closing_balance_actual !== null) {
+            return response()->json(['message' => 'Laporan shift ini sudah memiliki data uang aktual'], 400);
+        }
+
+        $difference = $validated['actual_closing_balance'] - $shift->closing_balance_system;
+
+        $shift->update([
+            'closing_balance_actual' => $validated['actual_closing_balance'],
+            'difference' => $difference,
+            'notes' => $shift->notes . ' | Telah diverifikasi manual oleh Manajer: ' . $user->name,
+        ]);
+
+        return response()->json([
+            'message' => 'Laporan shift berhasil diverifikasi',
+            'data' => $shift
+        ]);
+    }
+
     // ==========================================
     // 2. FUNGSI UNTUK APLIKASI KASIR (FLUTTER)
     // ==========================================
