@@ -495,7 +495,7 @@ class OrderController extends Controller
     }
 
     /**
-     * Void items (keep as is, refactored minimally)
+     * Void items (DENGAN VALIDASI MINIMUM DISKON)
      */
     public function voidItems(Request $request, Order $order)
     {
@@ -516,6 +516,7 @@ class OrderController extends Controller
         try {
             $actionDetails = [];
             $outlet = $order->outlet;
+            $warningMessage = null; // Menyiapkan custom message jika diskon jebol minimum
 
             foreach ($validated['items'] as $inputItem) {
                 $item = $order->items()->find($inputItem['id']);
@@ -566,18 +567,46 @@ class OrderController extends Controller
                 $newSubtotal = $order->items->sum('total_price');
 
                 $newDiscountAmount = 0;
-                if ($order->manual_discount_type === 'percentage') {
-                    $calc = $newSubtotal * ($order->manual_discount_value / 100);
-                    if ($order->discount_id) {
-                        $discountModel = \App\Models\Discount::find($order->discount_id);
-                        if ($discountModel && $discountModel->max_discount && $calc > $discountModel->max_discount) {
-                            $calc = $discountModel->max_discount;
+
+                if ($order->discount_id) {
+                    $discountModel = \App\Models\Discount::find($order->discount_id);
+                    // VALIDASI THE RULE: Jika subtotal baru kurang dari minimum purchase master diskon
+                    if ($discountModel && $newSubtotal < $discountModel->min_purchase) {
+
+                        $warningMessage = 'Refund berhasil diproses. Peringatan: Diskon otomatis dibatalkan karena total belanja kini di bawah batas minimum (Rp ' . number_format($discountModel->min_purchase, 0, ',', '.') . ').';
+
+                        // Cabut atribut diskon paksa
+                        $order->update([
+                            'discount_id' => null,
+                            'manual_discount_type' => null,
+                            'manual_discount_value' => null,
+                            'discount_amount' => 0,
+                        ]);
+                        // Refresh agar variabel order state mengikut updatetan hapus diskon
+                        $order->refresh();
+
+                    } else {
+                        // Jika masih memenuhi syarat, hitung ulang (misal kalau bentuknya persen %)
+                        if ($order->manual_discount_type === 'percentage') {
+                            $calc = $newSubtotal * ($order->manual_discount_value / 100);
+                            if ($discountModel && $discountModel->max_discount && $calc > $discountModel->max_discount) {
+                                $calc = $discountModel->max_discount;
+                            }
+                            $newDiscountAmount = (int) $calc;
+                        } else {
+                            $oldDiscount = $order->discount_amount ?? 0;
+                            $newDiscountAmount = (int) min($oldDiscount, $newSubtotal);
                         }
                     }
-                    $newDiscountAmount = (int) $calc;
                 } else {
-                    $oldDiscount = $order->discount_amount ?? 0;
-                    $newDiscountAmount = (int) min($oldDiscount, $newSubtotal);
+                    // Jika manual diskon tanpa mengikat master (tidak ada minimal)
+                    if ($order->manual_discount_type === 'percentage') {
+                        $calc = $newSubtotal * ($order->manual_discount_value / 100);
+                        $newDiscountAmount = (int) $calc;
+                    } else {
+                        $oldDiscount = $order->discount_amount ?? 0;
+                        $newDiscountAmount = (int) min($oldDiscount, $newSubtotal);
+                    }
                 }
 
                 $amountAfterDiscount = max(0, $newSubtotal - $newDiscountAmount);
@@ -614,7 +643,8 @@ class OrderController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Void processed',
+                // Kembalikan custom warning jika ada, jika aman tampilkan default message
+                'message' => $warningMessage ?? 'Void processed',
                 'order' => $order->fresh()->load('items.product', 'table', 'user'),
             ]);
         } catch (\Throwable $e) {
