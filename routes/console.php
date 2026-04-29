@@ -4,6 +4,7 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Models\Discount;
 use App\Models\ShiftKaryawan;
 use App\Models\Payment;
@@ -12,44 +13,90 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+/*
+|--------------------------------------------------------------------------
+| DAILY MAINTENANCE SCHEDULER
+|--------------------------------------------------------------------------
+| Jam 00:05 WIB
+| - Hapus jadwal shift hari ini
+| - Hapus promo expired
+| - Auto close shift aktif dari hari sebelumnya
+*/
+
 Schedule::call(function () {
 
-    $now = now();
+    $now   = now();
     $today = $now->toDateString();
 
-    // Reset jadwal hari ini
-    DB::table('shift_schedules')
-        ->whereDate('date', $today)
-        ->delete();
+    DB::beginTransaction();
 
-    // Hapus promo expired
-    Discount::whereDate('end_date', '<', $today)->delete();
+    try {
 
-    // Cari shift aktif dari hari sebelumnya
-    $activeShifts = ShiftKaryawan::where('status', 'active')
-        ->whereDate('started_at', '<', $today)
-        ->get();
+        /*
+        |--------------------------------------------------------------------------
+        | 1. Reset Jadwal Hari Ini
+        |--------------------------------------------------------------------------
+        */
 
-    foreach ($activeShifts as $shift) {
+        DB::table('shift_schedules')
+            ->whereDate('date', $today)
+            ->delete();
 
-        $cashSales = Payment::where('method', 'cash')
-            ->whereHas('order', function ($query) use ($shift, $now) {
-                $query->where('user_id', $shift->user_id)
-                    ->where('outlet_id', $shift->outlet_id)
-                    ->where('status', 'paid')
-                    ->whereBetween('created_at', [$shift->started_at, $now]);
-            })
-            ->sum(DB::raw('amount_paid - change_amount'));
+        /*
+        |--------------------------------------------------------------------------
+        | 2. Hapus Promo Expired
+        |--------------------------------------------------------------------------
+        */
 
-        $systemBalance = $shift->opening_balance + $cashSales;
+        Discount::whereDate('end_date', '<', $today)->delete();
 
-        $shift->update([
-            'ended_at' => $now,
-            'status' => 'closed',
-            'closing_balance_system' => $systemBalance,
-            'closing_balance_actual' => null,
-            'difference' => null,
-            'notes' => 'Auto-closed by system at midnight.',
+        /*
+        |--------------------------------------------------------------------------
+        | 3. Auto Close Shift Lama Yang Masih Aktif
+        |--------------------------------------------------------------------------
+        */
+
+        $activeShifts = ShiftKaryawan::where('status', 'active')
+            ->whereDate('started_at', '<', $today)
+            ->get();
+
+        foreach ($activeShifts as $shift) {
+
+            $cashSales = Payment::where('method', 'cash')
+                ->whereHas('order', function ($query) use ($shift, $now) {
+                    $query->where('user_id', $shift->user_id)
+                        ->where('outlet_id', $shift->outlet_id)
+                        ->where('status', 'paid')
+                        ->whereBetween('created_at', [$shift->started_at, $now]);
+                })
+                ->sum(DB::raw('COALESCE(amount_paid,0) - COALESCE(change_amount,0)'));
+
+            $systemBalance = $shift->opening_balance + $cashSales;
+
+            $shift->update([
+                'ended_at'               => $now,
+                'status'                 => 'closed',
+                'closing_balance_system' => $systemBalance,
+                'closing_balance_actual' => null,
+                'difference'             => null,
+                'notes'                  => 'Auto-closed by system at midnight.',
+            ]);
+
+            Log::info('Shift auto closed', [
+                'shift_id' => $shift->id,
+                'user_id'  => $shift->user_id,
+                'outlet_id'=> $shift->outlet_id,
+            ]);
+        }
+
+        DB::commit();
+
+    } catch (\Throwable $e) {
+
+        DB::rollBack();
+
+        Log::error('Daily maintenance failed', [
+            'message' => $e->getMessage(),
         ]);
     }
 
