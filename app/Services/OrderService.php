@@ -203,6 +203,12 @@ class OrderService
             $order = Order::create([
                 'outlet_id' => $validated['outlet_id'],
                 'table_id' => $validated['table_id'],
+                'user_id' => null, // karena ini public order
+                'shift_id' => null,
+                'invoice_number' => null, // generate nanti setelah semua proses selesai
+                'subtotal_price' => $validated['subtotal_price'] ?? 0,
+                'discount_amount' => $validated['discount_amount'] ?? 0,
+                'total_price' => $validated['total_price'] ?? 0,
                 'customer_name' => $validated['customer_name'] ?? null,
                 'status' => 'pending',
                 'manual_discount_type' => $validated['manual_discount_type'] ?? null,
