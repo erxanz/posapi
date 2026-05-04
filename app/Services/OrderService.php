@@ -231,11 +231,19 @@ class OrderService
             // Generate dan update invoice number
             $order->update(['invoice_number' => 'INV-' . strtoupper(uniqid())]);
 
+            // TAMBAHKAN LOGIKA MIDTRANS DISINI
+            $paymentUrl = null;
+            if (isset($validated['payment_method']) && $validated['payment_method'] === 'midtrans') {
+                // Pastikan kamu punya fungsi generateMidtransUrl di Service ini atau panggil library-nya
+                $paymentUrl = $this->generateMidtransUrl($order);
+            }
+
             DB::commit();
 
             return [
                 'message' => 'Public order berhasil',
                 'order' => $order->load('items.product'),
+                'payment_url' => $paymentUrl,
             ];
 
         } catch (\Throwable $e) {
