@@ -13,7 +13,11 @@ use Midtrans\Snap;
 
 class OrderController extends Controller
 {
-    public function __construct(private OrderService $orderService) {}
+    // public function __construct(private OrderService $orderService) {}
+    public function __construct()
+    {
+        $this->middleware('auth:sanctum')->except(['publicOrder', 'midtransCallback']);
+    }
 
     /**
      * List order
