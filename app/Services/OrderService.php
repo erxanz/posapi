@@ -198,32 +198,33 @@ class OrderService
         DB::beginTransaction();
 
         try {
-            // Buat record order utama
+            // PERBAIKAN: Ubah semua $data menjadi $validated
             $order = Order::create([
-                'outlet_id' => $data['outlet_id'],
-                'table_id' => $data['table_id'],
-                'customer_name' => $data['customer_name'] ?? null,
+                'outlet_id' => $validated['outlet_id'],
+                'table_id' => $validated['table_id'],
+                'customer_name' => $validated['customer_name'] ?? null,
                 'status' => 'pending',
-                'manual_discount_type' => $data['manual_discount_type'] ?? null,
-                'manual_discount_value' => $data['manual_discount_value'] ?? null,
-                'discount_id' => $data['discount_id'] ?? null,
-                'discount_type' => $data['discount_type'] ?? null,
-                'discount_value' => $data['discount_value'] ?? null,
-                'tax_id' => $data['tax_id'] ?? null,
-                'tax_type' => $data['tax_type'] ?? null,
-                'tax_value' => $data['tax_value'] ?? null,
-                'tax_amount' => $data['tax_amount'] ?? null,
-                'tax_breakdown' => isset($data['tax_breakdown']) ? json_encode($data['tax_breakdown']) : null,
+                'manual_discount_type' => $validated['manual_discount_type'] ?? null,
+                'manual_discount_value' => $validated['manual_discount_value'] ?? null,
+                'discount_id' => $validated['discount_id'] ?? null,
+                'discount_type' => $validated['discount_type'] ?? null,
+                'discount_value' => $validated['discount_value'] ?? null,
+                'tax_id' => $validated['tax_id'] ?? null,
+                'tax_type' => $validated['tax_type'] ?? null,
+                'tax_value' => $validated['tax_value'] ?? null,
+                'tax_amount' => $validated['tax_amount'] ?? null,
+                'tax_breakdown' => isset($validated['tax_breakdown']) ? json_encode($validated['tax_breakdown']) : null,
 
-                // === TAMBAHKAN BARIS INI ===
-                'invoice_number' => $data['invoice_number'],
-
+                // PERBAIKAN: Hapus baris ini, atau ganti nilainya jika kolom ini tidak nullable di DB.
+                // Karena di baris bawah kamu sudah meng-generate invoice_number pakai uniqid()
+                // 'invoice_number' => $validated['invoice_number'] ?? null,
             ]);
 
             $this->createOrderItems($order, $validated['items'], $outlet, false);
             $this->handleAdjustments($order, $validated);
             $order->recalculateTotals($validated);
 
+            // Invoice number di-generate dan di-update di sini
             $order->update(['invoice_number' => 'INV-' . strtoupper(uniqid())]);
 
             DB::commit();
