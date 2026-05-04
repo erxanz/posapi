@@ -198,11 +198,26 @@ class OrderService
         DB::beginTransaction();
 
         try {
+            // Buat record order utama
             $order = Order::create([
-                'outlet_id' => $validated['outlet_id'],
-                'table_id' => $table->id,
-                'customer_name' => $validated['customer_name'],
-                'status' => Order::STATUS_PENDING,
+                'outlet_id' => $data['outlet_id'],
+                'table_id' => $data['table_id'],
+                'customer_name' => $data['customer_name'] ?? null,
+                'status' => 'pending',
+                'manual_discount_type' => $data['manual_discount_type'] ?? null,
+                'manual_discount_value' => $data['manual_discount_value'] ?? null,
+                'discount_id' => $data['discount_id'] ?? null,
+                'discount_type' => $data['discount_type'] ?? null,
+                'discount_value' => $data['discount_value'] ?? null,
+                'tax_id' => $data['tax_id'] ?? null,
+                'tax_type' => $data['tax_type'] ?? null,
+                'tax_value' => $data['tax_value'] ?? null,
+                'tax_amount' => $data['tax_amount'] ?? null,
+                'tax_breakdown' => isset($data['tax_breakdown']) ? json_encode($data['tax_breakdown']) : null,
+
+                // === TAMBAHKAN BARIS INI ===
+                'invoice_number' => $data['invoice_number'],
+
             ]);
 
             $this->createOrderItems($order, $validated['items'], $outlet, false);
