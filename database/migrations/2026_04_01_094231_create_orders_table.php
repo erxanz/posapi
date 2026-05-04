@@ -21,7 +21,7 @@ return new class extends Migration
 
             $table->string('customer_name')->nullable();
 
-            $table->string('invoice_number')->unique();
+            $table->string('invoice_number')->unique()->nullable();
 
             // PRICE
             $table->integer('subtotal_price')->default(0);
