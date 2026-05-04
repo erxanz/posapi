@@ -27,6 +27,14 @@ Route::prefix('v1')->group(function () {
     | PUBLIC ROUTES
     |--------------------------------------------------------------------------
     */
+    // ================= PUBLIC QR =================
+    Route::prefix('public')->group(function () {
+        Route::get('/menu/{token}', [ProductController::class, 'publicMenu'])
+            ->name('public.menu');
+
+        Route::post('/order', [OrderController::class, 'publicOrder'])
+            ->name('public.order');
+    });
 
     // ================= AUTH =================
     Route::post('/register', [AuthController::class, 'register'])->name('register');
@@ -47,15 +55,6 @@ Route::prefix('v1')->group(function () {
     // ================= MIDTRANS CALLBACK =================
     Route::post('/midtrans/callback', [OrderController::class, 'midtransCallback'])
         ->name('midtrans.callback');
-
-    // ================= PUBLIC QR =================
-    Route::prefix('public')->group(function () {
-        Route::get('/menu/{token}', [ProductController::class, 'publicMenu'])
-            ->name('public.menu');
-
-        Route::post('/order', [OrderController::class, 'publicOrder'])
-            ->name('public.order');
-    });
 
     /*
     |--------------------------------------------------------------------------
