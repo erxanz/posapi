@@ -314,7 +314,7 @@ class OrderService
 
     private function createOrderItems(Order $order, array $items, Outlet $outlet, bool $checkStock = true): void
     {
-        $user = $this->currentUser();
+        $user = $checkStock ? $this->currentUser() : null;
 
         foreach ($items as $item) {
             $product = $outlet->products()->where('products.id', $item['product_id'])->wherePivot('is_active', true)->lockForUpdate()->firstOrFail();
@@ -353,7 +353,7 @@ class OrderService
                 StockHistory::create([
                     'outlet_id' => $outlet->id,
                     'product_id' => $product->id,
-                    'user_id' => $user->id,
+                    'user_id' => $user?->id,
                     'type' => 'sale',
                     'quantity' => -$qty,
                     'final_stock' => $newStock,
