@@ -182,6 +182,9 @@ class OrderController extends Controller
             'outlet_id' => 'required|exists:outlets,id',
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
+            // Tambahkan validasi payment_method biar tertangkap
+            'payment_method' => 'required|string|max:50',
+
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
             'discount_id' => 'nullable|exists:discounts,id',
@@ -202,9 +205,103 @@ class OrderController extends Controller
         $validated = $this->normalizeLegacyAdjustmentPayload($validated);
 
         try {
+            // 1. Buat pesanan mentahnya dulu
             $result = $this->orderService->createPublicOrder($validated);
 
-            return response()->json($result, 201);
+            // Ambil object order dari result (sesuaikan jika orderService return array atau object)
+            $order = is_array($result) ? ($result['order'] ?? null) : $result;
+            if (!$order && is_array($result) && isset($result['id'])) {
+                $order = Order::find($result['id']);
+            }
+
+            // Reload order biar datanya fresh beserta relasinya
+            $order = Order::with('items.product', 'table')->findOrFail($order->id);
+
+            // 2. Cek apakah user milih bayar online (Midtrans / Qris)
+            $methodStr = strtolower($request->payment_method);
+            if (in_array($methodStr, ['midtrans', 'qris', 'card'])) {
+
+                \Midtrans\Config::$serverKey = env('MIDTRANS_SERVER_KEY');
+                \Midtrans\Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
+                \Midtrans\Config::$isSanitized = true;
+                \Midtrans\Config::$is3ds = true;
+
+                $itemDetails = [];
+                $calculatedGrossAmount = 0;
+
+                foreach ($order->items as $item) {
+                    $itemPrice = (int) $item->price;
+                    $itemQty = (int) $item->qty;
+
+                    $itemDetails[] = [
+                        'id' => (string) $item->product_id,
+                        'name' => substr($item->product->name, 0, 50),
+                        'price' => $itemPrice,
+                        'quantity' => $itemQty,
+                    ];
+                    $calculatedGrossAmount += ($itemPrice * $itemQty);
+                }
+
+                // Kalkulasi Diskon untuk Midtrans
+                $discountAmount = (int) ($order->discount_amount ?? 0);
+                if ($discountAmount > 0) {
+                    $itemDetails[] = [
+                        'id' => 'DISCOUNT',
+                        'name' => 'Discount',
+                        'price' => -$discountAmount,
+                        'quantity' => 1,
+                    ];
+                    $calculatedGrossAmount -= $discountAmount;
+                }
+
+                // Kalkulasi Pajak untuk Midtrans
+                $taxAmount = (int) ($order->tax_amount ?? 0);
+                if ($taxAmount > 0) {
+                    $itemDetails[] = [
+                        'id' => 'TAX',
+                        'name' => 'Tax',
+                        'price' => $taxAmount,
+                        'quantity' => 1,
+                    ];
+                    $calculatedGrossAmount += $taxAmount;
+                }
+
+                $params = [
+                    'transaction_details' => [
+                        'order_id' => $order->invoice_number,
+                        'gross_amount' => $calculatedGrossAmount,
+                    ],
+                    'customer_details' => [
+                        'first_name' => $order->customer_name ?: 'Customer POS',
+                    ],
+                    'item_details' => $itemDetails,
+                ];
+
+                if ($methodStr === 'qris' || $methodStr === 'midtrans') {
+                    $params['enabled_payments'] = ['gopay', 'other_qris'];
+                } elseif ($methodStr === 'card') {
+                    $params['enabled_payments'] = ['credit_card'];
+                }
+
+                $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
+
+                // Return format yang persis sama dengan yang ditunggu cart.vue
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Order berhasil dibuat',
+                    'data' => [
+                        'order' => $order,
+                        'redirect_url' => $paymentUrl
+                    ]
+                ], 201);
+            }
+
+            // 3. Jika bayar Cash
+            return response()->json([
+                'success' => true,
+                'data' => $order
+            ], 201);
+
         } catch (\Throwable $e) {
             return response()->json([
                 'message' => $e->getMessage(),
