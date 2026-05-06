@@ -243,7 +243,7 @@ class OrderService
             return [
                 'message' => 'Public order berhasil',
                 'order' => $order->load('items.product'),
-                'payment_url' => $paymentUrl,
+                'payment_url' => null,
             ];
 
         } catch (\Throwable $e) {
