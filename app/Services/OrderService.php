@@ -235,7 +235,6 @@ class OrderService
             $paymentUrl = null;
             if (isset($validated['payment_method']) && $validated['payment_method'] === 'midtrans') {
                 // Pastikan kamu punya fungsi generateMidtransUrl di Service ini atau panggil library-nya
-                $paymentUrl = $this->generateMidtransUrl($order);
             }
 
             DB::commit();
