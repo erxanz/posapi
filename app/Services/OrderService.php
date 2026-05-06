@@ -198,14 +198,12 @@ class OrderService
         DB::beginTransaction();
 
         try {
-            // 1. Semua pakai $validated
-            // 2. Value yang berhubungan dengan angka/uang di-set ?? 0
             $order = Order::create([
                 'outlet_id' => $validated['outlet_id'],
                 'table_id' => $validated['table_id'],
-                'user_id' => null, // karena ini public order
+                'user_id' => null,
                 'shift_id' => null,
-                'invoice_number' => null, // generate nanti setelah semua proses selesai
+                'invoice_number' => null, // Placeholder dulu
                 'subtotal_price' => $validated['subtotal_price'] ?? 0,
                 'discount_amount' => $validated['discount_amount'] ?? 0,
                 'total_price' => $validated['total_price'] ?? 0,
@@ -221,21 +219,23 @@ class OrderService
                 'tax_value' => $validated['tax_value'] ?? 0,
                 'tax_amount' => $validated['tax_amount'] ?? 0,
                 'tax_breakdown' => isset($validated['tax_breakdown']) ? json_encode($validated['tax_breakdown']) : null,
-                // invoice_number dihapus dari sini karena udah di-generate di bawah
             ]);
 
             $this->createOrderItems($order, $validated['items'], $outlet, false);
             $this->handleAdjustments($order, $validated);
             $order->recalculateTotals($validated);
 
-            $date = now()->format('Ymd'); // e.g., 20260506
-            $sequence = str_pad($number, 4, '0', STR_PAD_LEFT);
-            $order->update(['invoice_number' => "INV-{$date}-{$sequence}"]);
+            // --- PERBAIKAN DI SINI ---
+            // Panggil fungsi yang menggunakan lockForUpdate tadi
+            $invoiceNumber = $this->generateInvoiceNumber($outlet->id);
 
-            // TAMBAHKAN LOGIKA MIDTRANS DISINI
+            // Update order dengan invoice number yang asli
+            $order->update(['invoice_number' => $invoiceNumber]);
+            // -------------------------
+
             $paymentUrl = null;
             if (isset($validated['payment_method']) && $validated['payment_method'] === 'midtrans') {
-                // Pastikan kamu punya fungsi generateMidtransUrl di Service ini atau panggil library-nya
+                // Logika Midtrans Anda...
             }
 
             DB::commit();
@@ -243,7 +243,7 @@ class OrderService
             return [
                 'message' => 'Public order berhasil',
                 'order' => $order->load('items.product'),
-                'payment_url' => null,
+                'payment_url' => $paymentUrl,
             ];
 
         } catch (\Throwable $e) {
