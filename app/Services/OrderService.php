@@ -228,9 +228,13 @@ class OrderService
             $this->handleAdjustments($order, $validated);
             $order->recalculateTotals($validated);
 
-            // Generate dan update invoice number
+            // Generate and update invoice number
             $sequence = str_pad($number, 4, '0', STR_PAD_LEFT);
-            $order->update(['invoice_number' => 'INV-' . '-{$date}-{$sequence}']);
+
+            // Use double quotes so the variables are parsed correctly
+            $order->update([
+                'invoice_number' => "INV-{$date}-{$sequence}"
+            ]);
 
             // TAMBAHKAN LOGIKA MIDTRANS DISINI
             $paymentUrl = null;
