@@ -28,7 +28,6 @@ Route::prefix('v1')->group(function () {
     |--------------------------------------------------------------------------
     */
     // ================= PUBLIC QR =================
-// ================= PUBLIC QR =================
     Route::prefix('public')->group(function () {
         Route::get('/menu/{token}', [ProductController::class, 'publicMenu'])->name('public.menu');
         Route::post('/order', [OrderController::class, 'publicOrder'])->name('public.order');
@@ -43,6 +42,8 @@ Route::prefix('v1')->group(function () {
             // Ambil promo global/publik yang sedang aktif
             return response()->json(\App\Models\Discount::where('is_active', true)->get());
         });
+
+        Route::get('/order/{id}', [OrderController::class, 'show'])->name('public.order.show');
     });
 
     // ================= AUTH =================
