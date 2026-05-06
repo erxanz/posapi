@@ -28,12 +28,21 @@ Route::prefix('v1')->group(function () {
     |--------------------------------------------------------------------------
     */
     // ================= PUBLIC QR =================
+// ================= PUBLIC QR =================
     Route::prefix('public')->group(function () {
-        Route::get('/menu/{token}', [ProductController::class, 'publicMenu'])
-            ->name('public.menu');
+        Route::get('/menu/{token}', [ProductController::class, 'publicMenu'])->name('public.menu');
+        Route::post('/order', [OrderController::class, 'publicOrder'])->name('public.order');
 
-        Route::post('/order', [OrderController::class, 'publicOrder'])
-            ->name('public.order');
+        // TAMBAHAN BARU: Ambil pajak dan diskon untuk halaman QR
+        Route::get('/taxes', function() {
+            // Ambil semua pajak yang aktif
+            return response()->json(\App\Models\Tax::where('active', true)->get());
+        });
+
+        Route::get('/discounts', function() {
+            // Ambil promo global/publik yang sedang aktif
+            return response()->json(\App\Models\Discount::where('is_active', true)->get());
+        });
     });
 
     // ================= AUTH =================
