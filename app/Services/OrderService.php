@@ -229,7 +229,8 @@ class OrderService
             $order->recalculateTotals($validated);
 
             // Generate dan update invoice number
-            $order->update(['invoice_number' => 'INV-' . strtoupper(uniqid())]);
+            $sequence = str_pad($number, 4, '0', STR_PAD_LEFT);
+            $order->update(['invoice_number' => 'INV-' . '-{$date}-{$sequence}']);
 
             // TAMBAHKAN LOGIKA MIDTRANS DISINI
             $paymentUrl = null;
