@@ -14,8 +14,27 @@ use Midtrans\Snap;
 class OrderController extends Controller
 {
     public function __construct(private OrderService $orderService) {
-        $this->middleware('auth:sanctum')->except(['publicOrder', 'midtransCallback']);
+        $this->middleware('auth:sanctum')->except(['publicOrder', 'midtransCallback', 'publicShow']);
     }
+
+    /**
+     * Detail order untuk public (QR POS)
+     */
+    public function publicShow($id)
+    {
+        $order = Order::with(['items.product', 'table'])->findOrFail($id);
+
+        // Pastikan breakdown pajak aman dibaca sebagai array oleh Vue
+        if (is_string($order->tax_breakdown)) {
+            $order->tax_breakdown = json_decode($order->tax_breakdown, true);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $order
+        ]);
+    }
+
     /**
      * List order
      */

@@ -43,7 +43,7 @@ Route::prefix('v1')->group(function () {
             return response()->json(\App\Models\Discount::where('is_active', true)->get());
         });
 
-        Route::get('/order/{id}', [OrderController::class, 'show'])->name('public.order.show');
+        Route::get('/order/{id}', [OrderController::class, 'publicShow'])->name('public.order.show');
     });
 
     // ================= AUTH =================
