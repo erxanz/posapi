@@ -165,106 +165,93 @@ class Order extends Model
     | Pajak sekarang dihitung dari subtotal setelah diskon
     |--------------------------------------------------------------------------
     */
-    public function recalculateTotals(array $overrides = []): void
+ public function recalculateTotals(array $overrides = [])
     {
-        $this->loadMissing('items');
+        /*
+        |--------------------------------------------------------------------------
+        | 1. Dapatkan semua item terkait
+        |--------------------------------------------------------------------------
+        */
+        $items = clone collect($this->items);
 
         /*
         |--------------------------------------------------------------------------
-        | 1. Subtotal
+        | 2. Hitung Subtotal 
         |--------------------------------------------------------------------------
         */
-        $subtotal = (int) $this->items->sum('total_price');
-
-        /*
-        |--------------------------------------------------------------------------
-        | 2. Ambil Diskon
-        |--------------------------------------------------------------------------
-        */
-        $manualDiscountType = $overrides['manual_discount_type']
-            ?? $this->manual_discount_type;
-
-        $manualDiscountValue = (int) (
-            $overrides['manual_discount_value']
-            ?? $this->manual_discount_value
-            ?? 0
-        );
-
-        $discountId = $overrides['discount_id']
-            ?? $this->discount_id;
-
-        /*
-        |--------------------------------------------------------------------------
-        | Jika pakai discount master
-        |--------------------------------------------------------------------------
-        */
-        if (!$manualDiscountType && $discountId) {
-            $discount = Discount::query()
-                ->whereKey($discountId)
-                ->where('is_active', true)
-                ->first();
-
-            if ($discount && $subtotal >= (int) $discount->min_purchase) {
-                $manualDiscountType  = $discount->type;
-                $manualDiscountValue = (int) $discount->value;
-            }
+        $subtotal = 0;
+        foreach ($items as $item) {
+            $subtotal += max(0, (int) $item->total_price);
         }
 
         /*
         |--------------------------------------------------------------------------
-        | 3. Hitung Diskon
+        | 3. Set up Override Values
         |--------------------------------------------------------------------------
         */
-        $discountAmount = $this->computeAdjustmentAmount(
-            $manualDiscountType,
-            $manualDiscountValue,
-            $subtotal
-        );
+        $discountId = array_key_exists('discount_id', $overrides) ? $overrides['discount_id'] : $this->discount_id;
+        $manualDiscountType = array_key_exists('manual_discount_type', $overrides) ? $overrides['manual_discount_type'] : $this->manual_discount_type;
+        $manualDiscountValue = array_key_exists('manual_discount_value', $overrides) ? $overrides['manual_discount_value'] : $this->manual_discount_value;
+        $taxId = array_key_exists('tax_id', $overrides) ? $overrides['tax_id'] : $this->tax_id;
 
         /*
         |--------------------------------------------------------------------------
-        | 4. Sisa setelah diskon
+        | 4. Hitung Diskon
         |--------------------------------------------------------------------------
         */
+        $discountAmount = 0;
+        $discount = null;
+
+        if ($discountId) {
+            $discount = \App\Models\Discount::find($discountId);
+        }
+
+        if ($discount) {
+            if ($discount->type === 'percentage') {
+                $discountAmount = (int) round($subtotal * ((float) $discount->value / 100));
+                if ($discount->max_discount > 0 && $discountAmount > $discount->max_discount) {
+                    $discountAmount = (int) $discount->max_discount;
+                }
+            } else {
+                $discountAmount = (int) $discount->value;
+            }
+        } elseif ($manualDiscountType && $manualDiscountValue > 0) {
+            if ($manualDiscountType === 'percentage') {
+                $discountAmount = (int) round($subtotal * ((float) $manualDiscountValue / 100));
+            } else {
+                $discountAmount = (int) $manualDiscountValue;
+            }
+        } elseif (array_key_exists('discount_amount', $overrides)) {
+            $discountAmount = max(0, (int) $overrides['discount_amount']);
+        }
+
+        $discountAmount = min($subtotal, $discountAmount);
         $afterDiscount = max(0, $subtotal - $discountAmount);
 
         /*
         |--------------------------------------------------------------------------
-        | 5. Ambil Pajak
+        | 5 & 6. Setup Info Pajak & Hitung Pajak (STACKING / BERTINGKAT)
         |--------------------------------------------------------------------------
         */
-        $taxId = $overrides['tax_id'] ?? $this->tax_id;
+        $tax = null;
+        if ($taxId) {
+            $tax = \App\Models\Tax::find($taxId);
+        }
 
-        $tax = $taxId
-            ? Tax::query()
-                ->where('id', $taxId)
-                ->where('active', true)
-                ->first()
-            : null;
-
-        /*
-        |--------------------------------------------------------------------------
-        | 6. Hitung Pajak
-        |--------------------------------------------------------------------------
-        */
         $taxAmount = 0;
         $newTaxBreakdown = null;
 
         if ($tax) {
-
             if ($tax->type === 'percentage') {
                 $taxAmount = (int) round($afterDiscount * ((float) $tax->rate / 100));
             } else {
                 $taxAmount = (int) $tax->rate;
             }
-
         } elseif (array_key_exists('tax_amount', $overrides)) {
-
             $taxAmount = max(0, (int) $overrides['tax_amount']);
             if (array_key_exists('tax_breakdown', $overrides)) {
                 $newTaxBreakdown = $overrides['tax_breakdown'];
             }
-
         } elseif (
             array_key_exists('tax_breakdown', $overrides)
             && is_array($overrides['tax_breakdown'])
@@ -278,30 +265,38 @@ class Order extends Model
             );
         } else {
             // ==============================================================
-            // FIX: KALAU KASIR EDIT (TANPA OVERRIDES), HITUNG ULANG DARI BREAKDOWN LAMA
+            // LOGIKA PAJAK BERTINGKAT (STACKING) UNTUK EDIT ORDER KASIR
             // ==============================================================
             $existingBreakdown = $this->tax_breakdown;
 
             if (!empty($existingBreakdown) && is_array($existingBreakdown)) {
                 $newTaxBreakdown = [];
+                
+                // BASE DINAMIS: Mulai dari harga setelah diskon (contoh: 81.000)
+                $taxBase = $afterDiscount; 
+
                 foreach ($existingBreakdown as $tb) {
                     $rate = (float) ($tb['rate'] ?? 0);
                     $type = $tb['type'] ?? 'percentage';
                     $amt = 0;
 
-                    // Hitung nominal pajak baru berdasarkan subtotal terbaru
                     if ($type === 'percentage') {
-                        $amt = (int) round($afterDiscount * ($rate / 100));
+                        // Pajak dihitung dari TaxBase yang terus menumpuk
+                        $amt = (int) round($taxBase * ($rate / 100));
                     } else {
                         $amt = (int) $rate;
                     }
 
                     $tb['amount'] = $amt;
                     $newTaxBreakdown[] = $tb;
-                    $taxAmount += $amt; // Totalkan ke tax_amount
+                    
+                    $taxAmount += $amt; 
+                    
+                    // PENTING: Tambahkan pajak yang baru dihitung ke TaxBase
+                    // agar pajak berikutnya dihitung dari (Harga + Pajak Sebelumnya)
+                    $taxBase += $amt; 
                 }
             } elseif ($this->tax_amount > 0 && $this->subtotal_price > 0) {
-                // Logic proporsi kalau cuma ada nominal tax_amount tanpa breakdown
                 $oldAmountAfterDiscount = max(0, $this->subtotal_price - $this->discount_amount);
                 if ($oldAmountAfterDiscount > 0) {
                     $rate = $this->tax_amount / $oldAmountAfterDiscount;
@@ -319,7 +314,7 @@ class Order extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | 8. Save
+        | 8. Simpan ke Database
         |--------------------------------------------------------------------------
         */
         $updates = [
@@ -338,7 +333,7 @@ class Order extends Model
             'total_price'          => $grandTotal,
         ];
 
-        // Simpan JSON breakdown pajak yang baru jika ada perhitungan ulang
+        // Update JSON rincian pajak ke versi hitungan baru
         if ($newTaxBreakdown !== null) {
             $updates['tax_breakdown'] = $newTaxBreakdown;
         }
