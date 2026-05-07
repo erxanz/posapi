@@ -47,7 +47,6 @@ class ProductController extends Controller
                     'products.image',
                 ])
                 ->wherePivot('is_active', true)
-                ->wherePivot('stock', '>', 0)
                 ->with(['category:id,name'])
                 ->orderBy('name')
                 ->get()
