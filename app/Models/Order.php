@@ -246,39 +246,68 @@ class Order extends Model
         |--------------------------------------------------------------------------
         | 6. Hitung Pajak
         |--------------------------------------------------------------------------
-        | Persentase = dari nilai setelah diskon
-        |--------------------------------------------------------------------------
         */
         $taxAmount = 0;
+        $newTaxBreakdown = null;
 
         if ($tax) {
 
             if ($tax->type === 'percentage') {
-
-                $taxAmount = (int) round(
-                    $afterDiscount * ((float) $tax->rate / 100)
-                );
-
+                $taxAmount = (int) round($afterDiscount * ((float) $tax->rate / 100));
             } else {
-
                 $taxAmount = (int) $tax->rate;
             }
 
         } elseif (array_key_exists('tax_amount', $overrides)) {
 
             $taxAmount = max(0, (int) $overrides['tax_amount']);
+            if (array_key_exists('tax_breakdown', $overrides)) {
+                $newTaxBreakdown = $overrides['tax_breakdown'];
+            }
 
         } elseif (
             array_key_exists('tax_breakdown', $overrides)
             && is_array($overrides['tax_breakdown'])
         ) {
-
+            $newTaxBreakdown = $overrides['tax_breakdown'];
             $taxAmount = max(
                 0,
-                (int) collect($overrides['tax_breakdown'])->sum(
+                (int) collect($newTaxBreakdown)->sum(
                     fn($item) => (int) data_get($item, 'amount', 0)
                 )
             );
+        } else {
+            // ==============================================================
+            // FIX: KALAU KASIR EDIT (TANPA OVERRIDES), HITUNG ULANG DARI BREAKDOWN LAMA
+            // ==============================================================
+            $existingBreakdown = $this->tax_breakdown;
+
+            if (!empty($existingBreakdown) && is_array($existingBreakdown)) {
+                $newTaxBreakdown = [];
+                foreach ($existingBreakdown as $tb) {
+                    $rate = (float) ($tb['rate'] ?? 0);
+                    $type = $tb['type'] ?? 'percentage';
+                    $amt = 0;
+
+                    // Hitung nominal pajak baru berdasarkan subtotal terbaru
+                    if ($type === 'percentage') {
+                        $amt = (int) round($afterDiscount * ($rate / 100));
+                    } else {
+                        $amt = (int) $rate;
+                    }
+
+                    $tb['amount'] = $amt;
+                    $newTaxBreakdown[] = $tb;
+                    $taxAmount += $amt; // Totalkan ke tax_amount
+                }
+            } elseif ($this->tax_amount > 0 && $this->subtotal_price > 0) {
+                // Logic proporsi kalau cuma ada nominal tax_amount tanpa breakdown
+                $oldAmountAfterDiscount = max(0, $this->subtotal_price - $this->discount_amount);
+                if ($oldAmountAfterDiscount > 0) {
+                    $rate = $this->tax_amount / $oldAmountAfterDiscount;
+                    $taxAmount = (int) round($afterDiscount * $rate);
+                }
+            }
         }
 
         /*
@@ -293,7 +322,7 @@ class Order extends Model
         | 8. Save
         |--------------------------------------------------------------------------
         */
-        $this->update([
+        $updates = [
             'subtotal_price'        => $subtotal,
 
             'discount_id'          => $discountId,
@@ -307,7 +336,14 @@ class Order extends Model
             'tax_amount'           => $taxAmount,
 
             'total_price'          => $grandTotal,
-        ]);
+        ];
+
+        // Simpan JSON breakdown pajak yang baru jika ada perhitungan ulang
+        if ($newTaxBreakdown !== null) {
+            $updates['tax_breakdown'] = $newTaxBreakdown;
+        }
+
+        $this->update($updates);
     }
 
     /*
