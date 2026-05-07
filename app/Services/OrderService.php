@@ -301,7 +301,8 @@ class OrderService
                 $this->storeHistoryTransaction($order);
                 if ($order->table_id) {
                     $order->table->update(['status' => 'available']);
-                }
+                    }
+                event(new \App\Events\PaymentPaid($order->load('items.product', 'table')));
             }
 
             DB::commit();
