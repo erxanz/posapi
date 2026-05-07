@@ -415,10 +415,12 @@ class OrderService
 
                 $discountValue = (int) $discount->value;
                 $eligibleTotal = 0;
+                $eligibleQty = 0;
 
                 // PERBAIKAN: Hitung total khusus item yang kena diskon (Multiple Products atau Categories)
                 if ($discount->scope === 'products' && !empty($discount->product_ids)) {
                     $eligibleTotal = $order->items->whereIn('product_id', $discount->product_ids)->sum('total_price');
+                    $eligibleQty = $itemsInScope->sum('qty');
                 } elseif ($discount->scope === 'categories' && !empty($discount->category_ids)) {
                     $eligibleTotal = $order->items->filter(function ($item) use ($discount) {
                         return in_array($item->product->category_id, $discount->category_ids);
@@ -436,6 +438,7 @@ class OrderService
                             $updates['manual_discount_value'] = (int) $calc;
                         } else {
                             $updates['manual_discount_type'] = 'nominal';
+                            $totalNominalDiscount = $discountValue * $eligibleQty;
                             // Diskon nominal tidak boleh melebihi harga produk yg didiskon itu sendiri
                             $updates['manual_discount_value'] = min($discountValue, $eligibleTotal);
                         }
