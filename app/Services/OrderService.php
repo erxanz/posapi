@@ -203,7 +203,7 @@ class OrderService
                 'table_id' => $validated['table_id'],
                 'user_id' => null,
                 'shift_id' => null,
-                'invoice_number' => null, // Placeholder dulu
+                'invoice_number' => null,
                 'subtotal_price' => $validated['subtotal_price'] ?? 0,
                 'discount_amount' => $validated['discount_amount'] ?? 0,
                 'total_price' => $validated['total_price'] ?? 0,
@@ -235,8 +235,11 @@ class OrderService
 
             $paymentUrl = null;
             if (isset($validated['payment_method']) && $validated['payment_method'] === 'midtrans') {
-                // Logika Midtrans Anda...
+                //
             }
+
+            //Broadcast pesanan baru ke Websocket
+            event(new \App\Events\OrderCreated($order->load('items.product', 'table')));
 
             DB::commit();
 
