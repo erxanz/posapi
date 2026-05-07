@@ -174,7 +174,7 @@ class OrderController extends Controller
     /**
      * Hapus item dari order pending
      */
-    public function removeItem($orderId, $itemId)
+public function removeItem($orderId, $itemId)
     {
         $order = Order::where('id', $orderId)
             ->where('outlet_id', auth()->user()->outlet_id)
@@ -185,8 +185,31 @@ class OrderController extends Controller
         }
 
         $item = $order->items()->findOrFail($itemId);
+        // TAMBAHAN BARU: KEMBALIKAN STOK KE GUDANG
+        $outlet = \App\Models\Outlet::find($order->outlet_id);
+        $product = $outlet->products()->where('products.id', $item->product_id)->first();
+        
+        if ($product) {
+            // Tambahkan kembali qty yang dibatalkan ke stok saat ini
+            $newStock = $product->pivot->stock + $item->qty;
+            $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+            // Catat riwayat pengembalian stok
+            \App\Models\StockHistory::create([
+                'outlet_id' => $order->outlet_id,
+                'product_id' => $item->product_id,
+                'user_id' => auth()->id(), // ID kasir yang menghapus
+                'type' => 'restore',
+                'quantity' => $item->qty, // Qty yang kembali (positif)
+                'final_stock' => $newStock,
+                'reference' => 'Remove Item: ' . $order->invoice_number,
+            ]);
+        }
+
+        // Hapus item dari keranjang
         $item->delete();
 
+        // Hitung ulang subtotal, pajak, dan diskon
         $this->updateTotal($order);
 
         return response()->json($order->load('items.product'));
@@ -903,8 +926,32 @@ class OrderController extends Controller
                         $this->orderService->syncHistoryTransaction($order->fresh());
 
                     } else if ($request->transaction_status == 'cancel' || $request->transaction_status == 'deny' || $request->transaction_status == 'expire') {
-                        // Pembayaran dibatalkan/ditolak/expired
+                        
+                        // 1. Ubah status pesanan
                         $order->update(['status' => Order::STATUS_CANCELLED]);
+
+                        // 2. KEMBALIKAN STOK (TAMBAHAN BARU)
+                        $outlet = \App\Models\Outlet::find($order->outlet_id);
+                        
+                        foreach ($order->items as $item) {
+                            $product = $outlet->products()->where('products.id', $item->product_id)->first();
+                            
+                            if ($product) {
+                                $newStock = $product->pivot->stock + $item->qty;
+                                $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+                                // Catat di riwayat bahwa stok dikembalikan oleh sistem otomatis
+                                \App\Models\StockHistory::create([
+                                    'outlet_id' => $order->outlet_id,
+                                    'product_id' => $item->product_id,
+                                    'user_id' => null, // null karena sistem yang mengeksekusi
+                                    'type' => 'restore',
+                                    'quantity' => $item->qty,
+                                    'final_stock' => $newStock,
+                                    'reference' => 'Auto-Cancel Midtrans: ' . $order->invoice_number,
+                                ]);
+                            }
+                        }
                     }
 
                     DB::commit();
