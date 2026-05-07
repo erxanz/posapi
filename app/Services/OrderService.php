@@ -221,7 +221,7 @@ class OrderService
                 'tax_breakdown' => isset($validated['tax_breakdown']) ? json_encode($validated['tax_breakdown']) : null,
             ]);
 
-            $this->createOrderItems($order, $validated['items'], $outlet, false);
+            $this->createOrderItems($order, $validated['items'], $outlet, true);
             $this->handleAdjustments($order, $validated);
             $order->recalculateTotals($validated);
 
@@ -325,7 +325,7 @@ class OrderService
 
     private function createOrderItems(Order $order, array $items, Outlet $outlet, bool $checkStock = true): void
     {
-        $user = $checkStock ? $this->currentUser() : null;
+        $user = auth()->user();
 
         foreach ($items as $item) {
             $product = $outlet->products()->where('products.id', $item['product_id'])->wherePivot('is_active', true)->lockForUpdate()->firstOrFail();
