@@ -470,4 +470,28 @@ class ReportController extends Controller
             return Excel::download(new ReportExport($viewData), $filename . '.xlsx');
         }
     }
+
+    public function publicTopProducts(Request $request): JsonResponse
+    {
+        $outletId = $request->outlet_id;
+
+        if (!$outletId) {
+            return response()->json(['top_products' => []]);
+        }
+
+        $topProducts = DB::table('order_items')
+            ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
+            ->join('products', 'order_items.product_id', '=', 'products.id')
+            ->where('history_transactions.status', 'paid')
+            ->where('history_transactions.outlet_id', $outletId)
+            // Membatasi hanya data 30 hari terakhir agar Best Seller tetap relevan
+            ->where('history_transactions.paid_at', '>=', \Carbon\Carbon::now()->subDays(30))
+            ->selectRaw('products.name, SUM(order_items.qty) as sold')
+            ->groupBy('products.id', 'products.name')
+            ->orderByDesc('sold')
+            ->limit(3)
+            ->get();
+
+        return response()->json(['top_products' => $topProducts]);
+    }
 }

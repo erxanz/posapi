@@ -44,6 +44,7 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::get('/order/{id}', [OrderController::class, 'publicShow'])->name('public.order.show');
+        Route::get('/top-products', [App\Http\Controllers\ReportController::class, 'publicTopProducts']);
     });
 
     // ================= AUTH =================
