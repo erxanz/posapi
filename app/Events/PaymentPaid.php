@@ -31,6 +31,7 @@ class PaymentPaid implements ShouldBroadcastNow
         // Broadcast ke channel cabang terkait
         return [
             new Channel('orders.' . $this->order->outlet_id),
+            new Channel('customer-order.' . $this->order->id), // Opsional: channel khusus untuk order ini
         ];
     }
     
