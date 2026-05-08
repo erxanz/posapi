@@ -8,6 +8,8 @@ use App\Models\Tax;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Http\Requests\CancelOrderItemRequest;
+use App\Models\OrderItem;
 use Midtrans\Config;
 use Midtrans\Snap;
 
@@ -188,7 +190,7 @@ public function removeItem($orderId, $itemId)
         // TAMBAHAN BARU: KEMBALIKAN STOK KE GUDANG
         $outlet = \App\Models\Outlet::find($order->outlet_id);
         $product = $outlet->products()->where('products.id', $item->product_id)->first();
-        
+
         if ($product) {
             // Tambahkan kembali qty yang dibatalkan ke stok saat ini
             $newStock = $product->pivot->stock + $item->qty;
@@ -213,6 +215,95 @@ public function removeItem($orderId, $itemId)
         $this->updateTotal($order);
 
         return response()->json($order->load('items.product'));
+    }
+
+    /**
+     * Cancel a single item (partial or full) safely inside a DB transaction.
+     */
+    public function cancelItem(CancelOrderItemRequest $request, Order $order, OrderItem $item)
+    {
+        $this->authorizeOutletAccess($order);
+
+        if ($order->status !== Order::STATUS_PENDING) {
+            return response()->json(['message' => 'Only pending orders can be modified'], 400);
+        }
+
+        if ($item->order_id !== $order->id) {
+            return response()->json(['message' => 'Item does not belong to this order'], 404);
+        }
+
+        $cancelQty = (int) $request->input('cancel_qty');
+
+        DB::beginTransaction();
+
+        try {
+            $locked = OrderItem::where('id', $item->id)
+                ->where('order_id', $order->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $remaining = max(0, $locked->qty - $locked->cancelled_qty);
+
+            if ($cancelQty > $remaining) {
+                return response()->json(['message' => 'cancel_qty exceeds remaining quantity'], 400);
+            }
+
+            $oldCancelled = $locked->cancelled_qty;
+
+            $locked->applyCancellation($cancelQty);
+
+            $diff = $locked->cancelled_qty - $oldCancelled; // positive when cancelled
+
+            // Adjust stock back to outlet product pivot if outlet exists
+            $outlet = $order->outlet;
+            if ($outlet) {
+                $productPivot = $outlet->products()->where('products.id', $locked->product_id)->first();
+                $pivotStock = $productPivot?->pivot->stock ?? 0;
+                $newStock = $pivotStock + $diff;
+                if ($productPivot) {
+                    $outlet->products()->updateExistingPivot($locked->product_id, ['stock' => $newStock]);
+
+                    \App\Models\StockHistory::create([
+                        'outlet_id' => $order->outlet_id,
+                        'product_id' => $locked->product_id,
+                        'user_id' => auth()->id(),
+                        'type' => 'void',
+                        'quantity' => $diff,
+                        'final_stock' => $newStock,
+                        'reference' => 'Cancel Item: ' . $order->invoice_number,
+                    ]);
+                }
+            }
+
+            // Append order log (reason optional)
+            $logs = $order->logs ?? [];
+            array_unshift($logs, [
+                'date' => now()->format('d M Y H:i'),
+                'action' => "Cancel {$diff}x " . ($locked->product->name ?? 'item'),
+                'reason' => $request->input('reason') ?? null,
+                'by' => auth()->user()->name ?? 'system',
+            ]);
+            $order->update(['logs' => $logs]);
+
+            // Recalculate totals from backend authoritative source
+            $order->refresh();
+            $order->recalculateTotals();
+
+            if ($order->status === Order::STATUS_PAID) {
+                $this->orderService->syncHistoryTransaction($order->fresh());
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Item cancelled',
+                'order' => $order->fresh()->load('items.product', 'table'),
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
     }
 
     /**
@@ -926,16 +1017,16 @@ public function removeItem($orderId, $itemId)
                         $this->orderService->syncHistoryTransaction($order->fresh());
 
                     } else if ($request->transaction_status == 'cancel' || $request->transaction_status == 'deny' || $request->transaction_status == 'expire') {
-                        
+
                         // 1. Ubah status pesanan
                         $order->update(['status' => Order::STATUS_CANCELLED]);
 
                         // 2. KEMBALIKAN STOK (TAMBAHAN BARU)
                         $outlet = \App\Models\Outlet::find($order->outlet_id);
-                        
+
                         foreach ($order->items as $item) {
                             $product = $outlet->products()->where('products.id', $item->product_id)->first();
-                            
+
                             if ($product) {
                                 $newStock = $product->pivot->stock + $item->qty;
                                 $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);

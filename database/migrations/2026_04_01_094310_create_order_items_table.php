@@ -16,10 +16,10 @@ return new class extends Migration
             $table->foreignId('order_id')->constrained()->cascadeOnDelete();
             $table->foreignId('product_id')->constrained()->cascadeOnDelete();
             $table->foreignId('station_id')->nullable()->constrained()->nullOnDelete();
-            $table->integer('qty'); // jumlah produk yang dibeli
-            $table->integer('cancelled_qty')->default(0); // jumlah produk yang dibatalkan
-            $table->integer('price'); // harga saat transaksi
-            $table->integer('total_price')->default(0); // price * qty
+            $table->integer('qty');
+            $table->integer('cancelled_qty')->default(0);
+            $table->integer('price');
+            $table->integer('total_price')->default(0);
             $table->text('notes')->nullable();
             $table->timestamps();
         });

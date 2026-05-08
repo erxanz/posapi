@@ -223,6 +223,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/{id}/items', [OrderController::class, 'addItem']);
             Route::delete('/{id}/items/{itemId}', [OrderController::class, 'removeItem']);
 
+            // Cancel single item (partial or full)
+            Route::post('/{order}/items/{item}/cancel', [OrderController::class, 'cancelItem']);
+
             // Payment
             Route::post('/{order}/checkout', [OrderController::class, 'checkout']);
             Route::post('/{order}/payments', [OrderController::class, 'pay']);
