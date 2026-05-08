@@ -375,7 +375,7 @@ class OrderService
         }
     }
 
-    private function handleAdjustments(Order $order, array $data): void
+private function handleAdjustments(Order $order, array $data): void
     {
         $updates = [];
 
@@ -416,15 +416,22 @@ class OrderService
                 $discountValue = (int) $discount->value;
                 $eligibleTotal = 0;
                 $eligibleQty = 0;
+                
+                // FIX 1: Deklarasi awal agar tidak "Undefined variable"
+                $itemsInScope = collect();
 
                 // PERBAIKAN: Hitung total khusus item yang kena diskon (Multiple Products atau Categories)
                 if ($discount->scope === 'products' && !empty($discount->product_ids)) {
-                    $eligibleTotal = $order->items->whereIn('product_id', $discount->product_ids)->sum('total_price');
+                    $itemsInScope = $order->items->whereIn('product_id', $discount->product_ids);
+                    $eligibleTotal = $itemsInScope->sum('total_price');
                     $eligibleQty = $itemsInScope->sum('qty');
                 } elseif ($discount->scope === 'categories' && !empty($discount->category_ids)) {
-                    $eligibleTotal = $order->items->filter(function ($item) use ($discount) {
+                    $itemsInScope = $order->items->filter(function ($item) use ($discount) {
                         return in_array($item->product->category_id, $discount->category_ids);
-                    })->sum('total_price');
+                    });
+                    $eligibleTotal = $itemsInScope->sum('total_price');
+                    // FIX 2: Tambahkan perhitungan Qty untuk kategori yang kelupaan
+                    $eligibleQty = $itemsInScope->sum('qty'); 
                 }
 
                 if ($discount->scope !== 'global') {
@@ -439,8 +446,9 @@ class OrderService
                         } else {
                             $updates['manual_discount_type'] = 'nominal';
                             $totalNominalDiscount = $discountValue * $eligibleQty;
-                            // Diskon nominal tidak boleh melebihi harga produk yg didiskon itu sendiri
-                            $updates['manual_discount_value'] = min($discountValue, $eligibleTotal);
+                            
+                            // FIX 3: Gunakan $totalNominalDiscount (hasil kali Qty), bukan $discountValue asli
+                            $updates['manual_discount_value'] = min($totalNominalDiscount, $eligibleTotal);
                         }
                     } else {
                         // Jika produk/kategori yg didiskon tidak ada di keranjang
