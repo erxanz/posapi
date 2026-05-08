@@ -165,7 +165,7 @@ class Order extends Model
     | Pajak sekarang dihitung dari subtotal setelah diskon
     |--------------------------------------------------------------------------
     */
- public function recalculateTotals(array $overrides = [])
+public function recalculateTotals(array $overrides = [])
     {
         /*
         |--------------------------------------------------------------------------
@@ -196,7 +196,7 @@ class Order extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | 4. Hitung Diskon
+        | 4. Hitung Diskon (PERBAIKAN: STACKING QTY & SCOPE)
         |--------------------------------------------------------------------------
         */
         $discountAmount = 0;
@@ -207,13 +207,38 @@ class Order extends Model
         }
 
         if ($discount) {
-            if ($discount->type === 'percentage') {
-                $discountAmount = (int) round($subtotal * ((float) $discount->value / 100));
-                if ($discount->max_discount > 0 && $discountAmount > $discount->max_discount) {
-                    $discountAmount = (int) $discount->max_discount;
-                }
+            // Logika cakupan produk & perhitungan kuantitas persis seperti di OrderService
+            $eligibleTotal = 0;
+            $eligibleQty = 0;
+
+            if ($discount->scope === 'products' && !empty($discount->product_ids)) {
+                $itemsInScope = $items->whereIn('product_id', $discount->product_ids);
+                $eligibleTotal = $itemsInScope->sum('total_price');
+                $eligibleQty = $itemsInScope->sum('qty');
+            } elseif ($discount->scope === 'categories' && !empty($discount->category_ids)) {
+                $itemsInScope = $items->filter(function ($item) use ($discount) {
+                    return in_array($item->product->category_id ?? null, $discount->category_ids);
+                });
+                $eligibleTotal = $itemsInScope->sum('total_price');
+                $eligibleQty = $itemsInScope->sum('qty');
             } else {
-                $discountAmount = (int) $discount->value;
+                $eligibleTotal = $subtotal;
+                $eligibleQty = $items->sum('qty');
+            }
+
+            if ($eligibleTotal > 0) {
+                if ($discount->type === 'percentage') {
+                    $calc = $eligibleTotal * ((float) $discount->value / 100);
+                    if ($discount->max_discount > 0 && $calc > $discount->max_discount) {
+                        $calc = $discount->max_discount;
+                    }
+                    $discountAmount = (int) $calc;
+                } else {
+                    // STACKING FIX: Kalikan diskon nominal dengan jumlah barang yang memenuhi syarat
+                    $calc = $discount->value * $eligibleQty;
+                    // Diskon tidak boleh melebihi total harga barang itu sendiri
+                    $discountAmount = (int) min($calc, $eligibleTotal);
+                }
             }
         } elseif ($manualDiscountType && $manualDiscountValue > 0) {
             if ($manualDiscountType === 'percentage') {
@@ -223,8 +248,12 @@ class Order extends Model
             }
         } elseif (array_key_exists('discount_amount', $overrides)) {
             $discountAmount = max(0, (int) $overrides['discount_amount']);
+        } else {
+            // FIX: THE ULTIMATE FALLBACK. Jika kasir hanya edit item, jangan sampai diskon hilang (jadi 0)
+            $discountAmount = (int) $this->discount_amount;
         }
 
+        // Pastikan diskon tidak merugikan toko (tidak lebih dari subtotal)
         $discountAmount = min($subtotal, $discountAmount);
         $afterDiscount = max(0, $subtotal - $discountAmount);
 
@@ -264,15 +293,11 @@ class Order extends Model
                 )
             );
         } else {
-            // ==============================================================
-            // LOGIKA PAJAK BERTINGKAT (STACKING) UNTUK EDIT ORDER KASIR
-            // ==============================================================
+            // LOGIKA PAJAK BERTINGKAT (STACKING)
             $existingBreakdown = $this->tax_breakdown;
 
             if (!empty($existingBreakdown) && is_array($existingBreakdown)) {
                 $newTaxBreakdown = [];
-                
-                // BASE DINAMIS: Mulai dari harga setelah diskon (contoh: 81.000)
                 $taxBase = $afterDiscount; 
 
                 foreach ($existingBreakdown as $tb) {
@@ -281,7 +306,6 @@ class Order extends Model
                     $amt = 0;
 
                     if ($type === 'percentage') {
-                        // Pajak dihitung dari TaxBase yang terus menumpuk
                         $amt = (int) round($taxBase * ($rate / 100));
                     } else {
                         $amt = (int) $rate;
@@ -291,9 +315,6 @@ class Order extends Model
                     $newTaxBreakdown[] = $tb;
                     
                     $taxAmount += $amt; 
-                    
-                    // PENTING: Tambahkan pajak yang baru dihitung ke TaxBase
-                    // agar pajak berikutnya dihitung dari (Harga + Pajak Sebelumnya)
                     $taxBase += $amt; 
                 }
             } elseif ($this->tax_amount > 0 && $this->subtotal_price > 0) {
