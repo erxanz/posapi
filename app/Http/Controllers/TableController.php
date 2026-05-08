@@ -55,7 +55,8 @@ class TableController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('code', 'like', "%{$search}%")
-                  ->orWhere('token', 'like', "%{$search}%");
+                  // FIX: Ubah 'token' jadi 'qr_token'
+                  ->orWhere('qr_token', 'like', "%{$search}%"); 
             });
         }
 
@@ -101,7 +102,8 @@ class TableController extends Controller
 
         $token = (string) Str::uuid();
 
-        while (Table::where('token', $token)->exists()) {
+        // FIX: Ubah 'token' jadi 'qr_token'
+        while (Table::where('qr_token', $token)->exists()) {
             $token = (string) Str::uuid();
         }
 
@@ -118,13 +120,15 @@ class TableController extends Controller
             'capacity'  => $request->capacity ?? 1,
             'status'    => 'available',
             'is_active' => $request->is_active ?? true,
-            'token'     => $token,
+            // FIX: Ubah 'token' jadi 'qr_token'
+            'qr_token'  => $token,
         ]);
 
         return response()->json([
             'message' => 'Meja berhasil dibuat.',
             'data'    => $table,
-            'qr_url'  => url('/menu/' . $table->token)
+            // FIX: Panggil property $table->qr_token
+            'qr_url'  => url('/menu/' . $table->qr_token)
         ], 201);
     }
 
@@ -177,7 +181,8 @@ class TableController extends Controller
         return response()->json([
             'message' => 'Meja berhasil diperbarui.',
             'data'    => $table,
-            'qr_url'  => url('/menu/' . $table->token)
+            // FIX: Panggil property $table->qr_token
+            'qr_url'  => url('/menu/' . $table->qr_token)
         ]);
     }
 
@@ -200,18 +205,21 @@ class TableController extends Controller
     {
         $token = (string) Str::uuid();
 
-        while (Table::where('token', $token)->exists()) {
+        // FIX: Ubah 'token' jadi 'qr_token'
+        while (Table::where('qr_token', $token)->exists()) {
             $token = (string) Str::uuid();
         }
 
         $table->update([
-            'token' => $token
+            // FIX: Ubah 'token' jadi 'qr_token'
+            'qr_token' => $token
         ]);
 
         return response()->json([
             'message' => 'Token QR berhasil diperbarui.',
             'data'    => $table,
-            'qr_url'  => url('/menu/' . $table->token)
+            // FIX: Panggil property $table->qr_token
+            'qr_url'  => url('/menu/' . $table->qr_token)
         ]);
     }
 }
