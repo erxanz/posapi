@@ -41,8 +41,8 @@ class Outlet extends Model
 
     public function products()
     {
-        return $this->belongsToMany(Product::class)
-            ->withPivot(['price', 'stock', 'station_id', 'is_active'])
-            ->withTimestamps();
+        return $this->belongsToMany(Product::class, 'outlet_product')
+                    ->withPivot('stock', 'is_active')
+                    ->wherePivot('is_active', true);
     }
 }
