@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
 
 // Controllers
 use App\Http\Controllers\AuthController;
@@ -74,6 +75,9 @@ Route::prefix('v1')->group(function () {
     */
 
     Route::middleware('auth:sanctum')->group(function () {
+
+        // ✅ Broadcasting routes untuk Reverb
+        Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
         /*
         |--------------------------------------------------------------------------

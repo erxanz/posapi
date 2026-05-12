@@ -14,6 +14,8 @@ use App\Models\Discount;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\InvoiceCounter;
+use App\Events\OrderCreated;
+use App\Events\OrderUpdated;
 
 class OrderService
 {
@@ -98,6 +100,9 @@ class OrderService
 
             DB::commit();
 
+            // ✅ Broadcast order baru ke Flutter
+            broadcast(new OrderCreated($order->load('items.product', 'table')))->toOthers();
+
             return [
                 'success' => true,
                 'message' => 'Checkout dan pembayaran berhasil',
@@ -178,6 +183,9 @@ class OrderService
 
             DB::commit();
 
+            // ✅ Broadcast order baru ke Flutter
+            broadcast(new OrderCreated($order->load('items.product', 'table')))->toOthers();
+
             return [
                 'success' => true,
                 'message' => 'Order dibuat, silakan lanjut ke pembayaran Midtrans',
@@ -238,8 +246,8 @@ class OrderService
                 //
             }
 
-            //Broadcast pesanan baru ke Websocket
-            event(new \App\Events\OrderCreated($order->load('items.product', 'table')));
+            // ✅ Broadcast pesanan baru ke Flutter
+            broadcast(new OrderCreated($order->load('items.product', 'table')))->toOthers();
 
             DB::commit();
 
@@ -303,6 +311,9 @@ class OrderService
                     $order->table->update(['status' => 'available']);
                     }
                 event(new \App\Events\PaymentPaid($order->load('items.product', 'table')));
+
+                // ✅ Broadcast status update ke Flutter
+                broadcast(new OrderUpdated($order->load('items.product', 'table')))->toOthers();
             }
 
             DB::commit();
@@ -416,7 +427,7 @@ private function handleAdjustments(Order $order, array $data): void
                 $discountValue = (int) $discount->value;
                 $eligibleTotal = 0;
                 $eligibleQty = 0;
-                
+
                 // FIX 1: Deklarasi awal agar tidak "Undefined variable"
                 $itemsInScope = collect();
 
@@ -431,7 +442,7 @@ private function handleAdjustments(Order $order, array $data): void
                     });
                     $eligibleTotal = $itemsInScope->sum('total_price');
                     // FIX 2: Tambahkan perhitungan Qty untuk kategori yang kelupaan
-                    $eligibleQty = $itemsInScope->sum('qty'); 
+                    $eligibleQty = $itemsInScope->sum('qty');
                 }
 
                 if ($discount->scope !== 'global') {
@@ -446,7 +457,7 @@ private function handleAdjustments(Order $order, array $data): void
                         } else {
                             $updates['manual_discount_type'] = 'nominal';
                             $totalNominalDiscount = $discountValue * $eligibleQty;
-                            
+
                             // FIX 3: Gunakan $totalNominalDiscount (hasil kali Qty), bukan $discountValue asli
                             $updates['manual_discount_value'] = min($totalNominalDiscount, $eligibleTotal);
                         }
