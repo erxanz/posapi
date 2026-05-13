@@ -28,16 +28,29 @@ class PaymentPaid implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
-        // Broadcast ke channel cabang terkait
         return [
-            new Channel('orders.' . $this->order->outlet_id),
-            new Channel('customer-order.' . $this->order->id), // Opsional: channel khusus untuk order ini
+            new PrivateChannel('orders.outlet.' . $this->order->outlet_id),
+            new PrivateChannel('customer-order.' . $this->order->id),
         ];
     }
-    
+
     // (Opsional) Mengatur nama event yang didengar oleh Vue/Flutter
     public function broadcastAs(): string
     {
         return 'PaymentPaid';
+    }
+
+    public function broadcastWith(): array
+    {
+        return [
+            'order' => [
+                'id' => $this->order->id,
+                'invoice_number' => $this->order->invoice_number,
+                'customer_name' => $this->order->customer_name,
+                'total_price' => $this->order->total_price,
+                'status' => $this->order->status,
+                'updated_at' => $this->order->updated_at,
+            ],
+        ];
     }
 }

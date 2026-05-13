@@ -100,8 +100,8 @@ class OrderService
 
             DB::commit();
 
-            // ✅ Broadcast order baru ke Flutter
-            broadcast(new OrderCreated($order->load('items.product', 'table')))->toOthers();
+            $broadcastOrder = $order->fresh()->load('items.product', 'table');
+            broadcast(new OrderCreated($broadcastOrder))->toOthers();
 
             return [
                 'success' => true,
@@ -183,8 +183,8 @@ class OrderService
 
             DB::commit();
 
-            // ✅ Broadcast order baru ke Flutter
-            broadcast(new OrderCreated($order->load('items.product', 'table')))->toOthers();
+            $broadcastOrder = $order->fresh()->load('items.product', 'table');
+            broadcast(new OrderCreated($broadcastOrder))->toOthers();
 
             return [
                 'success' => true,
@@ -246,10 +246,10 @@ class OrderService
                 //
             }
 
-            // ✅ Broadcast pesanan baru ke Flutter
-            broadcast(new OrderCreated($order->load('items.product', 'table')))->toOthers();
-
             DB::commit();
+
+            $broadcastOrder = $order->fresh()->load('items.product', 'table');
+            broadcast(new OrderCreated($broadcastOrder))->toOthers();
 
             return [
                 'message' => 'Public order berhasil',
@@ -309,14 +309,16 @@ class OrderService
                 $this->storeHistoryTransaction($order);
                 if ($order->table_id) {
                     $order->table->update(['status' => 'available']);
-                    }
-                event(new \App\Events\PaymentPaid($order->load('items.product', 'table')));
-
-                // ✅ Broadcast status update ke Flutter
-                broadcast(new OrderUpdated($order->load('items.product', 'table')))->toOthers();
+                }
             }
 
             DB::commit();
+
+            if ($isFullyPaid) {
+                $broadcastOrder = $order->fresh()->load('items.product', 'table');
+                event(new \App\Events\PaymentPaid($broadcastOrder));
+                broadcast(new OrderUpdated($broadcastOrder))->toOthers();
+            }
 
             return [
                 'is_paid' => $isFullyPaid,
