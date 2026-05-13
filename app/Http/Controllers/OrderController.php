@@ -1016,6 +1016,9 @@ public function removeItem($orderId, $itemId)
                         // Store history transaction
                         $this->orderService->syncHistoryTransaction($order->fresh());
 
+                        // TAMBAHKAN INI: Trigger event agar frontend tahu ada perubahan
+                        event(new \App\Events\OrderUpdated($order));
+
                     } else if ($request->transaction_status == 'cancel' || $request->transaction_status == 'deny' || $request->transaction_status == 'expire') {
 
                         // 1. Ubah status pesanan

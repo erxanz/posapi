@@ -3,12 +3,12 @@
 namespace App\Events;
 
 use App\Models\Order; // FIX: Ubah dari Payment ke Order
-// use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow; // Pakai Now biar realtime instan
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Laravel\Reverb\Protocols\Pusher\Channels\Channel;
 
 class PaymentPaid implements ShouldBroadcastNow
 {
@@ -31,7 +31,7 @@ class PaymentPaid implements ShouldBroadcastNow
     {
         return [
             new PrivateChannel('orders.outlet.' . $this->order->outlet_id),
-            new PrivateChannel('customer-order.' . $this->order->id),
+            new Channel('customer-order.' . $this->order->id),
         ];
     }
 

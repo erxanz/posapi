@@ -8,6 +8,7 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Laravel\Reverb\Protocols\Pusher\Channels\Channel;
 
 class OrderUpdated implements ShouldBroadcastNow
 {
@@ -32,7 +33,7 @@ class OrderUpdated implements ShouldBroadcastNow
     {
         return [
             new PrivateChannel('orders.outlet.' . $this->order->outlet_id),
-            new PrivateChannel('customer-order.' . $this->order->id), // Opsional: channel khusus untuk order ini
+            new Channel('customer-order.' . $this->order->id), // Opsional: channel khusus untuk order ini
         ];
     }
 
