@@ -31,7 +31,7 @@ class PaymentPaid implements ShouldBroadcastNow
     {
         return [
             new PrivateChannel('orders.outlet.' . $this->order->outlet_id),
-            new Channel('customer-order.' . $this->order->id),
+            new PrivateChannel('customer-order.' . $this->order->id),
         ];
     }
 

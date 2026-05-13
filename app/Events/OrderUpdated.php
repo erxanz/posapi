@@ -33,7 +33,7 @@ class OrderUpdated implements ShouldBroadcastNow
     {
         return [
             new PrivateChannel('orders.outlet.' . $this->order->outlet_id),
-            new Channel('customer-order.' . $this->order->id), // Opsional: channel khusus untuk order ini
+            new PrivateChannel('customer-order.' . $this->order->id), // Opsional: channel khusus untuk order ini
         ];
     }
 
