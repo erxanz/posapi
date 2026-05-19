@@ -1019,7 +1019,11 @@ public function removeItem($orderId, $itemId)
                         $this->orderService->syncHistoryTransaction($order->fresh());
 
                         // Trigger event agar frontend tahu ada perubahan
-                        event(new \App\Events\OrderUpdated($order));
+                        $broadcastOrder = $order->fresh()->load(['items.product', 'table', 'payments']);
+
+                        // Event PaymentPaid supaya POS kasir mobile bisa trigger print via listener yang sama seperti flow cash
+                        event(new \App\Events\PaymentPaid($broadcastOrder));
+                        event(new \App\Events\OrderUpdated($broadcastOrder));
 
                     } else if ($request->transaction_status == 'cancel' || $request->transaction_status == 'deny' || $request->transaction_status == 'expire') {
 
