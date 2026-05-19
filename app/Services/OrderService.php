@@ -212,6 +212,10 @@ class OrderService
         DB::beginTransaction();
 
         try {
+            // Resolve midtrans key dari owner outlet (multi-tenant)
+            $ownerId = $outlet->owner_id;
+            $midtransKeyUsed = $ownerId ? User::whereKey($ownerId)->value('midtrans_server_key') : null;
+
             $order = Order::create([
                 'outlet_id' => $validated['outlet_id'],
                 'table_id' => $validated['table_id'],
@@ -233,7 +237,9 @@ class OrderService
                 'tax_value' => $validated['tax_value'] ?? 0,
                 'tax_amount' => $validated['tax_amount'] ?? 0,
                 'tax_breakdown' => isset($validated['tax_breakdown']) ? json_encode($validated['tax_breakdown']) : null,
+                'midtrans_server_key_used' => $midtransKeyUsed,
             ]);
+
 
             $this->createOrderItems($order, $validated['items'], $outlet, true);
             $this->handleAdjustments($order, $validated);

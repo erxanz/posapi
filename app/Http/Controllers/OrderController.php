@@ -354,10 +354,24 @@ public function removeItem($orderId, $itemId)
             $methodStr = strtolower($request->payment_method);
             if (in_array($methodStr, ['midtrans', 'qris', 'card'])) {
 
-                \Midtrans\Config::$serverKey = env('MIDTRANS_SERVER_KEY');
+                // Gunakan server key berdasarkan outlet owner (multi-tenant)
+                $serverKey = $order->midtrans_server_key_used;
+
+                // Fallback jika field belum terisi (mis. order dibuat versi lama)
+                if (empty($serverKey) && $order->outlet_id) {
+                    $ownerId = Outlet::whereKey($order->outlet_id)->value('owner_id');
+                    $serverKey = \App\Models\User::whereKey($ownerId)->value('midtrans_server_key');
+                }
+
+                if (empty($serverKey)) {
+                    $serverKey = env('MIDTRANS_SERVER_KEY');
+                }
+
+                \Midtrans\Config::$serverKey = $serverKey;
                 \Midtrans\Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
                 \Midtrans\Config::$isSanitized = true;
                 \Midtrans\Config::$is3ds = true;
+
 
                 $itemDetails = [];
                 $calculatedGrossAmount = 0;
