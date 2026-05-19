@@ -230,6 +230,10 @@ class AuthController extends Controller
         }
         $user->phone_number = $request->phone_number;
 
+        if ($request->has('midtrans_server_key')) {
+        $user->midtrans_server_key = $request->midtrans_server_key;
+        }
+
         if ($request->filled('password')) {
             $user->password = \Illuminate\Support\Facades\Hash::make($request->password);
         }
