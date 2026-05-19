@@ -11,10 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('order_acceptances', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
-        });
+        // This migration is superseded by 2026_05_19_134540_create_order_acceptances_table.php
+        // It is intentionally a no-op to avoid "table already exists" errors when running migrations.
     }
 
     /**
@@ -22,6 +20,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('order_acceptances');
+        // Intentionally keep this as a safe drop to support rollbacks.
+        // Only drops the table if it exists.
+        if (Schema::hasTable('order_acceptances')) {
+            Schema::dropIfExists('order_acceptances');
+        }
     }
 };

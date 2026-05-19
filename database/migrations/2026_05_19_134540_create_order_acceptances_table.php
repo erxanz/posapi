@@ -11,22 +11,25 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('order_acceptances', function (Blueprint $table) {
-            $table->id();
+        // Guard against cases where the table already exists (e.g. previous attempts partially succeeded).
+        if (!Schema::hasTable('order_acceptances')) {
+            Schema::create('order_acceptances', function (Blueprint $table) {
+                $table->id();
 
-            $table->foreignId('order_id')->constrained('orders')->cascadeOnDelete();
-            $table->foreignId('accepted_by')->nullable()->constrained('users')->nullOnDelete();
+                $table->foreignId('order_id')->constrained('orders')->cascadeOnDelete();
+                $table->foreignId('accepted_by')->nullable()->constrained('users')->nullOnDelete();
 
-            // for kitchen vs cashier acceptance (optional, tapi berguna)
-            $table->string('scope')->default('cashier');
+                // for kitchen vs cashier acceptance (optional, tapi berguna)
+                $table->string('scope')->default('cashier');
 
-            $table->timestamp('accepted_at')->nullable();
-            $table->timestamp('printed_at')->nullable();
+                $table->timestamp('accepted_at')->nullable();
+                $table->timestamp('printed_at')->nullable();
 
-            $table->timestamps();
+                $table->timestamps();
 
-            $table->unique(['order_id', 'scope']);
-        });
+                $table->unique(['order_id', 'scope']);
+            });
+        }
     }
 
     /**
