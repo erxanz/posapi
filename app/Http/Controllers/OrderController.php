@@ -526,6 +526,19 @@ public function removeItem($orderId, $itemId)
                 Config::$isSanitized = true;
                 Config::$is3ds = true;
 
+                // Multi MIDTRANS key: jika role manager dan manager isi server key sendiri,
+                // maka transaksi Midtrans-nya memakai merchant manager tersebut.
+                if ($user && $user->role === 'manager') {
+                    if (empty($user->midtrans_server_key)) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Midtrans server key manager belum diisi',
+                        ], 403);
+                    }
+                    Config::$serverKey = $user->midtrans_server_key;
+                }
+
+
                 $itemDetails = [];
                 $calculatedGrossAmount = 0; // KUNCI: Hitung total berbarengan dengan build array
 
@@ -591,7 +604,19 @@ public function removeItem($orderId, $itemId)
                 // ========================================================
                 $methodStr = strtolower($validated['payment_method'] ?? '');
 
+                $user = $user ?? auth()->user();
+                if ($user && $user->role === 'manager') {
+                    if (empty($user->midtrans_server_key)) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Midtrans server key manager belum diisi',
+                        ], 403);
+                    }
+                    Config::$serverKey = $user->midtrans_server_key;
+                }
+
                 if ($methodStr === 'qris') {
+
                     // 'gopay' di Midtrans secara default memunculkan barcode QRIS dinamis
                     // yang bisa di-scan oleh semua dompet digital (ShopeePay, Dana, OVO, m-banking dll)
                     $params['enabled_payments'] = ['gopay'];
@@ -993,14 +1018,21 @@ public function removeItem($orderId, $itemId)
      */
     public function midtransCallback(Request $request)
     {
-        $serverKey = env('MIDTRANS_SERVER_KEY');
+        // Gunakan server key yang dipakai saat create transaksi (disimpan di orders)
+        $order = Order::where('invoice_number', $request->order_id)->first();
+        if (!$order) {
+            return response()->json(['message' => 'Order not found'], 404);
+        }
+
+        $serverKey = $order->midtrans_server_key_used ?: env('MIDTRANS_SERVER_KEY');
+
         $hashed = hash("sha512", $request->order_id . $request->status_code . $request->gross_amount . $serverKey);
+
 
         // Verifikasi kalau request beneran dari Midtrans
         if ($hashed == $request->signature_key) {
-            $order = Order::where('invoice_number', $request->order_id)->first();
-
             if ($order) {
+
                 DB::beginTransaction();
 
                 try {

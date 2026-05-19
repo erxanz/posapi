@@ -148,6 +148,10 @@ class OrderService
                 try {
                     $invoice = $this->generateInvoiceNumber($outlet->id);
 
+                    $midtransKeyUsed = $user->role === 'manager'
+                        ? ($user->midtrans_server_key ?: null)
+                        : null;
+
                     $order = Order::create([
                         'outlet_id' => $outlet->id,
                         'user_id' => $user->id,
@@ -156,7 +160,9 @@ class OrderService
                         'invoice_number' => $invoice,
                         'status' => Order::STATUS_PENDING, // PENDING karena menunggu pembayaran Midtrans
                         'total_price' => 0,
+                        'midtrans_server_key_used' => $midtransKeyUsed,
                     ]);
+
 
                     break;
 

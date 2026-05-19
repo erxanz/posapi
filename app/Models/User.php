@@ -32,7 +32,9 @@ class User extends Authenticatable
         'pin',
         'outlet_id',
         'is_active',
+        'midtrans_server_key',
     ];
+
 
     /**
      * The attributes that should be hidden for serialization.

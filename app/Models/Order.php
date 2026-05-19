@@ -41,7 +41,11 @@ class Order extends Model
         'customer_name',
         'invoice_number',
 
+        // midtrans
+        'midtrans_server_key_used',
+
         // subtotal
+
         'subtotal_price',
 
         // discount
@@ -67,7 +71,8 @@ class Order extends Model
     | Casts
     |--------------------------------------------------------------------------
     */
-    protected $casts = [
+protected $casts = [
+
         'subtotal_price'       => 'integer',
         'discount_amount'      => 'integer',
         'manual_discount_value'=> 'integer',
@@ -176,7 +181,7 @@ public function recalculateTotals(array $overrides = [])
 
         /*
         |--------------------------------------------------------------------------
-        | 2. Hitung Subtotal 
+        | 2. Hitung Subtotal
         |--------------------------------------------------------------------------
         */
         $subtotal = 0;
@@ -298,7 +303,7 @@ public function recalculateTotals(array $overrides = [])
 
             if (!empty($existingBreakdown) && is_array($existingBreakdown)) {
                 $newTaxBreakdown = [];
-                $taxBase = $afterDiscount; 
+                $taxBase = $afterDiscount;
 
                 foreach ($existingBreakdown as $tb) {
                     $rate = (float) ($tb['rate'] ?? 0);
@@ -313,9 +318,9 @@ public function recalculateTotals(array $overrides = [])
 
                     $tb['amount'] = $amt;
                     $newTaxBreakdown[] = $tb;
-                    
-                    $taxAmount += $amt; 
-                    $taxBase += $amt; 
+
+                    $taxAmount += $amt;
+                    $taxBase += $amt;
                 }
             } elseif ($this->tax_amount > 0 && $this->subtotal_price > 0) {
                 $oldAmountAfterDiscount = max(0, $this->subtotal_price - $this->discount_amount);
