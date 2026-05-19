@@ -88,6 +88,7 @@
                         <code class="api-path">/api/v1/me</code>
                         <span class="note">Auth Required</span>
                     </div>
+
                 </div>
             </details>
         </div>
@@ -132,6 +133,26 @@
                         <span class="badge badge-post">POST</span>
                         <code class="api-path">/api/v1/public/order</code>
                         <span class="note">Public</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/public/order/{id}</code>
+                        <span class="note">Public</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/public/top-products</code>
+                        <span class="note">Public</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/public/taxes</code>
+                        <span class="note">Public (Active Taxes)</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/public/discounts</code>
+                        <span class="note">Public (Active Discounts)</span>
                     </div>
                 </div>
             </details>
@@ -204,6 +225,11 @@
                         <span class="badge badge-resource">API RES</span>
                         <code class="api-path">/api/v1/tables</code>
                         <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-delete">DELETE</span>
+                        <code class="api-path">/api/v1/tables/{id}</code>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
