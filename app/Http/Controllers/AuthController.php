@@ -216,6 +216,7 @@ class AuthController extends Controller
             'password' => 'nullable|string|min:8|confirmed',
             'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'phone_number' => 'nullable|string|max:30',
+            'midtrans_server_key' => 'nullable|string',
         ]);
 
         $user->name = $request->name;
