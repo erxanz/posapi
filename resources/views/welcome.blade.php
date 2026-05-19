@@ -516,6 +516,11 @@
                     </div>
                     <div class="endpoint-row">
                         <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/{order}/accept</code>
+                        <span class="note">Auth Required</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
                         <code class="api-path">/api/v1/orders/checkout</code>
                         <span class="note">Auth Required</span>
                     </div>
