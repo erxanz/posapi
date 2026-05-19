@@ -56,7 +56,7 @@ class TableController extends Controller
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('code', 'like', "%{$search}%")
                   // FIX: Ubah 'token' jadi 'qr_token'
-                  ->orWhere('qr_token', 'like', "%{$search}%"); 
+                  ->orWhere('qr_token', 'like', "%{$search}%");
             });
         }
 
@@ -142,7 +142,8 @@ class TableController extends Controller
             'name'      => 'required|string|max:255',
             'code'      => 'nullable|string|max:50',
             'capacity'  => 'nullable|integer|min:1',
-            'status'    => 'required|in:available,occupied,dirty',
+            'status'    => 'required|in:available,occupied,dirty,reserved',
+
             'is_active' => 'nullable|boolean',
         ]);
 

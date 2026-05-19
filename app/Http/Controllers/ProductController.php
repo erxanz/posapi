@@ -66,10 +66,26 @@ class ProductController extends Controller
                 })
         );
 
+        // AUTO RESOLVE STATUS MEJA BERDASARKAN RESERVATION TIMER
+        // - Jika masih reserved dan waktunya sudah lewat => available lagi
+        // - Jika masih available => occupied (orang scan mulai pakai)
+        if ($table->status === 'reserved') {
+            $reservedUntil = $table->reserved_until ?
+                \Carbon\Carbon::parse($table->reserved_until) : null;
+
+            if ($reservedUntil && $reservedUntil->isPast()) {
+                $table->update([
+                    'status' => 'available',
+                    'reserved_until' => null,
+                ]);
+            }
+        }
+
         // AUTO SET MEJA JADI OCCUPIED
         if ($table->status === 'available') {
             $table->update(['status' => 'occupied']);
         }
+
 
         return response()->json([
             'table' => $table,

@@ -430,10 +430,21 @@ public function removeItem($orderId, $itemId)
             }
 
             // 3. Jika bayar Cash
+            // Catatan: untuk QR flow, meja akan jadi reserved (menunggu) berdasarkan timer,
+            // bukan langsung available.
+            $tableId = $order->table_id ?? null;
+            if ($tableId) {
+                \App\Models\Table::whereKey($tableId)->update([
+                    'status' => 'reserved',
+                    'reserved_until' => now()->addMinutes(20),
+                ]);
+            }
+
             return response()->json([
                 'success' => true,
                 'data' => $order
             ], 201);
+
 
         } catch (\Throwable $e) {
             return response()->json([
@@ -1011,9 +1022,16 @@ public function removeItem($orderId, $itemId)
                         ]);
 
                         // Update table status
+                        // Untuk flow QR: meja tidak langsung available.
+                        // Timer reserved_until akan mengembalikan meja otomatis.
+                        // Jadi di sini cukup set reserved (jika belum ada).
                         if ($order->table_id) {
-                            $order->table->update(['status' => 'available']);
+                            $order->table->update([
+                                'status' => 'reserved',
+                                'reserved_until' => now()->addMinutes(20),
+                            ]);
                         }
+
 
                         // Store history transaction
                         $this->orderService->syncHistoryTransaction($order->fresh());

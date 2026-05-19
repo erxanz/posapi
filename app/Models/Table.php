@@ -21,12 +21,16 @@ class Table extends Model
         'qr_token',
         'status',
         'is_active',
+        'reserved_until',
     ];
+
 
     protected $casts = [
         'is_active' => 'boolean',
         'capacity' => 'integer',
+        'reserved_until' => 'datetime',
     ];
+
 
     /**
      * Model Events

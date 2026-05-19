@@ -32,14 +32,18 @@ class AutoCancelOrders extends Command
                 $order->update(['status' => 'cancelled']);
 
                 if ($order->table_id) {
-                    $order->table()->update(['status' => 'available']);
+                    $order->table()->update([
+                        'status' => 'available',
+                        'reserved_until' => null,
+                    ]);
                 }
+
 
                 $outlet = Outlet::find($order->outlet_id);
                 if ($outlet) {
                     foreach ($order->items as $item) {
                         $product = $outlet->products()->where('products.id', $item->product_id)->first();
-                        
+
                         if ($product) {
                             $newStock = $product->pivot->stock + $item->qty;
                             $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
@@ -47,7 +51,7 @@ class AutoCancelOrders extends Command
                             StockHistory::create([
                                 'outlet_id' => $order->outlet_id,
                                 'product_id' => $item->product_id,
-                                'user_id' => null, 
+                                'user_id' => null,
                                 'type' => 'restore',
                                 'quantity' => $item->qty,
                                 'final_stock' => $newStock,
