@@ -3,6 +3,8 @@
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Broadcast;
 
+use App\Http\Controllers\OrderAcceptanceController;
+
 // Controllers
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
@@ -217,6 +219,10 @@ Route::prefix('v1')->group(function () {
         Route::prefix('orders')->group(function () {
 
             Route::get('/', [OrderController::class, 'index']);
+
+            // Cashier accept / kitchen accept (trigger print on mobile)
+            Route::post('/{order}/accept', [OrderAcceptanceController::class, 'accept'])
+                ->name('orders.accept');
             Route::post('/', [OrderController::class, 'store']);
             Route::get('/{order}', [OrderController::class, 'show']);
 
