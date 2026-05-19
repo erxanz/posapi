@@ -977,7 +977,7 @@ public function removeItem($orderId, $itemId)
         return $payload;
     }
 
-    /**
+/**
      * Webhook callback dari Midtrans
      */
     public function midtransCallback(Request $request)
@@ -997,15 +997,17 @@ public function removeItem($orderId, $itemId)
                         // Pembayaran sukses
                         $order->update(['status' => Order::STATUS_PAID]);
 
+                        $paymentMethod = $request->payment_type ?? 'midtrans';
+
                         // Buat payment record
                         \App\Models\Payment::create([
                             'order_id' => $order->id,
                             'amount_paid' => (int) $request->gross_amount,
                             'change_amount' => 0,
-                            'method' => 'midtrans',
+                            'method' => $paymentMethod,
                             'reference_no' => $request->transaction_id ?? null,
                             'paid_at' => now(),
-                            'paid_by' => null, // Dari Midtrans, bukan dari user manual
+                            'paid_by' => null,
                         ]);
 
                         // Update table status
@@ -1016,7 +1018,7 @@ public function removeItem($orderId, $itemId)
                         // Store history transaction
                         $this->orderService->syncHistoryTransaction($order->fresh());
 
-                        // TAMBAHKAN INI: Trigger event agar frontend tahu ada perubahan
+                        // Trigger event agar frontend tahu ada perubahan
                         event(new \App\Events\OrderUpdated($order));
 
                     } else if ($request->transaction_status == 'cancel' || $request->transaction_status == 'deny' || $request->transaction_status == 'expire') {
@@ -1024,7 +1026,7 @@ public function removeItem($orderId, $itemId)
                         // 1. Ubah status pesanan
                         $order->update(['status' => Order::STATUS_CANCELLED]);
 
-                        // 2. KEMBALIKAN STOK (TAMBAHAN BARU)
+                        // 2. KEMBALIKAN STOK
                         $outlet = \App\Models\Outlet::find($order->outlet_id);
 
                         foreach ($order->items as $item) {

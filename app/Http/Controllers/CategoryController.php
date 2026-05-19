@@ -54,7 +54,7 @@ class CategoryController extends Controller
         ]);
 
         $category = Category::create([
-            'name' => strtolower(trim($request->name)),
+            'name' => trim($request->name),
             'owner_id' => $ownerId
         ]);
 
@@ -92,7 +92,7 @@ class CategoryController extends Controller
         ]);
 
         $category->update([
-            'name' => strtolower(trim($request->name))
+            'name' => trim($request->name)
         ]);
 
         return response()->json([
