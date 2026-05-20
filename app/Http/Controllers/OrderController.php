@@ -1093,7 +1093,7 @@ public function removeItem($orderId, $itemId)
                         $paymentMethod = $request->payment_type ?? 'midtrans';
 
                         // Buat payment record
-                        \App\Models\Payment::create([
+                        $createdPayment = \App\Models\Payment::create([
                             'order_id' => $order->id,
                             'amount_paid' => (int) $request->gross_amount,
                             'change_amount' => 0,
@@ -1102,6 +1102,18 @@ public function removeItem($orderId, $itemId)
                             'paid_at' => now(),
                             'paid_by' => null,
                         ]);
+
+                        // Sync payment method ke orders agar UI tahu metode pembayaran.
+                        $order->payment_method = strtolower(trim($createdPayment->method ?? 'midtrans'));
+                        if (in_array($order->payment_method, ['qris', 'midtrans'])) {
+                            $order->payment_method = 'qris';
+                        } elseif (in_array($order->payment_method, ['card', 'credit_card'])) {
+                            $order->payment_method = 'card';
+                        } elseif (in_array($order->payment_method, ['cash', 'tunai'])) {
+                            $order->payment_method = 'cash';
+                        }
+                        $order->save();
+
 
                         // Update table status
                         // Untuk flow QR: meja tidak langsung available.

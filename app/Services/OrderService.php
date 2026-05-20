@@ -282,9 +282,12 @@ class OrderService
     {
         $user = $this->currentUser();
 
-        if (! $this->canAccessOrder($order)) {
+        if (!$this->canAccessOrder($order)) {
             throw new \Exception('Forbidden');
         }
+
+
+
 
         if ($order->status === Order::STATUS_PAID || $order->status === Order::STATUS_CANCELLED) {
             throw new \Exception('Order cannot be paid');
@@ -303,7 +306,7 @@ class OrderService
                 $applied = min($amount, $remaining);
                 $change = max(0, $amount - $applied);
 
-                Payment::create([
+                $createdPayment = Payment::create([
                     'order_id' => $order->id,
                     'amount_paid' => $amount,
                     'change_amount' => $change,
@@ -312,6 +315,12 @@ class OrderService
                     'paid_at' => now(),
                     'paid_by' => $user->id,
                 ]);
+
+                // Sync method payment terakhir ke orders.payment_method (agar Flutter tahu pembayarannya).
+                $order->payment_method = $this->normalizePaymentMethod($createdPayment->method);
+                $order->save();
+
+
 
                 $remaining -= $applied;
             }
