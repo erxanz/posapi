@@ -46,6 +46,13 @@ class OrderController extends Controller
 
         $query = Order::with(['items.product', 'table', 'user', 'outlet']);
 
+        // Untuk kebutuhan Flutter: saat pending, Flutter perlu tahu payment method
+        // untuk membedakan UI cash vs non-cash. Saat ini response GET /orders
+        // belum menyertakan payments, jadi kita eager-load untuk pending.
+        if ($request->filled('status') && $request->status === Order::STATUS_PENDING) {
+            $query->with(['payments:id,order_id,method,paid_at']);
+        }
+
         if ($user->role === 'karyawan') {
             $query->where('outlet_id', $user->outlet_id);
         } elseif ($user->role === 'manager') {
@@ -63,7 +70,25 @@ class OrderController extends Controller
 
         $limit = $request->input('limit', 10);
 
-        return response()->json($query->latest()->paginate($limit));
+        $paginator = $query->latest()->paginate($limit);
+
+        // Map field agar kompatibel dengan kebutuhan Flutter: payment_method.
+        // Ambil payment method dari payment pertama (paling awal) jika ada.
+        $paginator->getCollection()->transform(function (Order $order) {
+            $paymentMethod = null;
+
+            if ($order->relationLoaded('payments') && $order->payments) {
+                $payment = $order->payments->sortBy(fn($p) => $p->paid_at ?? $p->created_at)->first();
+                $paymentMethod = $payment?->method;
+            }
+
+            $order->payment_method = $paymentMethod;
+
+            // Untuk pending order yang belum ada payment record: Flutter akan handle null.
+            return $order;
+        });
+
+        return response()->json($paginator);
     }
 
     // DISABLED: Use checkoutOrder instead
