@@ -447,6 +447,11 @@ public function removeItem($orderId, $itemId)
                         'first_name' => $order->customer_name ?: 'Customer POS',
                     ],
                     'item_details' => $itemDetails,
+                        'callbacks' => [
+                        'finish' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
+                        'unfinish' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
+                        'error' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
+                    ]
                 ];
 
                 if ($methodStr === 'qris' || $methodStr === 'midtrans') {
@@ -634,6 +639,11 @@ public function removeItem($orderId, $itemId)
                         'first_name' => $order->customer_name ?: 'Customer POS',
                     ],
                     'item_details' => $itemDetails,
+                        'callbacks' => [
+                        'finish' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
+                        'unfinish' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
+                        'error' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
+                    ]
                 ];
 
                 // ========================================================
