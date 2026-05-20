@@ -58,9 +58,11 @@ class OrderService
                         'table_id' => $table->id,
                         'customer_name' => $validated['customer_name'] ?? null,
                         'invoice_number' => $invoice,
-                        'status' => Order::STATUS_PAID,
-                        'total_price' => 0,
-                    ]);
+                    'status' => Order::STATUS_PAID,
+                    'total_price' => 0,
+                    'payment_method' => $this->normalizePaymentMethod($validated['payment_method'] ?? null),
+                ]);
+
 
                     break; // sukses → keluar loop
 
@@ -161,6 +163,7 @@ class OrderService
                         'status' => Order::STATUS_PENDING, // PENDING karena menunggu pembayaran Midtrans
                         'total_price' => 0,
                         'midtrans_server_key_used' => $midtransKeyUsed,
+                        'payment_method' => $this->normalizePaymentMethod($validated['payment_method'] ?? null),
                     ]);
 
 
@@ -638,4 +641,26 @@ private function handleAdjustments(Order $order, array $data): void
         if (!$user instanceof User) throw new \RuntimeException('Unauthenticated');
         return $user;
     }
+
+    private function normalizePaymentMethod(?string $method): ?string
+    {
+        if (!$method) return null;
+
+        $m = strtolower(trim($method));
+
+        if (in_array($m, ['qris', 'midtrans'])) {
+            return 'qris';
+        }
+
+        if (in_array($m, ['card', 'credit_card'])) {
+            return 'card';
+        }
+
+        if (in_array($m, ['cash', 'tunai'])) {
+            return 'cash';
+        }
+
+        return $m;
+    }
 }
+

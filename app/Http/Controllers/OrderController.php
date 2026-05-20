@@ -46,9 +46,9 @@ class OrderController extends Controller
 
         $query = Order::with(['items.product', 'table', 'user', 'outlet']);
 
-        // Untuk kebutuhan Flutter: saat pending, Flutter perlu tahu payment method
-        // untuk membedakan UI cash vs non-cash. Saat ini response GET /orders
-        // belum menyertakan payments, jadi kita eager-load untuk pending.
+        // Untuk kebutuhan Flutter: saat pending, UI perlu tahu payment method.
+        // Sekarang payment_method diambil dari kolom orders (terisi sejak order dibuat).
+        // Namun tetap eager-load payments sebagai fallback untuk data lama.
         if ($request->filled('status') && $request->status === Order::STATUS_PENDING) {
             $query->with(['payments:id,order_id,method,paid_at']);
         }
@@ -74,17 +74,18 @@ class OrderController extends Controller
 
         // Map field agar kompatibel dengan kebutuhan Flutter: payment_method.
         // Ambil payment method dari payment pertama (paling awal) jika ada.
-        $paginator->getCollection()->transform(function (Order $order) {
-            $paymentMethod = null;
+            $paginator->getCollection()->transform(function (Order $order) {
+            // Prioritas: ambil dari kolom orders.payment_method yang sudah terisi saat order dibuat.
+            $paymentMethod = $order->payment_method;
 
-            if ($order->relationLoaded('payments') && $order->payments) {
+            // Fallback untuk data lama (kolom null) agar tetap kompatibel.
+            if (empty($paymentMethod) && $order->relationLoaded('payments') && $order->payments) {
                 $payment = $order->payments->sortBy(fn($p) => $p->paid_at ?? $p->created_at)->first();
                 $paymentMethod = $payment?->method;
             }
 
             $order->payment_method = $paymentMethod;
 
-            // Untuk pending order yang belum ada payment record: Flutter akan handle null.
             return $order;
         });
 
@@ -448,9 +449,9 @@ public function removeItem($orderId, $itemId)
                     ],
                     'item_details' => $itemDetails,
                         'callbacks' => [
-                        'finish' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
-                        'unfinish' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
-                        'error' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
+                        'finish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
+                        'unfinish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
+                        'error' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
                     ]
                 ];
 
@@ -640,9 +641,9 @@ public function removeItem($orderId, $itemId)
                     ],
                     'item_details' => $itemDetails,
                         'callbacks' => [
-                        'finish' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
-                        'unfinish' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
-                        'error' => env('FRONTEND_URL', 'http://localhost:5173') . '/status/' . $order->id,
+                        'finish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
+                        'unfinish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
+                        'error' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
                     ]
                 ];
 
