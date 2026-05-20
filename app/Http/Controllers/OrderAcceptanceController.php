@@ -5,11 +5,15 @@ namespace App\Http\Controllers;
 use App\Events\OrderAccepted;
 use App\Models\Order;
 use App\Models\OrderAcceptance;
+use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class OrderAcceptanceController extends Controller
 {
+    public function __construct(private readonly OrderService $orderService)
+    {
+    }
     public function accept(Request $request, Order $order)
     {
         $scope = (string) ($request->input('scope') ?: 'cashier');
@@ -33,6 +37,8 @@ class OrderAcceptanceController extends Controller
 
             $order->update(['status' => 'paid']);
 
+            // Pastikan history_transactions ikut tercatat saat tombol accept/terima
+            $this->orderService->syncHistoryTransaction($order->fresh());
 
             /** @var OrderAcceptance $acceptance */
             $acceptance = OrderAcceptance::query()
