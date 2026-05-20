@@ -26,10 +26,13 @@ class OrderAcceptanceController extends Controller
 
         return DB::transaction(function () use ($order, $user, $scope) {
             // Untuk requirement: print baru setelah acc/terima,
-            // jadi hanya izinkan accept kalau order sudah paid.
-            if ($order->status !== Order::STATUS_PAID) {
-                return response()->json(['message' => 'Order belum lunas (paid).'], 422);
+            // jadi hanya izinkan accept kalau order masih pending.
+            if ($order->status !== 'pending') {
+                return response()->json(['message' => 'Order bukan pending.'], 422);
             }
+
+            $order->update(['status' => 'paid']);
+
 
             /** @var OrderAcceptance $acceptance */
             $acceptance = OrderAcceptance::query()
