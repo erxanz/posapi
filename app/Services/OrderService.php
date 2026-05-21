@@ -412,115 +412,115 @@ class OrderService
         }
     }
 
-private function handleAdjustments(Order $order, array $data): void
+    private function handleAdjustments(Order $order, array $data): void
     {
         $updates = [];
+        $order->loadMissing('items.product');
+        $subtotal = $order->items->sum('total_price');
 
-        if (array_key_exists('discount_id', $data)) {
-            $updates['discount_id'] = $data['discount_id'] ? (int) $data['discount_id'] : null;
+        // Ambil list ID voucher yang dipilih kasir dari mobile app
+        $discountIds = $data['discount_ids'] ?? [];
+        
+        // Backward compatibility jika aplikasi lama masih kirim single discount_id
+        if (empty($discountIds) && !empty($data['discount_id'])) {
+            $discountIds[] = (int) $data['discount_id'];
         }
 
-        if (isset($data['manual_discount_type'])) {
-            $updates['manual_discount_type'] = $data['manual_discount_type'];
-        } elseif (isset($data['discount_type'])) {
-            $updates['manual_discount_type'] = $data['discount_type'];
-        }
+        $manualDiscountType = $data['manual_discount_type'] ?? $data['discount_type'] ?? null;
+        $manualDiscountValue = (int) ($data['manual_discount_value'] ?? $data['discount_value'] ?? 0);
 
-        if (isset($data['manual_discount_value'])) {
-            $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
-        } elseif (isset($data['discount_value'])) {
-            $updates['manual_discount_value'] = (int) $data['discount_value'];
-        }
+        $totalDiscountAmount = 0;
 
-        $shouldResolvePromoDiscount = isset($updates['discount_id'])
-            && !isset($updates['manual_discount_type'])
-            && !isset($updates['manual_discount_value']);
+        if (!empty($discountIds)) {
+            // Ambil data voucher yang dipilih kasir saja
+            $selectedDiscounts = Discount::whereIn('id', $discountIds)->where('is_active', true)->get();
 
-        if ($shouldResolvePromoDiscount && $updates['discount_id']) {
-            $discount = Discount::query()
-                ->whereKey($updates['discount_id'])
-                ->where('is_active', true)
-                ->first();
+            // 1. Proses diskon bertipe PRODUK / KATEGORI dulu (Bisa multi/pilih banyak)
+            foreach ($order->items as $item) {
+                foreach ($selectedDiscounts as $discount) {
+                    if ($discount->scope === 'global') {
+                        continue; // Lewati dulu, diskon global dihitung terakhir
+                    }
 
-            if ($discount) {
-                $order->loadMissing('items.product'); // Load produk untuk ngecek kategori
-                $subtotal = $order->items->sum('total_price');
+                    if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
+                        continue;
+                    }
 
-                if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
-                    throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
-                }
+                    $isProductMatch = $discount->scope === 'products' && !empty($discount->product_ids) && in_array($item->product_id, $discount->product_ids);
+                    $isCategoryMatch = $discount->scope === 'categories' && !empty($discount->category_ids) && in_array($item->product->category_id, $discount->category_ids);
 
-                $discountValue = (int) $discount->value;
-                $eligibleTotal = 0;
-                $eligibleQty = 0;
+                    if ($isProductMatch || $isCategoryMatch) {
+                        $discountValue = (int) $discount->value;
+                        $itemPriceTotal = $item->total_price;
 
-                // FIX 1: Deklarasi awal agar tidak "Undefined variable"
-                $itemsInScope = collect();
-
-                // PERBAIKAN: Hitung total khusus item yang kena diskon (Multiple Products atau Categories)
-                if ($discount->scope === 'products' && !empty($discount->product_ids)) {
-                    $itemsInScope = $order->items->whereIn('product_id', $discount->product_ids);
-                    $eligibleTotal = $itemsInScope->sum('total_price');
-                    $eligibleQty = $itemsInScope->sum('qty');
-                } elseif ($discount->scope === 'categories' && !empty($discount->category_ids)) {
-                    $itemsInScope = $order->items->filter(function ($item) use ($discount) {
-                        return in_array($item->product->category_id, $discount->category_ids);
-                    });
-                    $eligibleTotal = $itemsInScope->sum('total_price');
-                    // FIX 2: Tambahkan perhitungan Qty untuk kategori yang kelupaan
-                    $eligibleQty = $itemsInScope->sum('qty');
-                }
-
-                if ($discount->scope !== 'global') {
-                    if ($eligibleTotal > 0) {
                         if ($discount->type === 'percentage') {
-                            $calc = $eligibleTotal * ($discountValue / 100);
+                            $calc = $itemPriceTotal * ($discountValue / 100);
                             if ($discount->max_discount && $calc > $discount->max_discount) {
                                 $calc = $discount->max_discount;
                             }
-                            $updates['manual_discount_type'] = 'nominal';
-                            $updates['manual_discount_value'] = (int) $calc;
+                            $totalDiscountAmount += (int) $calc;
                         } else {
-                            $updates['manual_discount_type'] = 'nominal';
-                            $totalNominalDiscount = $discountValue * $eligibleQty;
-
-                            // FIX 3: Gunakan $totalNominalDiscount (hasil kali Qty), bukan $discountValue asli
-                            $updates['manual_discount_value'] = min($totalNominalDiscount, $eligibleTotal);
+                            $calc = $discountValue * $item->qty;
+                            $totalDiscountAmount += min($calc, $itemPriceTotal);
                         }
-                    } else {
-                        // Jika produk/kategori yg didiskon tidak ada di keranjang
-                        $updates['manual_discount_type'] = 'nominal';
-                        $updates['manual_discount_value'] = 0;
+                        break; // 1 item maksimal kena 1 diskon produk yang dipilih
                     }
-                } else {
-                    // Global Scope
-                    if ($discount->type === 'percentage') {
-                        $calc = $subtotal * ($discountValue / 100);
-                        if ($discount->max_discount && $calc > $discount->max_discount) {
-                            $updates['manual_discount_type'] = 'nominal';
-                            $updates['manual_discount_value'] = (int) $discount->max_discount;
-                        } else {
-                            $updates['manual_discount_type'] = 'percentage';
-                            $updates['manual_discount_value'] = $discountValue;
+                }
+            }
+
+            // 2. Proses diskon GLOBAL (Voucher total belanja)
+            // Hanya berjalan jika belum ada diskon produk yang diaplikasikan (Anti-Stacking)
+            if ($totalDiscountAmount === 0) {
+                $globalDiscount = $selectedDiscounts->where('scope', 'global')->first();
+                
+                if ($globalDiscount) {
+                    if ($globalDiscount->min_purchase > 0 && $subtotal < $globalDiscount->min_purchase) {
+                        throw new \Exception("Minimum belanja Rp " . number_format($globalDiscount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
+                    }
+
+                    if ($globalDiscount->type === 'percentage') {
+                        $calc = $subtotal * ((int)$globalDiscount->value / 100);
+                        if ($globalDiscount->max_discount && $calc > $globalDiscount->max_discount) {
+                            $calc = $globalDiscount->max_discount;
                         }
+                        $totalDiscountAmount = (int) $calc;
                     } else {
-                        $updates['manual_discount_type'] = 'nominal';
-                        $updates['manual_discount_value'] = $discountValue;
+                        $totalDiscountAmount = min((int)$globalDiscount->value, $subtotal);
                     }
                 }
             }
         }
 
-        // --- Tax Logic (Sama seperti aslinya) ---
+        // 3. Jika tidak pakai voucher sama sekali, tapi kasir input diskon manual (nominal/persen)
+        if ($totalDiscountAmount === 0 && $manualDiscountType && $manualDiscountValue > 0) {
+            if ($manualDiscountType === 'percentage') {
+                $totalDiscountAmount = (int) ($subtotal * ($manualDiscountValue / 100));
+            } else {
+                $totalDiscountAmount = min($manualDiscountValue, $subtotal);
+            }
+            $updates['manual_discount_type'] = $manualDiscountType;
+            $updates['manual_discount_value'] = $manualDiscountValue;
+        } elseif ($totalDiscountAmount > 0) {
+            // Jika ada diskon dari voucher, jadikan tipenya nominal gabungan agar aman dihitung ulang
+            $updates['manual_discount_type'] = 'nominal';
+            $updates['manual_discount_value'] = $totalDiscountAmount;
+        }
+
+        // Simpan ID pertama ke database untuk history (karena struktur tabel orders kamu cuma punya 1 kolom discount_id)
+        $updates['discount_id'] = !empty($discountIds) ? (int) $discountIds[0] : null;
+
+        $order->discount_amount = $totalDiscountAmount;
+
+        // --- Bagian Pajak (Sama seperti bawaan tokomu) ---
         if (isset($data['tax_id'])) {
             $updates['tax_id'] = $data['tax_id'];
         } elseif (isset($data['tax_type']) && isset($data['tax_value'])) {
             $taxType = (string) $data['tax_type'];
             $taxValue = (int) $data['tax_value'];
             $matchedTax = Tax::query()->where('type', $taxType)->where('active', true)->get()->first(function (Tax $tax) use ($taxValue) {
-                    $expectedValue = $tax->type === 'percentage' ? (int) round(((float) $tax->rate) * 100) : (int) round((float) $tax->rate);
-                    return $expectedValue === $taxValue;
-                });
+                $expectedValue = $tax->type === 'percentage' ? (int) round(((float) $tax->rate) * 100) : (int) round((float) $tax->rate);
+                return $expectedValue === $taxValue;
+            });
             if ($matchedTax) $updates['tax_id'] = $matchedTax->id;
         }
 

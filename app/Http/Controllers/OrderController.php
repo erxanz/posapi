@@ -341,12 +341,12 @@ public function removeItem($orderId, $itemId)
             'outlet_id' => 'required|exists:outlets,id',
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
-            // Tambahkan validasi payment_method biar tertangkap
             'payment_method' => 'required|string|max:50',
 
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
-            'discount_id' => 'nullable|exists:discounts,id',
+            'discount_ids' => 'nullable|array',
+            'discount_ids.*' => 'exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
@@ -513,7 +513,8 @@ public function removeItem($orderId, $itemId)
             // DISKON
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
-            'discount_id' => 'nullable|exists:discounts,id',
+            'discount_ids' => 'nullable|array',
+            'discount_ids.*' => 'exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
 
