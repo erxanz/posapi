@@ -2,61 +2,77 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class Product extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'owner_id',
-        'name',
         'category_id',
-        'description',
+        'station_id',
+        'name',
         'cost_price',
         'image',
-        'station_id',
+        'sku',
     ];
 
-    /**
-     * Casting biar aman
-     */
-    protected $casts = [
-        'cost_price' => 'integer',
-    ];
+    protected $appends = ['is_promo', 'promo_price', 'discount_amount_per_item'];
 
-    /**
-     * Relasi ke category
-     */
     public function category()
     {
         return $this->belongsTo(Category::class);
     }
 
-    /**
-     * Relasi ke owner catalog
-     */
-    public function owner()
-    {
-        return $this->belongsTo(User::class, 'owner_id');
-    }
-
-    /**
-     * Relasi distribusi produk ke banyak outlet
-     */
     public function outlets()
     {
-        return $this->belongsToMany(Outlet::class)
-            ->withPivot(['price', 'stock', 'station_id', 'is_active'])
+        return $this->belongsToMany(Outlet::class, 'outlet_product')
+            ->withPivot('price', 'stock', 'is_active', 'station_id')
             ->withTimestamps();
     }
 
-    /**
-    * (Optional) relasi ke station
-    */
-    public function station()
+    public function getIsPromoAttribute(): bool
     {
-        return $this->belongsTo(Station::class);
+        $discount = Discount::where('is_active', true)
+            ->where('scope', 'products')
+            ->first();
+
+        if (!$discount || empty($discount->product_ids)) {
+            return false;
+        }
+
+        $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
+        
+        return in_array($this->id, $productIds);
+    }
+
+    public function getDiscountAmountPerItemAttribute(): int
+    {
+        $discount = Discount::where('is_active', true)
+            ->where('scope', 'products')
+            ->first();
+
+        if (!$discount || !$this->getIsPromoAttribute()) {
+            return 0;
+        }
+
+        $originalPrice = $this->pivot ? (int) $this->pivot->price : (int) $this->cost_price;
+
+        if ($discount->type === 'percentage') {
+            $calc = $originalPrice * ((int) $discount->value / 100);
+            if ($discount->max_discount && $calc > $discount->max_discount) {
+                return (int) $discount->max_discount;
+            }
+            return (int) $calc;
+        }
+
+        return (int) $discount->value;
+    }
+
+    public function getPromoPriceAttribute(): int
+    {
+        $originalPrice = $this->pivot ? (int) $this->pivot->price : (int) $this->cost_price;
+        return max(0, $originalPrice - $this->getDiscountAmountPerItemAttribute());
     }
 }

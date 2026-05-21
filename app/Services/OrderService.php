@@ -418,100 +418,45 @@ class OrderService
         $order->loadMissing('items.product');
         $subtotal = $order->items->sum('total_price');
 
-        // Ambil list ID voucher yang dipilih kasir dari mobile app
-        $discountIds = $data['discount_ids'] ?? [];
-        
-        // Backward compatibility jika aplikasi lama masih kirim single discount_id
-        if (empty($discountIds) && !empty($data['discount_id'])) {
-            $discountIds[] = (int) $data['discount_id'];
-        }
-
-        $manualDiscountType = $data['manual_discount_type'] ?? $data['discount_type'] ?? null;
-        $manualDiscountValue = (int) ($data['manual_discount_value'] ?? $data['discount_value'] ?? 0);
-
         $totalDiscountAmount = 0;
 
-        if (!empty($discountIds)) {
-            // Ambil data voucher yang dipilih kasir saja
-            $selectedDiscounts = Discount::whereIn('id', $discountIds)->where('is_active', true)->get();
-
-            // 1. Proses diskon bertipe PRODUK / KATEGORI dulu (Bisa multi/pilih banyak)
-            foreach ($order->items as $item) {
-                foreach ($selectedDiscounts as $discount) {
-                    if ($discount->scope === 'global') {
-                        continue; // Lewati dulu, diskon global dihitung terakhir
-                    }
-
-                    if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
-                        continue;
-                    }
-
-                    $isProductMatch = $discount->scope === 'products' && !empty($discount->product_ids) && in_array($item->product_id, $discount->product_ids);
-                    $isCategoryMatch = $discount->scope === 'categories' && !empty($discount->category_ids) && in_array($item->product->category_id, $discount->category_ids);
-
-                    if ($isProductMatch || $isCategoryMatch) {
-                        $discountValue = (int) $discount->value;
-                        $itemPriceTotal = $item->total_price;
-
-                        if ($discount->type === 'percentage') {
-                            $calc = $itemPriceTotal * ($discountValue / 100);
-                            if ($discount->max_discount && $calc > $discount->max_discount) {
-                                $calc = $discount->max_discount;
-                            }
-                            $totalDiscountAmount += (int) $calc;
-                        } else {
-                            $calc = $discountValue * $item->qty;
-                            $totalDiscountAmount += min($calc, $itemPriceTotal);
-                        }
-                        break; // 1 item maksimal kena 1 diskon produk yang dipilih
-                    }
-                }
+        foreach ($order->items as $item) {
+            if ($item->product && $item->product->is_promo) {
+                $totalDiscountAmount += $item->product->discount_amount_per_item * $item->qty;
             }
+        }
 
-            // 2. Proses diskon GLOBAL (Voucher total belanja)
-            // Hanya berjalan jika belum ada diskon produk yang diaplikasikan (Anti-Stacking)
-            if ($totalDiscountAmount === 0) {
-                $globalDiscount = $selectedDiscounts->where('scope', 'global')->first();
-                
-                if ($globalDiscount) {
-                    if ($globalDiscount->min_purchase > 0 && $subtotal < $globalDiscount->min_purchase) {
-                        throw new \Exception("Minimum belanja Rp " . number_format($globalDiscount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
+        if ($totalDiscountAmount > 0) {
+            $updates['manual_discount_type'] = 'nominal';
+            $updates['manual_discount_value'] = $totalDiscountAmount;
+            $updates['discount_id'] = null; 
+        } else {
+            if (!empty($data['discount_id'])) {
+                $discount = Discount::find($data['discount_id']);
+                if ($discount && $discount->scope === 'global') {
+                    if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
+                        throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
                     }
 
-                    if ($globalDiscount->type === 'percentage') {
-                        $calc = $subtotal * ((int)$globalDiscount->value / 100);
-                        if ($globalDiscount->max_discount && $calc > $globalDiscount->max_discount) {
-                            $calc = $globalDiscount->max_discount;
+                    if ($discount->type === 'percentage') {
+                        $calc = $subtotal * ((int)$discount->value / 100);
+                        if ($discount->max_discount && $calc > $discount->max_discount) {
+                            $calc = $discount->max_discount;
                         }
                         $totalDiscountAmount = (int) $calc;
                     } else {
-                        $totalDiscountAmount = min((int)$globalDiscount->value, $subtotal);
+                        $totalDiscountAmount = min((int)$discount->value, $subtotal);
                     }
+                    
+                    $updates['discount_id'] = $discount->id;
+                    $updates['manual_discount_type'] = $discount->type;
+                    $updates['manual_discount_value'] = (int)$discount->value;
                 }
             }
         }
 
-        // 3. Jika tidak pakai voucher sama sekali, tapi kasir input diskon manual (nominal/persen)
-        if ($totalDiscountAmount === 0 && $manualDiscountType && $manualDiscountValue > 0) {
-            if ($manualDiscountType === 'percentage') {
-                $totalDiscountAmount = (int) ($subtotal * ($manualDiscountValue / 100));
-            } else {
-                $totalDiscountAmount = min($manualDiscountValue, $subtotal);
-            }
-            $updates['manual_discount_type'] = $manualDiscountType;
-            $updates['manual_discount_value'] = $manualDiscountValue;
-        } elseif ($totalDiscountAmount > 0) {
-            // Jika ada diskon dari voucher, jadikan tipenya nominal gabungan agar aman dihitung ulang
-            $updates['manual_discount_type'] = 'nominal';
-            $updates['manual_discount_value'] = $totalDiscountAmount;
-        }
-
-        // Simpan ID pertama ke database untuk history (karena struktur tabel orders kamu cuma punya 1 kolom discount_id)
-        $updates['discount_id'] = !empty($discountIds) ? (int) $discountIds[0] : null;
-
         $order->discount_amount = $totalDiscountAmount;
 
-        // --- Bagian Pajak (Sama seperti bawaan tokomu) ---
         if (isset($data['tax_id'])) {
             $updates['tax_id'] = $data['tax_id'];
         } elseif (isset($data['tax_type']) && isset($data['tax_value'])) {
