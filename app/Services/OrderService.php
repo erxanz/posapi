@@ -144,8 +144,6 @@ class OrderService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $this->ensureTableHasNoPendingOrder($table->id);
-
             $maxRetry = 5;
             $attempt = 0;
 
@@ -223,8 +221,6 @@ class OrderService
                 ->where('outlet_id', $outlet->id)
                 ->lockForUpdate()
                 ->firstOrFail();
-
-            $this->ensureTableHasNoPendingOrder($table->id);
 
             // Resolve midtrans key dari owner outlet (multi-tenant)
             $ownerId = $outlet->owner_id;
@@ -635,19 +631,6 @@ class OrderService
             'status' => 'reserved',
             'reserved_until' => now()->addMinutes($minutes),
         ]);
-    }
-
-    private function ensureTableHasNoPendingOrder(int $tableId): void
-    {
-        $hasPendingOrder = Order::query()
-            ->where('table_id', $tableId)
-            ->where('status', Order::STATUS_PENDING)
-            ->lockForUpdate()
-            ->exists();
-
-        if ($hasPendingOrder) {
-            throw new \Exception('Meja ini masih memiliki order pending. Silakan selesaikan atau batalkan order sebelumnya.');
-        }
     }
 }
 
