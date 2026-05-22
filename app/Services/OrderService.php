@@ -136,13 +136,16 @@ class OrderService
             throw new \Exception('Forbidden: Anda tidak memiliki akses ke Cabang ini.');
         }
 
-        $table = Table::where('id', $validated['table_id'])
-            ->where('outlet_id', $outlet->id)
-            ->firstOrFail();
-
         DB::beginTransaction();
 
         try {
+            $table = Table::where('id', $validated['table_id'])
+                ->where('outlet_id', $outlet->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->ensureTableHasNoPendingOrder($table->id);
+
             $maxRetry = 5;
             $attempt = 0;
 
@@ -188,6 +191,8 @@ class OrderService
             $this->handleAdjustments($order, $validated);
             $order->recalculateTotals($validated);
 
+            $this->reserveTable($table);
+
             // Jangan buat payment di sini, tunggu webhook dari Midtrans
 
             DB::commit();
@@ -210,11 +215,17 @@ class OrderService
     public function createPublicOrder(array $validated): array
     {
         $outlet = Outlet::findOrFail($validated['outlet_id']);
-        $table = Table::where('id', $validated['table_id'])->where('outlet_id', $outlet->id)->firstOrFail();
 
         DB::beginTransaction();
 
         try {
+            $table = Table::where('id', $validated['table_id'])
+                ->where('outlet_id', $outlet->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->ensureTableHasNoPendingOrder($table->id);
+
             // Resolve midtrans key dari owner outlet (multi-tenant)
             $ownerId = $outlet->owner_id;
             $midtransKeyUsed = $ownerId ? User::whereKey($ownerId)->value('midtrans_server_key') : null;
@@ -247,6 +258,7 @@ class OrderService
             $this->createOrderItems($order, $validated['items'], $outlet, true);
             $this->handleAdjustments($order, $validated);
             $order->recalculateTotals($validated);
+            $this->reserveTable($table);
 
             // --- PERBAIKAN DI SINI ---
             // Panggil fungsi yang menggunakan lockForUpdate tadi
@@ -365,7 +377,7 @@ class OrderService
     {
         $user = auth()->user();
 
-        foreach ($items as $item) {
+        foreach (collect($items)->sortBy('product_id')->values() as $item) {
             $product = $outlet->products()->where('products.id', $item['product_id'])->wherePivot('is_active', true)->lockForUpdate()->firstOrFail();
 
             $stock = (int) $product->pivot->stock;
@@ -429,7 +441,7 @@ class OrderService
         if ($totalDiscountAmount > 0) {
             $updates['manual_discount_type'] = 'nominal';
             $updates['manual_discount_value'] = $totalDiscountAmount;
-            $updates['discount_id'] = null; 
+            $updates['discount_id'] = null;
         } else {
             if (!empty($data['discount_id'])) {
                 $discount = Discount::find($data['discount_id']);
@@ -447,7 +459,7 @@ class OrderService
                     } else {
                         $totalDiscountAmount = min((int)$discount->value, $subtotal);
                     }
-                    
+
                     $updates['discount_id'] = $discount->id;
                     $updates['manual_discount_type'] = $discount->type;
                     $updates['manual_discount_value'] = (int)$discount->value;
@@ -615,6 +627,27 @@ class OrderService
         }
 
         return $m;
+    }
+
+    private function reserveTable(Table $table, int $minutes = 20): void
+    {
+        $table->update([
+            'status' => 'reserved',
+            'reserved_until' => now()->addMinutes($minutes),
+        ]);
+    }
+
+    private function ensureTableHasNoPendingOrder(int $tableId): void
+    {
+        $hasPendingOrder = Order::query()
+            ->where('table_id', $tableId)
+            ->where('status', Order::STATUS_PENDING)
+            ->lockForUpdate()
+            ->exists();
+
+        if ($hasPendingOrder) {
+            throw new \Exception('Meja ini masih memiliki order pending. Silakan selesaikan atau batalkan order sebelumnya.');
+        }
     }
 }
 

@@ -40,6 +40,7 @@ class Order extends Model
         'table_id',
         'customer_name',
         'invoice_number',
+        'payment_method',
 
         // midtrans
         'midtrans_server_key_used',
@@ -107,9 +108,29 @@ protected $casts = [
         return $this->hasMany(Payment::class);
     }
 
+    public function payment()
+    {
+        return $this->hasOne(Payment::class)->latestOfMany();
+    }
+
+    public function latestPayment()
+    {
+        return $this->payment();
+    }
+
     public function historyTransaction()
     {
         return $this->hasOne(HistoryTransaction::class);
+    }
+
+    public function acceptances()
+    {
+        return $this->hasMany(OrderAcceptance::class);
+    }
+
+    public function latestAcceptance()
+    {
+        return $this->hasOne(OrderAcceptance::class)->latestOfMany();
     }
 
     public function discount()

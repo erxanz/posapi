@@ -24,7 +24,7 @@ class OrderController extends Controller
      */
     public function publicShow($id)
     {
-        $order = Order::with(['items.product', 'table'])->findOrFail($id);
+        $order = Order::with(['items.product', 'table', 'payments', 'latestAcceptance', 'discount'])->findOrFail($id);
 
         // Pastikan breakdown pajak aman dibaca sebagai array oleh Vue
         if (is_string($order->tax_breakdown)) {
@@ -195,7 +195,7 @@ class OrderController extends Controller
         }
 
         return response()->json(
-            $order->load('items.product', 'table')
+            $order->load('items.product', 'table', 'payments', 'latestAcceptance', 'discount')
         );
     }
 
@@ -1035,6 +1035,10 @@ public function removeItem($orderId, $itemId)
 
     private function normalizeLegacyAdjustmentPayload(array $payload): array
     {
+        if (!isset($payload['discount_id']) && !empty($payload['discount_ids']) && is_array($payload['discount_ids'])) {
+            $payload['discount_id'] = (int) collect($payload['discount_ids'])->first();
+        }
+
         if (!isset($payload['manual_discount_type']) && isset($payload['discount_type'])) {
             $payload['manual_discount_type'] = $payload['discount_type'];
         }

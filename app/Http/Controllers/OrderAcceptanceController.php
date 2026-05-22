@@ -29,13 +29,15 @@ class OrderAcceptanceController extends Controller
         }
 
         return DB::transaction(function () use ($order, $user, $scope) {
-            // Untuk requirement: print baru setelah acc/terima,
-            // jadi hanya izinkan accept kalau order masih pending.
-            if ($order->status !== 'pending') {
-                return response()->json(['message' => 'Order bukan pending.'], 422);
+            // Accept dipakai untuk trigger printer di kasir mobile.
+            // Midtrans menandai order paid terlebih dahulu, lalu kasir menekan acc untuk cetak.
+            if ($order->status === Order::STATUS_CANCELLED) {
+                return response()->json(['message' => 'Order sudah dibatalkan.'], 422);
             }
 
-            $order->update(['status' => 'paid']);
+            if ($order->status !== Order::STATUS_PAID) {
+                return response()->json(['message' => 'Order harus paid sebelum diterima.'], 422);
+            }
 
             // Pastikan history_transactions ikut tercatat saat tombol accept/terima
             $this->orderService->syncHistoryTransaction($order->fresh());
@@ -52,13 +54,18 @@ class OrderAcceptanceController extends Controller
                     'accepted_by' => $user->id,
                     'scope' => $scope,
                     'accepted_at' => now(),
+                    'printed_at' => now(),
                 ]);
             } elseif (is_null($acceptance->accepted_at)) {
-                $acceptance->update(['accepted_by' => $user->id, 'accepted_at' => now()]);
+                $acceptance->update([
+                    'accepted_by' => $user->id,
+                    'accepted_at' => now(),
+                    'printed_at' => now(),
+                ]);
             }
 
-            // Reload order dengan relasi dasar untuk payload event
-            $broadcastOrder = $order->fresh()->load('items.product', 'table');
+            // Reload order dengan relasi yang dibutuhkan printer Flutter
+            $broadcastOrder = $order->fresh()->load('items.product', 'table', 'payment', 'latestAcceptance');
 
             // Trigger event agar mobile langsung print saat tombol acc/terima ditekan
             event(new OrderAccepted($broadcastOrder, $scope, $user->id));

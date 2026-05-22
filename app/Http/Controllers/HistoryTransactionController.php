@@ -21,9 +21,11 @@ class HistoryTransactionController extends Controller
                 'cashier:id,name',
                 'payment:id,order_id,method,amount_paid,change_amount,paid_at',
                 // PERBAIKAN: Tambahkan 'logs' ke sini agar data log tidak terpotong (di-select oleh SQL)
-                'order:id,table_id,customer_name,logs',
+                'order:id,table_id,customer_name,logs,payment_method,status,invoice_number,discount_id,discount_amount,manual_discount_type,manual_discount_value',
                 'order.table:id,name',
                 'order.items.product',
+                'order.discount:id,name,type,value,scope,min_purchase,max_discount',
+                'order.latestAcceptance:id,order_id,scope,accepted_by,accepted_at,printed_at',
             ])
             ->latest('paid_at');
 
@@ -87,6 +89,10 @@ class HistoryTransactionController extends Controller
                 $trx->customer_name = $trx->order?->customer_name;
             }
 
+            if (!$trx->payment_method && $trx->relationLoaded('order')) {
+                $trx->payment_method = $trx->order?->payment_method;
+            }
+
             return $trx;
         });
 
@@ -113,6 +119,7 @@ class HistoryTransactionController extends Controller
                 'order', // Memastikan kolom logs pada tabel order termuat utuh
                 'order.items.product',
                 'order.table',
+                'order.latestAcceptance',
                 'payment',
                 'cashier',
                 'outlet'
@@ -164,6 +171,8 @@ class HistoryTransactionController extends Controller
                 'order',
                 'order.items.product',
                 'order.table',
+                'order.discount',
+                'order.latestAcceptance',
                 'payment',
                 'cashier',
                 'outlet',
