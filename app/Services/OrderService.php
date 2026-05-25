@@ -232,6 +232,7 @@ class OrderService
                 'user_id' => null,
                 'shift_id' => null,
                 'invoice_number' => null,
+                'payment_method' => $this->normalizePaymentMethod($validated['payment_method'] ?? null),
                 'subtotal_price' => $validated['subtotal_price'] ?? 0,
                 'discount_amount' => $validated['discount_amount'] ?? 0,
                 'total_price' => $validated['total_price'] ?? 0,
