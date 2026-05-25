@@ -35,8 +35,16 @@ class OrderAcceptanceController extends Controller
                 return response()->json(['message' => 'Order sudah dibatalkan.'], 422);
             }
 
-            if ($order->status !== Order::STATUS_PAID) {
-                return response()->json(['message' => 'Order harus paid sebelum diterima.'], 422);
+            // Izinkan pesanan diterima jika berstatus PAID, 
+            // ATAU jika metodenya bukan cash (online/QRIS) meskipun statusnya masih PENDING di sistem.
+            if ($order->status !== Order::STATUS_PAID && $order->payment_method !== 'cash') {
+                // Kita izinkan masuk jika dia non-cash dan statusnya pending
+                if ($order->status !== 'pending') { 
+                    return response()->json(['message' => 'Order tidak valid untuk diterima.'], 422);
+                }
+            } elseif ($order->status !== Order::STATUS_PAID && $order->payment_method === 'cash') {
+                // Kalau cash, tetap wajib paid (kasir sudah terima uang baru boleh dicentang/di-accept)
+                return response()->json(['message' => 'Order cash harus paid sebelum diterima.'], 422);
             }
 
             // Pastikan history_transactions ikut tercatat saat tombol accept/terima
