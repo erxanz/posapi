@@ -34,45 +34,51 @@ class Product extends Model
 
     public function getIsPromoAttribute(): bool
     {
-        $discount = Discount::where('is_active', true)
+        // Pengecekan membaca semua diskon aktif
+        $discounts = Discount::where('is_active', true)
             ->where('scope', 'products')
-            ->first();
+            ->get();
 
-        if (!$discount || empty($discount->product_ids)) {
-            return false;
+        foreach ($discounts as $discount) {
+            $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
+            if (!empty($productIds) && in_array($this->id, $productIds)) {
+                return true; 
+            }
         }
 
-        $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
-        
-        return in_array($this->id, $productIds);
+        return false;
     }
 
     public function getDiscountAmountPerItemAttribute(): int
     {
-        $discount = Discount::where('is_active', true)
+        $discounts = Discount::where('is_active', true)
             ->where('scope', 'products')
-            ->first();
+            ->get();
 
-        if (!$discount || !$this->getIsPromoAttribute()) {
-            return 0;
-        }
+        foreach ($discounts as $discount) {
+            $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
+            
+            if (!empty($productIds) && in_array($this->id, $productIds)) {
+                $originalPrice = $this->price ?? ($this->pivot ? (int) $this->pivot->price : (int) $this->cost_price);
 
-        $originalPrice = $this->pivot ? (int) $this->pivot->price : (int) $this->cost_price;
+                if ($discount->type === 'percentage') {
+                    $calc = $originalPrice * ((int) $discount->value / 100);
+                    if ($discount->max_discount && $calc > $discount->max_discount) {
+                        return (int) $discount->max_discount;
+                    }
+                    return (int) $calc;
+                }
 
-        if ($discount->type === 'percentage') {
-            $calc = $originalPrice * ((int) $discount->value / 100);
-            if ($discount->max_discount && $calc > $discount->max_discount) {
-                return (int) $discount->max_discount;
+                return (int) $discount->value; 
             }
-            return (int) $calc;
         }
 
-        return (int) $discount->value;
+        return 0;
     }
 
     public function getPromoPriceAttribute(): int
     {
-        $originalPrice = $this->pivot ? (int) $this->pivot->price : (int) $this->cost_price;
+        $originalPrice = $this->price ?? ($this->pivot ? (int) $this->pivot->price : (int) $this->cost_price);
         return max(0, $originalPrice - $this->getDiscountAmountPerItemAttribute());
     }
 }
