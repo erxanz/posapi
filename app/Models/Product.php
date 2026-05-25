@@ -34,45 +34,83 @@ class Product extends Model
 
     public function getIsPromoAttribute(): bool
     {
-        // Pengecekan membaca semua diskon aktif
+        // CEK KEDUANYA: Ambil diskon yang scope-nya 'products' maupun 'categories'
         $discounts = Discount::where('is_active', true)
-            ->where('scope', 'products')
+            ->whereIn('scope', ['products', 'categories'])
             ->get();
 
         foreach ($discounts as $discount) {
-            $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
-            if (!empty($productIds) && in_array($this->id, $productIds)) {
-                return true; 
+            if ($discount->scope === 'products') {
+                $productIds = [];
+                if (!empty($discount->product_ids)) {
+                    $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
+                } elseif ($discount->products) {
+                    $productIds = $discount->products->pluck('id')->toArray();
+                }
+
+                if (!empty($productIds) && in_array($this->id, $productIds)) {
+                    return true; 
+                }
+            } elseif ($discount->scope === 'categories') {
+                $categoryIds = [];
+                if (!empty($discount->category_ids)) {
+                    $categoryIds = is_string($discount->category_ids) ? json_decode($discount->category_ids, true) : $discount->category_ids;
+                } elseif ($discount->categories) {
+                    $categoryIds = $discount->categories->pluck('id')->toArray();
+                }
+
+                if (!empty($categoryIds) && in_array($this->category_id, $categoryIds)) {
+                    return true;
+                }
             }
         }
-
         return false;
     }
 
     public function getDiscountAmountPerItemAttribute(): int
     {
         $discounts = Discount::where('is_active', true)
-            ->where('scope', 'products')
+            ->whereIn('scope', ['products', 'categories'])
             ->get();
 
         foreach ($discounts as $discount) {
-            $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
-            
-            if (!empty($productIds) && in_array($this->id, $productIds)) {
+            $isMatch = false;
+
+            if ($discount->scope === 'products') {
+                $productIds = [];
+                if (!empty($discount->product_ids)) {
+                    $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
+                } elseif ($discount->products) {
+                    $productIds = $discount->products->pluck('id')->toArray();
+                }
+                
+                if (!empty($productIds) && in_array($this->id, $productIds)) {
+                    $isMatch = true;
+                }
+            } elseif ($discount->scope === 'categories') {
+                $categoryIds = [];
+                if (!empty($discount->category_ids)) {
+                    $categoryIds = is_string($discount->category_ids) ? json_decode($discount->category_ids, true) : $discount->category_ids;
+                } elseif ($discount->categories) {
+                    $categoryIds = $discount->categories->pluck('id')->toArray();
+                }
+
+                if (!empty($categoryIds) && in_array($this->category_id, $categoryIds)) {
+                    $isMatch = true;
+                }
+            }
+
+            // Jika produk ini cocok dengan promo produk atau promo kategorinya
+            if ($isMatch) {
                 $originalPrice = $this->price ?? ($this->pivot ? (int) $this->pivot->price : (int) $this->cost_price);
 
                 if ($discount->type === 'percentage') {
                     $calc = $originalPrice * ((int) $discount->value / 100);
-                    if ($discount->max_discount && $calc > $discount->max_discount) {
-                        return (int) $discount->max_discount;
-                    }
-                    return (int) $calc;
+                    return $discount->max_discount && $calc > $discount->max_discount ? (int) $discount->max_discount : (int) $calc;
                 }
-
                 return (int) $discount->value; 
             }
         }
-
         return 0;
     }
 
