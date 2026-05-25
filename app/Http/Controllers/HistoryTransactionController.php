@@ -25,7 +25,8 @@ class HistoryTransactionController extends Controller
                 'order.table:id,name',
                 'order.items.product',
                 'order.discount:id,name,type,value,scope,min_purchase,max_discount',
-                'order.latestAcceptance:id,order_id,scope,accepted_by,accepted_at,printed_at',
+                // Pastikan kolom di-prefiks dengan nama tabel untuk menghindari ambiguitas SQL
+                'order.latestAcceptance:order_acceptances.id,order_acceptances.order_id,order_acceptances.scope,order_acceptances.accepted_by,order_acceptances.accepted_at,order_acceptances.printed_at',
             ])
             ->latest('paid_at');
 
