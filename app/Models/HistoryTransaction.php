@@ -31,20 +31,17 @@ class HistoryTransaction extends Model
     ];
 
 
-    protected function casts(): array
-    {
-        return [
-            'subtotal_price' => 'integer',
-            'discount_amount' => 'integer',
-            'tax_amount' => 'integer',
-            'total_price' => 'integer',
-            'paid_amount' => 'integer',
-            'change_amount' => 'integer',
-            'paid_at' => 'datetime',
-            'metadata' => 'array',
-            'order_items_summary' => 'array',
-        ];
-    }
+    protected $casts = [
+        'subtotal_price' => 'integer',
+        'discount_amount' => 'integer',
+        'tax_amount' => 'integer',
+        'total_price' => 'integer',
+        'paid_amount' => 'integer',
+        'change_amount' => 'integer',
+        'paid_at' => 'datetime',
+        'metadata' => 'array',
+        'order_items_summary' => 'array',
+    ];
 
     public function outlet()
     {
