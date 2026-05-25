@@ -18,7 +18,14 @@ class Product extends Model
         'sku',
     ];
 
-    protected $appends = ['is_promo', 'promo_price', 'discount_amount_per_item'];
+    public function toArray()
+    {
+        $array = parent::toArray();
+        $array['is_promo'] = $this->is_promo;
+        $array['promo_price'] = $this->promo_price;
+        $array['discount_amount_per_item'] = $this->discount_amount_per_item;
+        return $array;
+    }
 
     public function category()
     {
