@@ -44,7 +44,7 @@ class OrderController extends Controller
     {
         $user = auth()->user();
 
-        $query = Order::with(['items.product', 'table', 'user', 'outlet']);
+        $query = Order::with(['items.product', 'table', 'user', 'outlet', 'latestAcceptance']);
 
         // Untuk kebutuhan Flutter: saat pending, UI perlu tahu payment method.
         // Sekarang payment_method diambil dari kolom orders (terisi sejak order dibuat).
@@ -66,6 +66,12 @@ class OrderController extends Controller
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+
+            if (in_array($request->status, [Order::STATUS_PENDING, Order::STATUS_PAID], true)) {
+                $query->whereDoesntHave('acceptances', function ($acceptanceQuery) {
+                    $acceptanceQuery->whereNotNull('accepted_at');
+                });
+            }
         }
 
         $limit = $request->input('limit', 10);
