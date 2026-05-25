@@ -62,13 +62,14 @@ class ProductController extends Controller
                         'price' => (int) $product->pivot->price,
                         'stock' => (int) $product->pivot->stock,
                         'category' => $product->category,
+                        'is_promo' => $product->is_promo,
+                        'promo_price' => $product->promo_price,
+                        'discount_amount_per_item' => $product->discount_amount_per_item,
                     ];
                 })
         );
 
         // AUTO RESOLVE STATUS MEJA BERDASARKAN RESERVATION TIMER
-        // - Jika masih reserved dan waktunya sudah lewat => available lagi
-        // - Jika masih available => occupied (orang scan mulai pakai)
         if ($table->status === 'reserved') {
             $reservedUntil = $table->reserved_until ?
                 \Carbon\Carbon::parse($table->reserved_until) : null;
@@ -85,7 +86,6 @@ class ProductController extends Controller
         if ($table->status === 'available') {
             $table->update(['status' => 'occupied']);
         }
-
 
         return response()->json([
             'table' => $table,
