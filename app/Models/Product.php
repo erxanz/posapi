@@ -9,7 +9,6 @@ class Product extends Model
 {
     use HasFactory;
 
-    // p
     protected $fillable = [
         'owner_id',
         'name',
@@ -54,19 +53,15 @@ class Product extends Model
                 $productIds = [];
                 if (!empty($discount->product_ids)) {
                     $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
-                } elseif ($discount->products) {
-                    $productIds = $discount->products->pluck('id')->toArray();
                 }
 
                 if (!empty($productIds) && in_array($this->id, $productIds)) {
-                    return true; 
+                    return true;
                 }
             } elseif ($discount->scope === 'categories') {
                 $categoryIds = [];
                 if (!empty($discount->category_ids)) {
                     $categoryIds = is_string($discount->category_ids) ? json_decode($discount->category_ids, true) : $discount->category_ids;
-                } elseif ($discount->categories) {
-                    $categoryIds = $discount->categories->pluck('id')->toArray();
                 }
 
                 if (!empty($categoryIds) && in_array($this->category_id, $categoryIds)) {
@@ -90,10 +85,8 @@ class Product extends Model
                 $productIds = [];
                 if (!empty($discount->product_ids)) {
                     $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
-                } elseif ($discount->products) {
-                    $productIds = $discount->products->pluck('id')->toArray();
                 }
-                
+
                 if (!empty($productIds) && in_array($this->id, $productIds)) {
                     $isMatch = true;
                 }
@@ -101,8 +94,6 @@ class Product extends Model
                 $categoryIds = [];
                 if (!empty($discount->category_ids)) {
                     $categoryIds = is_string($discount->category_ids) ? json_decode($discount->category_ids, true) : $discount->category_ids;
-                } elseif ($discount->categories) {
-                    $categoryIds = $discount->categories->pluck('id')->toArray();
                 }
 
                 if (!empty($categoryIds) && in_array($this->category_id, $categoryIds)) {
@@ -118,7 +109,7 @@ class Product extends Model
                     $calc = $originalPrice * ((int) $discount->value / 100);
                     return $discount->max_discount && $calc > $discount->max_discount ? (int) $discount->max_discount : (int) $calc;
                 }
-                return (int) $discount->value; 
+                return (int) $discount->value;
             }
         }
         return 0;
