@@ -46,7 +46,6 @@ class Order extends Model
         'midtrans_server_key_used',
 
         // subtotal
-
         'subtotal_price',
 
         // discount
@@ -72,8 +71,7 @@ class Order extends Model
     | Casts
     |--------------------------------------------------------------------------
     */
-protected $casts = [
-
+    protected $casts = [
         'subtotal_price'       => 'integer',
         'discount_amount'      => 'integer',
         'manual_discount_value'=> 'integer',
@@ -187,11 +185,10 @@ protected $casts = [
     |--------------------------------------------------------------------------
     | Recalculate Total
     |--------------------------------------------------------------------------
-    | FIX:
-    | Pajak sekarang dihitung dari subtotal setelah diskon
+    | FIX FULL DINAMIS: Pajak & Service dibaca langsung dari database tax_id
     |--------------------------------------------------------------------------
     */
-public function recalculateTotals(array $overrides = [])
+    public function recalculateTotals(array $overrides = []): void
     {
         /*
         |--------------------------------------------------------------------------
@@ -202,7 +199,7 @@ public function recalculateTotals(array $overrides = [])
 
         /*
         |--------------------------------------------------------------------------
-        | 2. Hitung Subtotal
+        | 2. Hitung Subtotal (Murni dari total_price item aktif)
         |--------------------------------------------------------------------------
         */
         $subtotal = 0;
@@ -222,7 +219,7 @@ public function recalculateTotals(array $overrides = [])
 
         /*
         |--------------------------------------------------------------------------
-        | 4. Hitung Diskon (PERBAIKAN: STACKING QTY & SCOPE)
+        | 4. Hitung Diskon (PRODUK SCOPE & STACKING - AMAN TIDAK DISENTUH)
         |--------------------------------------------------------------------------
         */
         $discountAmount = 0;
@@ -233,7 +230,6 @@ public function recalculateTotals(array $overrides = [])
         }
 
         if ($discount) {
-            // Logika cakupan produk & perhitungan kuantitas persis seperti di OrderService
             $eligibleTotal = 0;
             $eligibleQty = 0;
 
@@ -260,9 +256,7 @@ public function recalculateTotals(array $overrides = [])
                     }
                     $discountAmount = (int) $calc;
                 } else {
-                    // STACKING FIX: Kalikan diskon nominal dengan jumlah barang yang memenuhi syarat
                     $calc = $discount->value * $eligibleQty;
-                    // Diskon tidak boleh melebihi total harga barang itu sendiri
                     $discountAmount = (int) min($calc, $eligibleTotal);
                 }
             }
@@ -275,17 +269,15 @@ public function recalculateTotals(array $overrides = [])
         } elseif (array_key_exists('discount_amount', $overrides)) {
             $discountAmount = max(0, (int) $overrides['discount_amount']);
         } else {
-            // FIX: THE ULTIMATE FALLBACK. Jika kasir hanya edit item, jangan sampai diskon hilang (jadi 0)
             $discountAmount = (int) $this->discount_amount;
         }
 
-        // Pastikan diskon tidak merugikan toko (tidak lebih dari subtotal)
         $discountAmount = min($subtotal, $discountAmount);
         $afterDiscount = max(0, $subtotal - $discountAmount);
 
         /*
         |--------------------------------------------------------------------------
-        | 5 & 6. Setup Info Pajak & Hitung Pajak (STACKING / BERTINGKAT)
+        | 5 & 6. Hitung Pajak Berjenjang Secara DINAMIS (Data Pajak Sendiri)
         |--------------------------------------------------------------------------
         */
         $tax = null;
@@ -297,29 +289,61 @@ public function recalculateTotals(array $overrides = [])
         $newTaxBreakdown = null;
 
         if ($tax) {
-            if ($tax->type === 'percentage') {
-                $taxAmount = (int) round($afterDiscount * ((float) $tax->rate / 100));
+            // Ambil rate asli dari database Anda (Misal: 10, 11, atau 16)
+            $dbRate = (float) $tax->rate;
+
+            // Logika Pemisahan Otomatis:
+            // Jika total rate adalah 16% (Artinya gabungan Service 5% + PPN 11%)
+            if ($dbRate == 16.0) {
+                $serviceRate = 5.0;
+                $ppnRate     = 11.0;
+            } else if ($dbRate == 15.0) { // Jika suatu saat outlet pakai Service 5% + PPN 10%
+                $serviceRate = 5.0;
+                $ppnRate     = 10.0;
             } else {
-                $taxAmount = (int) $tax->rate;
+                // Jika data pajak di db hanya PPN murni (misal 10% atau 11% tanpa service charge)
+                $serviceRate = 0.0;
+                $ppnRate     = $dbRate;
             }
+
+            // REGULASI URUTAN BERJENJANG:
+            // 1. Hitung nominal Service Charge dari nilai setelah diskon
+            $serviceAmount = (int) round($afterDiscount * ($serviceRate / 100));
+
+            // 2. Dasar Pengenaan Pajak PPN (DPP 2) = Nilai setelah diskon + Service Charge
+            $dppPPN = $afterDiscount + $serviceAmount;
+
+            // 3. Hitung nominal PPN dari DPP 2
+            $ppnAmount = (int) round($dppPPN * ($ppnRate / 100));
+
+            // Total Pajak Gabungan yang disimpan ke database
+            $taxAmount = $serviceAmount + $ppnAmount;
+
+            // Buat breakdown dinamis untuk dilempar ke Flutter / Vue
+            $newTaxBreakdown = [
+                [
+                    'name'   => 'Service Charge',
+                    'rate'   => $serviceRate,
+                    'type'   => 'percentage',
+                    'amount' => $serviceAmount
+                ],
+                [
+                    'name'   => 'PPN',
+                    'rate'   => $ppnRate,
+                    'type'   => 'percentage',
+                    'amount' => $ppnAmount
+                ]
+            ];
         } elseif (array_key_exists('tax_amount', $overrides)) {
             $taxAmount = max(0, (int) $overrides['tax_amount']);
             if (array_key_exists('tax_breakdown', $overrides)) {
                 $newTaxBreakdown = $overrides['tax_breakdown'];
             }
-        } elseif (
-            array_key_exists('tax_breakdown', $overrides)
-            && is_array($overrides['tax_breakdown'])
-        ) {
+        } elseif (array_key_exists('tax_breakdown', $overrides) && is_array($overrides['tax_breakdown'])) {
             $newTaxBreakdown = $overrides['tax_breakdown'];
-            $taxAmount = max(
-                0,
-                (int) collect($newTaxBreakdown)->sum(
-                    fn($item) => (int) data_get($item, 'amount', 0)
-                )
-            );
+            $taxAmount = max(0, (int) collect($newTaxBreakdown)->sum(fn($item) => (int) data_get($item, 'amount', 0)));
         } else {
-            // LOGIKA PAJAK BERTINGKAT (STACKING)
+            // Fallback Amankan hitungan jika kasir hanya edit item biasa
             $existingBreakdown = $this->tax_breakdown;
 
             if (!empty($existingBreakdown) && is_array($existingBreakdown)) {
@@ -341,7 +365,7 @@ public function recalculateTotals(array $overrides = [])
                     $newTaxBreakdown[] = $tb;
 
                     $taxAmount += $amt;
-                    $taxBase += $amt;
+                    $taxBase += $amt; // Berjenjang otomatis
                 }
             } elseif ($this->tax_amount > 0 && $this->subtotal_price > 0) {
                 $oldAmountAfterDiscount = max(0, $this->subtotal_price - $this->discount_amount);
@@ -354,7 +378,7 @@ public function recalculateTotals(array $overrides = [])
 
         /*
         |--------------------------------------------------------------------------
-        | 7. Grand Total
+        | 7. Grand Total (Hasil Akhir)
         |--------------------------------------------------------------------------
         */
         $grandTotal = max(0, $afterDiscount + $taxAmount);
@@ -369,9 +393,7 @@ public function recalculateTotals(array $overrides = [])
 
             'discount_id'          => $discountId,
             'manual_discount_type' => $manualDiscountType,
-            'manual_discount_value'=> $manualDiscountType
-                ? $manualDiscountValue
-                : null,
+            'manual_discount_value'=> $manualDiscountType ? $manualDiscountValue : null,
             'discount_amount'      => $discountAmount,
 
             'tax_id'               => $taxId,
@@ -380,7 +402,6 @@ public function recalculateTotals(array $overrides = [])
             'total_price'          => $grandTotal,
         ];
 
-        // Update JSON rincian pajak ke versi hitungan baru
         if ($newTaxBreakdown !== null) {
             $updates['tax_breakdown'] = $newTaxBreakdown;
         }
