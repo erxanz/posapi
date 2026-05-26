@@ -185,21 +185,21 @@ class Order extends Model
     |--------------------------------------------------------------------------
     | Recalculate Total
     |--------------------------------------------------------------------------
-    | FIX FULL DINAMIS: Pajak & Service dibaca langsung dari database tax_id
+    | FIX MASTER: Mengamankan Diskon Bersyarat & Perhitungan Pajak Berjenjang
     |--------------------------------------------------------------------------
     */
-    public function recalculateTotals(array $overrides = []): void
+    public function recalculateTotals(array $overrides = [])
     {
         /*
         |--------------------------------------------------------------------------
-        | 1. Dapatkan semua item terkait
+        | 1. Ambil Item Aktif
         |--------------------------------------------------------------------------
         */
         $items = clone collect($this->items);
 
         /*
         |--------------------------------------------------------------------------
-        | 2. Hitung Subtotal (Murni dari total_price item aktif)
+        | 2. Hitung Subtotal Murni
         |--------------------------------------------------------------------------
         */
         $subtotal = 0;
@@ -209,7 +209,7 @@ class Order extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | 3. Set up Override Values
+        | 3. Set up Override / Existing Values
         |--------------------------------------------------------------------------
         */
         $discountId = array_key_exists('discount_id', $overrides) ? $overrides['discount_id'] : $this->discount_id;
@@ -219,7 +219,7 @@ class Order extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | 4. Hitung Diskon (PRODUK SCOPE & STACKING - AMAN TIDAK DISENTUH)
+        | 4. Logika Kalkulasi Diskon Berdasarkan Syarat Minimum Pembelian
         |--------------------------------------------------------------------------
         */
         $discountAmount = 0;
@@ -233,6 +233,7 @@ class Order extends Model
             $eligibleTotal = 0;
             $eligibleQty = 0;
 
+            // Filter item berdasarkan scope promonya
             if ($discount->scope === 'products' && !empty($discount->product_ids)) {
                 $itemsInScope = $items->whereIn('product_id', $discount->product_ids);
                 $eligibleTotal = $itemsInScope->sum('total_price');
@@ -248,16 +249,22 @@ class Order extends Model
                 $eligibleQty = $items->sum('qty');
             }
 
-            if ($eligibleTotal > 0) {
-                if ($discount->type === 'percentage') {
-                    $calc = $eligibleTotal * ((float) $discount->value / 100);
-                    if ($discount->max_discount > 0 && $calc > $discount->max_discount) {
-                        $calc = $discount->max_discount;
+            // FILTER SYARAT UTAMA: Jika subtotal keranjang belum lolos min_purchase, diskon batal (0)
+            if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
+                $discountAmount = 0;
+            } else {
+                // Lolos syarat, eksekusi pemotongan harga coret
+                if ($eligibleTotal > 0) {
+                    if ($discount->type === 'percentage') {
+                        $calc = $eligibleTotal * ((float) $discount->value / 100);
+                        if ($discount->max_discount > 0 && $calc > $discount->max_discount) {
+                            $calc = $discount->max_discount;
+                        }
+                        $discountAmount = (int) $calc;
+                    } else {
+                        $calc = $discount->value * $eligibleQty;
+                        $discountAmount = (int) min($calc, $eligibleTotal);
                     }
-                    $discountAmount = (int) $calc;
-                } else {
-                    $calc = $discount->value * $eligibleQty;
-                    $discountAmount = (int) min($calc, $eligibleTotal);
                 }
             }
         } elseif ($manualDiscountType && $manualDiscountValue > 0) {
@@ -277,7 +284,7 @@ class Order extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | 5 & 6. Hitung Pajak Berjenjang Secara DINAMIS (Data Pajak Sendiri)
+        | 5 & 6. Logika Perhitungan Pajak Berjenjang Dinamis Database
         |--------------------------------------------------------------------------
         */
         $tax = null;
@@ -289,37 +296,33 @@ class Order extends Model
         $newTaxBreakdown = null;
 
         if ($tax) {
-            // Ambil rate asli dari database Anda (Misal: 10, 11, atau 16)
             $dbRate = (float) $tax->rate;
 
-            // Logika Pemisahan Otomatis:
-            // Jika total rate adalah 16% (Artinya gabungan Service 5% + PPN 11%)
+            // Memisahkan paket pajak gabungan restoran (Service Charge + PPN) secara dinamis
             if ($dbRate == 16.0) {
                 $serviceRate = 5.0;
                 $ppnRate     = 11.0;
-            } else if ($dbRate == 15.0) { // Jika suatu saat outlet pakai Service 5% + PPN 10%
+            } else if ($dbRate == 15.0) {
                 $serviceRate = 5.0;
                 $ppnRate     = 10.0;
             } else {
-                // Jika data pajak di db hanya PPN murni (misal 10% atau 11% tanpa service charge)
                 $serviceRate = 0.0;
                 $ppnRate     = $dbRate;
             }
 
-            // REGULASI URUTAN BERJENJANG:
-            // 1. Hitung nominal Service Charge dari nilai setelah diskon
+            // EKSEKUSI BERJENJANG:
+            // A. Service Charge dihitung dari nilai setelah diskon (DPP 1)
             $serviceAmount = (int) round($afterDiscount * ($serviceRate / 100));
 
-            // 2. Dasar Pengenaan Pajak PPN (DPP 2) = Nilai setelah diskon + Service Charge
+            // B. Dasar Pengenaan PPN (DPP 2) = Nilai setelah diskon + Service Charge
             $dppPPN = $afterDiscount + $serviceAmount;
 
-            // 3. Hitung nominal PPN dari DPP 2
+            // C. PPN dihitung dari DPP 2
             $ppnAmount = (int) round($dppPPN * ($ppnRate / 100));
 
-            // Total Pajak Gabungan yang disimpan ke database
             $taxAmount = $serviceAmount + $ppnAmount;
 
-            // Buat breakdown dinamis untuk dilempar ke Flutter / Vue
+            // Bentuk breakdown JSON rapi untuk dikonsumsi Vue / Flutter
             $newTaxBreakdown = [
                 [
                     'name'   => 'Service Charge',
@@ -343,7 +346,7 @@ class Order extends Model
             $newTaxBreakdown = $overrides['tax_breakdown'];
             $taxAmount = max(0, (int) collect($newTaxBreakdown)->sum(fn($item) => (int) data_get($item, 'amount', 0)));
         } else {
-            // Fallback Amankan hitungan jika kasir hanya edit item biasa
+            // Fallback aman mengawal kestabilan data saat edit/void item via Kasir
             $existingBreakdown = $this->tax_breakdown;
 
             if (!empty($existingBreakdown) && is_array($existingBreakdown)) {
@@ -365,7 +368,7 @@ class Order extends Model
                     $newTaxBreakdown[] = $tb;
 
                     $taxAmount += $amt;
-                    $taxBase += $amt; // Berjenjang otomatis
+                    $taxBase += $amt; 
                 }
             } elseif ($this->tax_amount > 0 && $this->subtotal_price > 0) {
                 $oldAmountAfterDiscount = max(0, $this->subtotal_price - $this->discount_amount);
@@ -378,14 +381,14 @@ class Order extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | 7. Grand Total (Hasil Akhir)
+        | 7. Hasil Akhir (Grand Total)
         |--------------------------------------------------------------------------
         */
         $grandTotal = max(0, $afterDiscount + $taxAmount);
 
         /*
         |--------------------------------------------------------------------------
-        | 8. Simpan ke Database
+        | 8. Eksekusi Update Tunggal Database
         |--------------------------------------------------------------------------
         */
         $updates = [
