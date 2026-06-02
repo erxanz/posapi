@@ -318,6 +318,7 @@ class OrderController extends Controller
             'manual_discount_value' => 'nullable|integer|min:0',
             'discount' => 'nullable',
             'discounts' => 'nullable|array',
+            'discount_id' => 'nullable|exists:discounts,id',
             'discount_ids' => 'nullable|array',
             'discount_ids.*' => 'exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',

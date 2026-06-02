@@ -198,7 +198,7 @@ class Order extends Model
     | FIX MASTER: Mengamankan Diskon Bersyarat & Perhitungan Pajak Berjenjang
     |--------------------------------------------------------------------------
     */
-    public function recalculateTotals(array $overrides = [])
+public function recalculateTotals(array $overrides = [])
     {
         /*
         |--------------------------------------------------------------------------
@@ -243,12 +243,16 @@ class Order extends Model
             $eligibleTotal = 0;
             $eligibleQty = 0;
 
+            // PERBAIKAN BUG: Amankan dari perbedaan huruf/spasi di database
+            $scope = strtolower(trim($discount->scope ?? 'global'));
+            $type = strtolower(trim($discount->type ?? 'nominal'));
+
             // Filter item berdasarkan scope promonya
-            if ($discount->scope === 'products' && !empty($discount->product_ids)) {
+            if ($scope === 'products' && !empty($discount->product_ids)) {
                 $itemsInScope = $items->whereIn('product_id', $discount->product_ids);
                 $eligibleTotal = $itemsInScope->sum('total_price');
                 $eligibleQty = $itemsInScope->sum('qty');
-            } elseif ($discount->scope === 'categories' && !empty($discount->category_ids)) {
+            } elseif ($scope === 'categories' && !empty($discount->category_ids)) {
                 $itemsInScope = $items->filter(function ($item) use ($discount) {
                     return in_array($item->product->category_id ?? null, $discount->category_ids);
                 });
@@ -265,7 +269,8 @@ class Order extends Model
             } else {
                 // Lolos syarat, eksekusi pemotongan harga coret
                 if ($eligibleTotal > 0) {
-                       if ($discount->type === 'percentage') {
+                       if ($type === 'percentage') {
+                        // PERBAIKAN BUG: Gunakan (float)
                         $calc = $eligibleTotal * ((float) $discount->value / 100);
                         if ($discount->max_discount > 0 && $calc > $discount->max_discount) {
                             $calc = $discount->max_discount;
@@ -273,7 +278,7 @@ class Order extends Model
                         $discountAmount = (int) $calc;
                     } else {
                         // PERBAIKAN BUG: Validasi scope global & transaction agar nominal tidak dikalikan qty
-                        if (in_array($discount->scope, ['global', 'transaction', 'all'])) {
+                        if (in_array($scope, ['global', 'transaction', 'all', ''])) {
                             $discountAmount = (int) min($discount->value, $eligibleTotal);
                         } else {
                             $calc = $discount->value * $eligibleQty;

@@ -431,7 +431,7 @@ private function handleAdjustments(Order $order, array $data): void
     $totalDiscountAmount = 0;
     $discount = null;
 
-        // JALUR 1: Jika pelanggan memilih Master Diskon Global (Voucher) dari UI QR Menu
+    // JALUR 1: Jika pelanggan memilih Master Diskon Global (Voucher) dari UI QR Menu
     if ($discountId) {
         $discount = Discount::find($discountId);
         if (!$discount) {
@@ -443,16 +443,21 @@ private function handleAdjustments(Order $order, array $data): void
             throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
         }
 
-        // Perbaikan Bug: Dukung tipe 'global' maupun 'transaction', dan jangan tolak products/categories
-        if (in_array($discount->scope, ['global', 'transaction', 'all'])) {
-            if ($discount->type === 'percentage') {
-                $calc = $subtotal * ((int)$discount->value / 100);
+        // PERBAIKAN BUG: Amankan dari huruf besar/kecil & spasi di database
+        $scope = strtolower(trim($discount->scope ?? 'global'));
+        $type = strtolower(trim($discount->type ?? 'nominal'));
+
+        // Dukung tipe 'global' maupun 'transaction', dan jangan tolak products/categories
+        if (in_array($scope, ['global', 'transaction', 'all', ''])) {
+            if ($type === 'percentage') {
+                // PERBAIKAN BUG: Gunakan (float) agar hitungan tidak jadi 0
+                $calc = $subtotal * ((float)$discount->value / 100);
                 if ($discount->max_discount && $calc > $discount->max_discount) {
                     $calc = $discount->max_discount;
                 }
                 $totalDiscountAmount = (int) $calc;
             } else {
-                $totalDiscountAmount = min((int)$discount->value, $subtotal);
+                $totalDiscountAmount = (int) min($discount->value, $subtotal);
             }
         } else {
             // Untuk scope products/categories, nilai presisi akan dihitung tuntas di Order::recalculateTotals()
@@ -468,7 +473,7 @@ private function handleAdjustments(Order $order, array $data): void
         $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
 
         if ($data['manual_discount_type'] === 'percentage') {
-            $totalDiscountAmount = (int) round($subtotal * ((int)$data['manual_discount_value'] / 100));
+            $totalDiscountAmount = (int) round($subtotal * ((float)$data['manual_discount_value'] / 100));
         } else {
             $totalDiscountAmount = (int) $data['manual_discount_value'];
         }
@@ -492,7 +497,7 @@ private function handleAdjustments(Order $order, array $data): void
     }
 
     // Amankan nilai akhir diskon agar masuk ke properti order sebelum update tunggal database
-    $order->discount_amount = min($subtotal, max(0, $totalDiscountAmount));
+    $order->discount_amount = (int) min($subtotal, max(0, $totalDiscountAmount));
     $updates['discount_amount'] = $order->discount_amount;
 
     // ==========================================================================
