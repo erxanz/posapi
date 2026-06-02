@@ -241,11 +241,7 @@ class OrderService
                 'manual_discount_type' => $validated['manual_discount_type'] ?? null,
                 'manual_discount_value' => $validated['manual_discount_value'] ?? 0,
                 'discount_id' => $validated['discount_id'] ?? null,
-                'discount_type' => $validated['discount_type'] ?? null,
-                'discount_value' => $validated['discount_value'] ?? 0,
                 'tax_id' => $validated['tax_id'] ?? null,
-                'tax_type' => $validated['tax_type'] ?? null,
-                'tax_value' => $validated['tax_value'] ?? 0,
                 'tax_amount' => $validated['tax_amount'] ?? 0,
                 'tax_breakdown' => isset($validated['tax_breakdown']) ? json_encode($validated['tax_breakdown']) : null,
                 'midtrans_server_key_used' => $midtransKeyUsed,
@@ -430,11 +426,16 @@ private function handleAdjustments(Order $order, array $data): void
     // Ambil discount_id tunggal hasil normalisasi di controller
     $discountId = $data['discount_id'] ?? null;
     $totalDiscountAmount = 0;
+    $discount = null;
 
     // JALUR 1: Jika pelanggan memilih Master Diskon Global (Voucher) dari UI QR Menu
     if ($discountId) {
         $discount = Discount::find($discountId);
-        if ($discount && $discount->scope === 'global') {
+        if (!$discount) {
+            throw new \Exception("Diskon dengan ID {$discountId} tidak ditemukan di database.");
+        }
+        
+        if ($discount->scope === 'global') {
             // Validasi syarat minimal pembelian
             if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
                 throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
@@ -453,10 +454,10 @@ private function handleAdjustments(Order $order, array $data): void
             $updates['discount_id'] = $discount->id;
             $updates['manual_discount_type'] = null;
             $updates['manual_discount_value'] = 0;
+        } else {
+            throw new \Exception("Diskon '{$discount->name}' bukan tipe global. Scope: {$discount->scope}");
         }
-    } 
-    // JALUR 2: Jika Kasir menginput nominal potongan global manual langsung di device POS
-    elseif (!empty($data['manual_discount_type']) && isset($data['manual_discount_value'])) {
+    } elseif (!empty($data['manual_discount_type']) && isset($data['manual_discount_value'])) {
         $updates['manual_discount_type'] = $data['manual_discount_type'];
         $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
 
@@ -466,10 +467,9 @@ private function handleAdjustments(Order $order, array $data): void
             $totalDiscountAmount = (int) $data['manual_discount_value'];
         }
         $updates['discount_id'] = null;
-    } 
-    // JALUR 3 (FALLBACK): Dipakai JIKA DAN HANYA JIKA tidak ada diskon global / manual apa pun yang dipilih.
-    // Di sini sistem akan menghitung total akumulasi diskon produk bawaan item menu.
-    else {
+    } elseif (!$discountId && empty($data['manual_discount_type'])) {
+        // JALUR 3 (FALLBACK): Hanya jika TIDAK ada discount_id dan TIDAK ada manual_discount
+        // Di sini sistem akan menghitung total akumulasi diskon produk bawaan item menu.
         $totalProductDiscount = 0;
         foreach ($order->items as $item) {
             if ($item->product && $item->product->is_promo) {
