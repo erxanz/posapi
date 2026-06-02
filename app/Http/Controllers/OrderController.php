@@ -1039,8 +1039,15 @@ class OrderController extends Controller
 
         try {
             if (in_array($request->transaction_status, ['settlement', 'capture'], true)) {
+                // Pastikan perhitungan diskon & pajak tersinkron sebelum status paid & history dibuat.
+                // Ini mencegah kasus diskon "hilang" ketika callback datang.
+                $order->loadMissing('items');
+                $order->recalculateTotals();
+                $order->refresh();
+
                 if (in_array($order->payment_method, ['card', 'credit_card'], true)) {
                     $order->payment_method = 'card';
+
                 } elseif (in_array($order->payment_method, ['cash', 'tunai'], true)) {
                     $order->payment_method = 'cash';
                 } else {
