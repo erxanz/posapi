@@ -370,42 +370,58 @@ class OrderController extends Controller
                 \Midtrans\Config::$is3ds = true;
 
                 $itemDetails = [];
+                $calculatedGrossAmount = 0; // Tambahkan penampung hitungan manual
+
+                // 1. Masukkan Item Produk
                 foreach ($order->items as $item) {
+                    $itemPrice = (int) $item->price;
+                    $itemQty = (int) $item->qty;
+                    $itemTotalPrice = $itemPrice * $itemQty;
+
                     $itemDetails[] = [
                         'id' => (string) $item->product_id,
                         'name' => substr($item->product->name, 0, 50),
-                        'price' => (int) $item->price,
-                        'quantity' => (int) $item->qty,
+                        'price' => $itemPrice,
+                        'quantity' => $itemQty,
                     ];
+
+                    $calculatedGrossAmount += $itemTotalPrice; // Tambah subtotal item
                 }
 
+                // 2. Masukkan Potongan Diskon (Bernilai Negatif)
                 $discountAmount = (int) ($order->discount_amount ?? 0);
                 if ($discountAmount > 0) {
                     $itemDetails[] = [
                         'id' => 'DISCOUNT',
-                        'name' => 'Discount',
-                        'price' => -$discountAmount,
+                        'name' => 'Discount Potongan Harga',
+                        'price' => -$discountAmount, // WAJIB NEGATIF
                         'quantity' => 1,
                     ];
+
+                    $calculatedGrossAmount -= $discountAmount; // Kurangi total belanja dengan diskon
                 }
 
+                // 3. Masukkan Biaya Pajak (Jika ada)
                 $taxAmount = (int) ($order->tax_amount ?? 0);
                 if ($taxAmount > 0) {
                     $itemDetails[] = [
                         'id' => 'TAX',
-                        'name' => 'Tax',
+                        'name' => 'Tax / Pajak',
                         'price' => $taxAmount,
                         'quantity' => 1,
                     ];
+
+                    $calculatedGrossAmount += $taxAmount; // Tambah total belanja dengan pajak
                 }
 
-                // AMBIL TOTAL AKHIR LANGSUNG DARI MODEL (Aman dari pembulatan/perbedaan loop)
-                $finalGrossAmount = (int) $order->total_price;
+                // KUNCI UTAMA: Gunakan $calculatedGrossAmount agar sinkron dengan $itemDetails
+                // Serta berikan fallback ke $order->total_price jika karena alasan tertentu hitungannya <= 0
+                $finalGrossAmount = $calculatedGrossAmount > 0 ? $calculatedGrossAmount : (int) $order->total_price;
 
                 $params = [
                     'transaction_details' => [
                         'order_id' => $order->invoice_number,
-                        'gross_amount' => $finalGrossAmount,
+                        'gross_amount' => $finalGrossAmount, // Total bayar akhir setelah diskon & pajak
                     ],
                     'customer_details' => [
                         'first_name' => $order->customer_name ?: 'Customer POS',
