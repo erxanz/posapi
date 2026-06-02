@@ -286,7 +286,7 @@ class OrderController extends Controller
             $order->update(['logs' => $logs]);
 
             $order->refresh();
-            $order->recalculateTotals();
+            $order->recalculateTotals($validated);
 
             if ($order->status === Order::STATUS_PAID) {
                 $this->orderService->syncHistoryTransaction($order->fresh());
@@ -348,7 +348,7 @@ class OrderController extends Controller
             $order = Order::with(['items.product', 'table', 'discount'])->findOrFail($order->id);
 
             // KUNCI UTAMA: Jalankan ulang hitung total bawaan model agar kolom database tersinkronisasi 100%
-            $order->recalculateTotals();
+            $order->recalculateTotals($validated);
             $order->refresh();
 
             $methodStr = strtolower($request->payment_method);
@@ -490,6 +490,7 @@ class OrderController extends Controller
             'discount_ids.*' => 'exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
+            'discount_amount' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
             'tax_type' => 'nullable|in:percentage,nominal,fixed',
             'tax_value' => 'nullable|integer|min:0',
@@ -525,7 +526,7 @@ class OrderController extends Controller
                 $order = Order::with(['items.product', 'table', 'discount'])->findOrFail($order->id);
 
                 // RE-CALCULATE TOTALS AGAR DISKON DAN PAJAK TERSINKRONISASI KE KOLOM DATABASE
-                $order->recalculateTotals();
+                $order->recalculateTotals($validated);
                 $order->refresh();
 
                 Config::$serverKey = env('MIDTRANS_SERVER_KEY');
@@ -540,15 +541,25 @@ class OrderController extends Controller
                 }
 
                 $itemDetails = [];
+                $calculatedGrossAmount = 0; // Tambahkan penampung hitungan manual
+
+                // 1. Masukkan Item Produk
                 foreach ($order->items as $item) {
+                    $itemPrice = (int) $item->price;
+                    $itemQty = (int) $item->qty;
+                    $itemTotalPrice = $itemPrice * $itemQty;
+
                     $itemDetails[] = [
                         'id' => (string) $item->product_id,
                         'name' => substr($item->product->name, 0, 50),
-                        'price' => (int) $item->price,
-                        'quantity' => (int) $item->qty,
+                        'price' => $itemPrice,
+                        'quantity' => $itemQty,
                     ];
+
+                    $calculatedGrossAmount += $itemTotalPrice; // Tambah subtotal item
                 }
 
+                // 2. Masukkan Diskon
                 $discountAmount = (int) ($order->discount_amount ?? 0);
                 if ($discountAmount > 0) {
                     $itemDetails[] = [
@@ -557,8 +568,10 @@ class OrderController extends Controller
                         'price' => -$discountAmount,
                         'quantity' => 1,
                     ];
+                    $calculatedGrossAmount -= $discountAmount; // Kurangi total dari diskon
                 }
 
+                // 3. Masukkan Pajak
                 $taxAmount = (int) ($order->tax_amount ?? 0);
                 if ($taxAmount > 0) {
                     $itemDetails[] = [
@@ -567,15 +580,16 @@ class OrderController extends Controller
                         'price' => $taxAmount,
                         'quantity' => 1,
                     ];
+                    $calculatedGrossAmount += $taxAmount; // Tambah total dari pajak
                 }
 
-                // AMBIL TOTAL AKHIR LANGSUNG DARI ATRIBUT DATABASE TERINTEGRASI
-                $finalGrossAmount = (int) $order->total_price;
+                // KUNCI UTAMA: Gunakan calculated amount
+                $finalGrossAmount = $calculatedGrossAmount > 0 ? $calculatedGrossAmount : (int) $order->total_price;
 
                 $params = [
                     'transaction_details' => [
                         'order_id' => $order->invoice_number,
-                        'gross_amount' => $finalGrossAmount,
+                        'gross_amount' => $finalGrossAmount, // <-- Panggil nilai kalkulasi akhir
                     ],
                     'customer_details' => [
                         'first_name' => $order->customer_name ?: 'Customer POS',
