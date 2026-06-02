@@ -351,7 +351,10 @@ public function removeItem($orderId, $itemId)
 
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
+            'discount' => 'nullable',
+            'discounts' => 'nullable|array',
             'discount_ids' => 'nullable|array',
+            'discount_ids.*' => 'nullable',
             'discount_ids.*' => 'exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
@@ -454,11 +457,11 @@ public function removeItem($orderId, $itemId)
                         'first_name' => $order->customer_name ?: 'Customer POS',
                     ],
                     'item_details' => $itemDetails,
-                        'callbacks' => [
+                    'callbacks' => [
                         'finish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
                         'unfinish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
                         'error' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
-                    ]
+                    ],
                 ];
 
                 if ($methodStr === 'qris' || $methodStr === 'midtrans') {
@@ -519,8 +522,11 @@ public function removeItem($orderId, $itemId)
             // DISKON
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
+            'discount' => 'nullable',
+            'discounts' => 'nullable|array',
             'discount_id' => 'nullable|exists:discounts,id',
             'discount_ids' => 'nullable|array',
+            'discount_ids.*' => 'nullable',
             'discount_ids.*' => 'exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
@@ -1042,16 +1048,37 @@ public function removeItem($orderId, $itemId)
 
     private function normalizeLegacyAdjustmentPayload(array $payload): array
     {
-        if (!isset($payload['discount_id']) && !empty($payload['discount_ids']) && is_array($payload['discount_ids'])) {
-            $payload['discount_id'] = (int) collect($payload['discount_ids'])->first();
+        if (!isset($payload['discount_id'])) {
+            $discountSources = [];
+
+            if (!empty($payload['discount_ids']) && is_array($payload['discount_ids'])) {
+                $discountSources[] = $payload['discount_ids'];
+            }
+
+            if (!empty($payload['discounts']) && is_array($payload['discounts'])) {
+                $discountSources[] = $payload['discounts'];
+            }
+
+            if (!empty($payload['discount'])) {
+                $discountSources[] = [$payload['discount']];
+            }
+
+            foreach ($discountSources as $discountSource) {
+                foreach ($discountSource as $discountCandidate) {
+                    $candidateId = is_array($discountCandidate)
+                        ? ($discountCandidate['id'] ?? $discountCandidate['discount_id'] ?? null)
+                        : $discountCandidate;
+
+                    if (!empty($candidateId)) {
+                        $payload['discount_id'] = (int) $candidateId;
+                        break 2;
+                    }
+                }
+            }
         }
 
         if (isset($payload['discount_id'])) {
             $payload['discount_id'] = (int) $payload['discount_id'];
-        }
-
-        if (!isset($payload['discount_id']) && !empty($payload['discount_ids']) && is_array($payload['discount_ids'])) {
-            $payload['discount_id'] = (int) collect($payload['discount_ids'])->first();
         }
 
         if (!isset($payload['manual_discount_type']) && isset($payload['discount_type'])) {
@@ -1083,115 +1110,81 @@ public function removeItem($orderId, $itemId)
         return $payload;
     }
 
-/**
+    /**
      * Webhook callback dari Midtrans
      */
     public function midtransCallback(Request $request)
     {
-        // Gunakan server key yang dipakai saat create transaksi (disimpan di orders)
-        $order = Order::where('invoice_number', $request->order_id)->first();
+        $order = Order::with('items.product', 'table', 'payments')->where('invoice_number', $request->order_id)->first();
+
         if (!$order) {
             return response()->json(['message' => 'Order not found'], 404);
         }
 
         $serverKey = $order->midtrans_server_key_used ?: env('MIDTRANS_SERVER_KEY');
+        $hashed = hash('sha512', $request->order_id . $request->status_code . $request->gross_amount . $serverKey);
 
-        $hashed = hash("sha512", $request->order_id . $request->status_code . $request->gross_amount . $serverKey);
+        if ($hashed !== $request->signature_key) {
+            return response()->json(['message' => 'Invalid signature'], 403);
+        }
 
+        DB::beginTransaction();
 
-        // Verifikasi kalau request beneran dari Midtrans
-        if ($hashed == $request->signature_key) {
-            if ($order) {
+        try {
+            if (in_array($request->transaction_status, ['settlement', 'capture'], true)) {
+                if (in_array($order->payment_method, ['card', 'credit_card'], true)) {
+                    $order->payment_method = 'card';
+                } elseif (in_array($order->payment_method, ['cash', 'tunai'], true)) {
+                    $order->payment_method = 'cash';
+                } else {
+                    $order->payment_method = 'qris';
+                }
 
-                DB::beginTransaction();
+                $order->update(['status' => Order::STATUS_PAID]);
 
-                try {
-                    if ($request->transaction_status == 'capture' || $request->transaction_status == 'settlement') {
-                        // Pembayaran sukses
-                        $order->update(['status' => Order::STATUS_PAID]);
+                if ($order->table_id) {
+                    $order->table->update([
+                        'status' => 'reserved',
+                        'reserved_until' => now()->addMinutes(20),
+                    ]);
+                }
 
-                        $paymentMethod = $request->payment_type ?? 'midtrans';
+                $order->save();
+                $this->orderService->syncHistoryTransaction($order->fresh());
 
-                        // Buat payment record
-                        $createdPayment = \App\Models\Payment::create([
-                            'order_id' => $order->id,
-                            'amount_paid' => (int) $request->gross_amount,
-                            'change_amount' => 0,
-                            'method' => $paymentMethod,
-                            'reference_no' => $request->transaction_id ?? null,
-                            'paid_at' => now(),
-                            'paid_by' => null,
-                        ]);
+                $broadcastOrder = $order->fresh()->load(['items.product', 'table', 'payments']);
+                event(new \App\Events\PaymentPaid($broadcastOrder));
+                event(new \App\Events\OrderUpdated($broadcastOrder));
+            } elseif (in_array($request->transaction_status, ['cancel', 'deny', 'expire'], true)) {
+                $order->update(['status' => Order::STATUS_CANCELLED]);
 
-                        // Sync payment method ke orders agar UI tahu metode pembayaran.
-                        $order->payment_method = strtolower(trim($createdPayment->method ?? 'midtrans'));
-                        if (in_array($order->payment_method, ['qris', 'midtrans'])) {
-                            $order->payment_method = 'qris';
-                        } elseif (in_array($order->payment_method, ['card', 'credit_card'])) {
-                            $order->payment_method = 'card';
-                        } elseif (in_array($order->payment_method, ['cash', 'tunai'])) {
-                            $order->payment_method = 'cash';
-                        }
-                        $order->save();
+                $outlet = \App\Models\Outlet::find($order->outlet_id);
+                if ($outlet) {
+                    foreach ($order->items as $item) {
+                        $product = $outlet->products()->where('products.id', $item->product_id)->first();
 
+                        if ($product) {
+                            $newStock = $product->pivot->stock + $item->qty;
+                            $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
 
-                        // Update table status
-                        // Untuk flow QR: meja tidak langsung available.
-                        // Timer reserved_until akan mengembalikan meja otomatis.
-                        // Jadi di sini cukup set reserved (jika belum ada).
-                        if ($order->table_id) {
-                            $order->table->update([
-                                'status' => 'reserved',
-                                'reserved_until' => now()->addMinutes(20),
+                            \App\Models\StockHistory::create([
+                                'outlet_id' => $order->outlet_id,
+                                'product_id' => $item->product_id,
+                                'user_id' => null,
+                                'type' => 'restore',
+                                'quantity' => $item->qty,
+                                'final_stock' => $newStock,
+                                'reference' => 'Auto-Cancel Midtrans: ' . $order->invoice_number,
                             ]);
                         }
-
-
-                        // Store history transaction
-                        $this->orderService->syncHistoryTransaction($order->fresh());
-
-                        // Trigger event agar frontend tahu ada perubahan
-                        $broadcastOrder = $order->fresh()->load(['items.product', 'table', 'payments']);
-
-                        // Event PaymentPaid supaya POS kasir mobile bisa trigger print via listener yang sama seperti flow cash
-                        event(new \App\Events\PaymentPaid($broadcastOrder));
-                        event(new \App\Events\OrderUpdated($broadcastOrder));
-
-                    } else if ($request->transaction_status == 'cancel' || $request->transaction_status == 'deny' || $request->transaction_status == 'expire') {
-
-                        // 1. Ubah status pesanan
-                        $order->update(['status' => Order::STATUS_CANCELLED]);
-
-                        // 2. KEMBALIKAN STOK
-                        $outlet = \App\Models\Outlet::find($order->outlet_id);
-
-                        foreach ($order->items as $item) {
-                            $product = $outlet->products()->where('products.id', $item->product_id)->first();
-
-                            if ($product) {
-                                $newStock = $product->pivot->stock + $item->qty;
-                                $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
-
-                                // Catat di riwayat bahwa stok dikembalikan oleh sistem otomatis
-                                \App\Models\StockHistory::create([
-                                    'outlet_id' => $order->outlet_id,
-                                    'product_id' => $item->product_id,
-                                    'user_id' => null, // null karena sistem yang mengeksekusi
-                                    'type' => 'restore',
-                                    'quantity' => $item->qty,
-                                    'final_stock' => $newStock,
-                                    'reference' => 'Auto-Cancel Midtrans: ' . $order->invoice_number,
-                                ]);
-                            }
-                        }
                     }
-
-                    DB::commit();
-                } catch (\Exception $e) {
-                    DB::rollBack();
-                    \Log::error('Midtrans callback error: ' . $e->getMessage());
                 }
             }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error('Midtrans callback error: ' . $e->getMessage());
         }
 
         return response()->json(['message' => 'Callback received']);
