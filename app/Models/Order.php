@@ -255,15 +255,19 @@ class Order extends Model
             } else {
                 // Lolos syarat, eksekusi pemotongan harga coret
                 if ($eligibleTotal > 0) {
-                    if ($discount->type === 'percentage') {
+                            if ($discount->type === 'percentage') {
                         $calc = $eligibleTotal * ((float) $discount->value / 100);
                         if ($discount->max_discount > 0 && $calc > $discount->max_discount) {
                             $calc = $discount->max_discount;
                         }
                         $discountAmount = (int) $calc;
                     } else {
-                        $calc = $discount->value * $eligibleQty;
-                        $discountAmount = (int) min($calc, $eligibleTotal);
+                        if ($discount->scope === 'global') {
+                            $discountAmount = (int) min($discount->value, $eligibleTotal);
+                        } else {
+                            $calc = $discount->value * $eligibleQty;
+                            $discountAmount = (int) min($calc, $eligibleTotal);
+                        }
                     }
                 }
             }

@@ -571,7 +571,7 @@ public function removeItem($orderId, $itemId)
                  * PENTING: Reload order untuk memastikan discount_amount & tax_amount
                  * terisi dengan benar dari database
                  */
-                $order = Order::with('items.product', 'table')
+                $order = Order::with('items.product', 'table', 'discount')
                     ->findOrFail($order->id);
 
                 Config::$serverKey = env('MIDTRANS_SERVER_KEY');

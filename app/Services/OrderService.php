@@ -102,13 +102,13 @@ class OrderService
 
             DB::commit();
 
-            $broadcastOrder = $order->fresh()->load('items.product', 'table');
+            $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
             broadcast(new OrderCreated($broadcastOrder))->toOthers();
 
             return [
                 'success' => true,
                 'message' => 'Checkout dan pembayaran berhasil',
-                'order' => $order->load('items.product', 'table', 'payments'),
+                'order' => $order->load('items.product', 'table', 'payments', 'discount'),
             ];
 
         } catch (\Throwable $e) {
@@ -195,13 +195,13 @@ class OrderService
 
             DB::commit();
 
-            $broadcastOrder = $order->fresh()->load('items.product', 'table');
+            $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
             broadcast(new OrderCreated($broadcastOrder))->toOthers();
 
             return [
                 'success' => true,
                 'message' => 'Order dibuat, silakan lanjut ke pembayaran Midtrans',
-                'order' => $order->load('items.product', 'table'),
+                'order' => $order->load('items.product', 'table', 'discount'),
             ];
 
         } catch (\Throwable $e) {
