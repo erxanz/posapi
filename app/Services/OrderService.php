@@ -427,21 +427,15 @@ private function handleAdjustments(Order $order, array $data): void
     $order->loadMissing('items.product');
     $subtotal = $order->items->sum('total_price');
 
-    // 1. Ambil discount_id tunggal (antisipasi jika frontend mengirim array discount_ids)
-    $discountId = null;
-    if (!empty($data['discount_id'])) {
-        $discountId = $data['discount_id'];
-    } elseif (!empty($data['discount_ids']) && is_array($data['discount_ids'])) {
-        $discountId = collect($data['discount_ids'])->first();
-    }
-
+    // Ambil discount_id tunggal hasil normalisasi di controller
+    $discountId = $data['discount_id'] ?? null;
     $totalDiscountAmount = 0;
 
-    // 2. LOGIKA MEMBACA MASTER DISKON GLOBAL
+    // JALUR 1: Jika pelanggan memilih Master Diskon Global (Voucher) dari UI QR Menu
     if ($discountId) {
         $discount = Discount::find($discountId);
         if ($discount && $discount->scope === 'global') {
-            // Validasi syarat minimum pembelian
+            // Validasi syarat minimal pembelian
             if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
                 throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
             }
@@ -461,7 +455,7 @@ private function handleAdjustments(Order $order, array $data): void
             $updates['manual_discount_value'] = 0;
         }
     } 
-    // 3. LOGIKA MEMBACA DISKON MANUAL (Jika kasir input diskon langsung tanpa voucher)
+    // JALUR 2: Jika Kasir menginput nominal potongan global manual langsung di device POS
     elseif (!empty($data['manual_discount_type']) && isset($data['manual_discount_value'])) {
         $updates['manual_discount_type'] = $data['manual_discount_type'];
         $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
@@ -473,7 +467,8 @@ private function handleAdjustments(Order $order, array $data): void
         }
         $updates['discount_id'] = null;
     } 
-    // 4. FALLBACK: Jika tidak ada diskon global baru, tapi ada diskon produk bawaan menu
+    // JALUR 3 (FALLBACK): Dipakai JIKA DAN HANYA JIKA tidak ada diskon global / manual apa pun yang dipilih.
+    // Di sini sistem akan menghitung total akumulasi diskon produk bawaan item menu.
     else {
         $totalProductDiscount = 0;
         foreach ($order->items as $item) {
@@ -490,11 +485,13 @@ private function handleAdjustments(Order $order, array $data): void
         }
     }
 
-    // Amankan agar nilai diskon tidak minus atau melebihi subtotal
+    // Amankan nilai akhir diskon agar masuk ke properti order sebelum update tunggal database
     $order->discount_amount = min($subtotal, max(0, $totalDiscountAmount));
     $updates['discount_amount'] = $order->discount_amount;
 
-    // 5. HANDLING PAJAK (Bawaan Kode Anda yang sudah aman)
+    // ==========================================================================
+    // LOGIKA HANDLING PAJAK (Bawaan asli kode Anda, dipertahankan agar tetap stabil)
+    // ==========================================================================
     if (isset($data['tax_id'])) {
         $updates['tax_id'] = $data['tax_id'];
     } elseif (isset($data['tax_type']) && isset($data['tax_value'])) {

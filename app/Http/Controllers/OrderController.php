@@ -519,6 +519,7 @@ public function removeItem($orderId, $itemId)
             // DISKON
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
+            'discount_id' => 'nullable|exists:discounts,id',
             'discount_ids' => 'nullable|array',
             'discount_ids.*' => 'exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
@@ -1041,6 +1042,14 @@ public function removeItem($orderId, $itemId)
 
     private function normalizeLegacyAdjustmentPayload(array $payload): array
     {
+        if (!isset($payload['discount_id']) && !empty($payload['discount_ids']) && is_array($payload['discount_ids'])) {
+            $payload['discount_id'] = (int) collect($payload['discount_ids'])->first();
+        }
+        
+        if (isset($payload['discount_id'])) {
+            $payload['discount_id'] = (int) $payload['discount_id'];
+        }
+
         if (!isset($payload['discount_id']) && !empty($payload['discount_ids']) && is_array($payload['discount_ids'])) {
             $payload['discount_id'] = (int) collect($payload['discount_ids'])->first();
         }
