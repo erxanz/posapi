@@ -65,6 +65,7 @@ class ProductController extends Controller
                         'is_promo' => $product->is_promo,
                         'promo_price' => $product->promo_price,
                         'discount_amount_per_item' => $product->discount_amount_per_item,
+                        'min_purchase' => $product->min_purchase,
                     ];
                 })
         );
