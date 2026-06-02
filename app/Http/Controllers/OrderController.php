@@ -46,9 +46,6 @@ class OrderController extends Controller
 
         $query = Order::with(['items.product', 'table', 'user', 'outlet', 'latestAcceptance']);
 
-        // Untuk kebutuhan Flutter: saat pending, UI perlu tahu payment method.
-        // Sekarang payment_method diambil dari kolom orders (terisi sejak order dibuat).
-        // Namun tetap eager-load payments sebagai fallback untuk data lama.
         if ($request->filled('status') && $request->status === Order::STATUS_PENDING) {
             $query->with(['payments:id,order_id,method,paid_at']);
         }
@@ -75,30 +72,23 @@ class OrderController extends Controller
         }
 
         $limit = $request->input('limit', 10);
-
         $paginator = $query->latest()->paginate($limit);
 
-        // Map field agar kompatibel dengan kebutuhan Flutter: payment_method.
-        // Ambil payment method dari payment pertama (paling awal) jika ada.
-            $paginator->getCollection()->transform(function (Order $order) {
-            // Prioritas: ambil dari kolom orders.payment_method yang sudah terisi saat order dibuat.
+        $paginator->getCollection()->transform(function (Order $order) {
             $paymentMethod = $order->payment_method;
 
-            // Fallback untuk data lama (kolom null) agar tetap kompatibel.
             if (empty($paymentMethod) && $order->relationLoaded('payments') && $order->payments) {
                 $payment = $order->payments->sortBy(fn($p) => $p->paid_at ?? $p->created_at)->first();
                 $paymentMethod = $payment?->method;
             }
 
             $order->payment_method = $paymentMethod;
-
             return $order;
         });
 
         return response()->json($paginator);
     }
 
-    // DISABLED: Use checkoutOrder instead
     public function store(Request $request)
     {
         abort(410, 'Use checkoutOrder endpoint');
@@ -118,12 +108,10 @@ class OrderController extends Controller
             ->where('outlet_id', auth()->user()->outlet_id)
             ->firstOrFail();
 
-        // hanya order pending yang bisa diubah
         if ($order->status !== 'pending') {
             return response()->json(['message' => 'Order sudah tidak bisa diubah'], 400);
         }
 
-        // Ambil konfigurasi produk berdasarkan outlet di pivot.
         $product = Outlet::query()
             ->findOrFail($order->outlet_id)
             ->products()
@@ -145,7 +133,6 @@ class OrderController extends Controller
         $price = (int) $product->pivot->price;
 
         DB::beginTransaction();
-
         try {
             $item = $order->items()->where('product_id', $product->id)->first();
 
@@ -163,23 +150,15 @@ class OrderController extends Controller
             }
 
             $this->updateTotal($order);
-
             DB::commit();
 
             return response()->json($order->load('items.product'), 201);
-
         } catch (\Throwable $e) {
             DB::rollBack();
-
-            return response()->json([
-                'message' => $e->getMessage()
-            ], 500);
+            return response()->json(['message' => $e->getMessage()], 500);
         }
     }
 
-    /**
-     * Update total order
-     */
     private function updateTotal($order)
     {
         $this->recalculateOrderTotals($order);
@@ -208,7 +187,7 @@ class OrderController extends Controller
     /**
      * Hapus item dari order pending
      */
-public function removeItem($orderId, $itemId)
+    public function removeItem($orderId, $itemId)
     {
         $order = Order::where('id', $orderId)
             ->where('outlet_id', auth()->user()->outlet_id)
@@ -219,38 +198,32 @@ public function removeItem($orderId, $itemId)
         }
 
         $item = $order->items()->findOrFail($itemId);
-        // TAMBAHAN BARU: KEMBALIKAN STOK KE GUDANG
         $outlet = \App\Models\Outlet::find($order->outlet_id);
         $product = $outlet->products()->where('products.id', $item->product_id)->first();
 
         if ($product) {
-            // Tambahkan kembali qty yang dibatalkan ke stok saat ini
             $newStock = $product->pivot->stock + $item->qty;
             $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
 
-            // Catat riwayat pengembalian stok
             \App\Models\StockHistory::create([
                 'outlet_id' => $order->outlet_id,
                 'product_id' => $item->product_id,
-                'user_id' => auth()->id(), // ID kasir yang menghapus
+                'user_id' => auth()->id(),
                 'type' => 'restore',
-                'quantity' => $item->qty, // Qty yang kembali (positif)
+                'quantity' => $item->qty,
                 'final_stock' => $newStock,
                 'reference' => 'Remove Item: ' . $order->invoice_number,
             ]);
         }
 
-        // Hapus item dari keranjang
         $item->delete();
-
-        // Hitung ulang subtotal, pajak, dan diskon
         $this->updateTotal($order);
 
         return response()->json($order->load('items.product'));
     }
 
     /**
-     * Cancel a single item (partial or full) safely inside a DB transaction.
+     * Cancel a single item safely inside a DB transaction.
      */
     public function cancelItem(CancelOrderItemRequest $request, Order $order, OrderItem $item)
     {
@@ -267,7 +240,6 @@ public function removeItem($orderId, $itemId)
         $cancelQty = (int) $request->input('cancel_qty');
 
         DB::beginTransaction();
-
         try {
             $locked = OrderItem::where('id', $item->id)
                 ->where('order_id', $order->id)
@@ -281,12 +253,9 @@ public function removeItem($orderId, $itemId)
             }
 
             $oldCancelled = $locked->cancelled_qty;
-
             $locked->applyCancellation($cancelQty);
+            $diff = $locked->cancelled_qty - $oldCancelled;
 
-            $diff = $locked->cancelled_qty - $oldCancelled; // positive when cancelled
-
-            // Adjust stock back to outlet product pivot if outlet exists
             $outlet = $order->outlet;
             if ($outlet) {
                 $productPivot = $outlet->products()->where('products.id', $locked->product_id)->first();
@@ -307,7 +276,6 @@ public function removeItem($orderId, $itemId)
                 }
             }
 
-            // Append order log (reason optional)
             $logs = $order->logs ?? [];
             array_unshift($logs, [
                 'date' => now()->format('d M Y H:i'),
@@ -317,7 +285,6 @@ public function removeItem($orderId, $itemId)
             ]);
             $order->update(['logs' => $logs]);
 
-            // Recalculate totals from backend authoritative source
             $order->refresh();
             $order->recalculateTotals();
 
@@ -331,7 +298,6 @@ public function removeItem($orderId, $itemId)
                 'message' => 'Item cancelled',
                 'order' => $order->fresh()->load('items.product', 'table'),
             ]);
-
         } catch (\Throwable $e) {
             DB::rollBack();
             return response()->json(['message' => $e->getMessage()], 500);
@@ -348,13 +314,11 @@ public function removeItem($orderId, $itemId)
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
             'payment_method' => 'required|string|max:50',
-
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
             'discount' => 'nullable',
             'discounts' => 'nullable|array',
             'discount_ids' => 'nullable|array',
-            'discount_ids.*' => 'nullable',
             'discount_ids.*' => 'exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
@@ -373,26 +337,24 @@ public function removeItem($orderId, $itemId)
         $validated = $this->normalizeLegacyAdjustmentPayload($validated);
 
         try {
-            // 1. Buat pesanan mentahnya dulu
             $result = $this->orderService->createPublicOrder($validated);
 
-            // Ambil object order dari result (sesuaikan jika orderService return array atau object)
             $order = is_array($result) ? ($result['order'] ?? null) : $result;
             if (!$order && is_array($result) && isset($result['id'])) {
                 $order = Order::find($result['id']);
             }
 
-            // Reload order biar datanya fresh beserta relasinya
-            $order = Order::with('items.product', 'table')->findOrFail($order->id);
+            // Force load dengan relasi discount agar data diskon terbaca
+            $order = Order::with(['items.product', 'table', 'discount'])->findOrFail($order->id);
 
-            // 2. Cek apakah user milih bayar online (Midtrans / Qris)
+            // KUNCI UTAMA: Jalankan ulang hitung total bawaan model agar kolom database tersinkronisasi 100%
+            $order->recalculateTotals();
+            $order->refresh();
+
             $methodStr = strtolower($request->payment_method);
             if (in_array($methodStr, ['midtrans', 'qris', 'card'])) {
 
-                // Gunakan server key berdasarkan outlet owner (multi-tenant)
                 $serverKey = $order->midtrans_server_key_used;
-
-                // Fallback jika field belum terisi (mis. order dibuat versi lama)
                 if (empty($serverKey) && $order->outlet_id) {
                     $ownerId = Outlet::whereKey($order->outlet_id)->value('owner_id');
                     $serverKey = \App\Models\User::whereKey($ownerId)->value('midtrans_server_key');
@@ -407,24 +369,16 @@ public function removeItem($orderId, $itemId)
                 \Midtrans\Config::$isSanitized = true;
                 \Midtrans\Config::$is3ds = true;
 
-
                 $itemDetails = [];
-                $calculatedGrossAmount = 0;
-
                 foreach ($order->items as $item) {
-                    $itemPrice = (int) $item->price;
-                    $itemQty = (int) $item->qty;
-
                     $itemDetails[] = [
                         'id' => (string) $item->product_id,
                         'name' => substr($item->product->name, 0, 50),
-                        'price' => $itemPrice,
-                        'quantity' => $itemQty,
+                        'price' => (int) $item->price,
+                        'quantity' => (int) $item->qty,
                     ];
-                    $calculatedGrossAmount += ($itemPrice * $itemQty);
                 }
 
-                // Kalkulasi Diskon untuk Midtrans
                 $discountAmount = (int) ($order->discount_amount ?? 0);
                 if ($discountAmount > 0) {
                     $itemDetails[] = [
@@ -433,10 +387,8 @@ public function removeItem($orderId, $itemId)
                         'price' => -$discountAmount,
                         'quantity' => 1,
                     ];
-                    $calculatedGrossAmount -= $discountAmount;
                 }
 
-                // Kalkulasi Pajak untuk Midtrans
                 $taxAmount = (int) ($order->tax_amount ?? 0);
                 if ($taxAmount > 0) {
                     $itemDetails[] = [
@@ -445,13 +397,15 @@ public function removeItem($orderId, $itemId)
                         'price' => $taxAmount,
                         'quantity' => 1,
                     ];
-                    $calculatedGrossAmount += $taxAmount;
                 }
+
+                // AMBIL TOTAL AKHIR LANGSUNG DARI MODEL (Aman dari pembulatan/perbedaan loop)
+                $finalGrossAmount = (int) $order->total_price;
 
                 $params = [
                     'transaction_details' => [
                         'order_id' => $order->invoice_number,
-                        'gross_amount' => $calculatedGrossAmount,
+                        'gross_amount' => $finalGrossAmount,
                     ],
                     'customer_details' => [
                         'first_name' => $order->customer_name ?: 'Customer POS',
@@ -465,27 +419,23 @@ public function removeItem($orderId, $itemId)
                 ];
 
                 if ($methodStr === 'qris' || $methodStr === 'midtrans') {
-                    $params['enabled_payments'] = ['gopay', 'other_qris'];
+                    $params['enabled_payments'] = ['gopay'];
                 } elseif ($methodStr === 'card') {
                     $params['enabled_payments'] = ['credit_card'];
                 }
 
                 $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
 
-                // Return format yang persis sama dengan yang ditunggu cart.vue
                 return response()->json([
                     'success' => true,
                     'message' => 'Order berhasil dibuat',
                     'data' => [
-                        'order' => $order,
+                        'order' => $order->load('items.product', 'table'),
                         'redirect_url' => $paymentUrl
                     ]
                 ], 201);
             }
 
-            // 3. Jika bayar Cash
-            // Catatan: untuk QR flow, meja akan jadi reserved (menunggu) berdasarkan timer,
-            // bukan langsung available.
             $tableId = $order->table_id ?? null;
             if ($tableId) {
                 \App\Models\Table::whereKey($tableId)->update([
@@ -499,11 +449,8 @@ public function removeItem($orderId, $itemId)
                 'data' => $order
             ], 201);
 
-
         } catch (\Throwable $e) {
-            return response()->json([
-                'message' => $e->getMessage(),
-            ], 500);
+            return response()->json(['message' => $e->getMessage()], 500);
         }
     }
 
@@ -518,34 +465,25 @@ public function removeItem($orderId, $itemId)
             'outlet_id' => 'nullable|exists:outlets,id',
             'table_id' => 'required|exists:tables,id',
             'customer_name' => 'nullable|string|max:100',
-
-            // DISKON
             'manual_discount_type' => 'nullable|in:percentage,nominal',
             'manual_discount_value' => 'nullable|integer|min:0',
             'discount' => 'nullable',
             'discounts' => 'nullable|array',
             'discount_id' => 'nullable|exists:discounts,id',
             'discount_ids' => 'nullable|array',
-            'discount_ids.*' => 'nullable',
             'discount_ids.*' => 'exists:discounts,id',
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
-
-            // PAJAK
             'tax_id' => 'nullable|exists:taxes,id',
             'tax_type' => 'nullable|in:percentage,nominal,fixed',
             'tax_value' => 'nullable|integer|min:0',
             'tax_amount' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
-
-            // ITEM
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.qty' => 'required|integer|min:1',
             'items.*.price' => 'nullable|integer|min:1',
             'items.*.notes' => 'nullable|string|max:500',
-
-            // PAYMENT
             'payment_method' => 'required|string|max:50',
             'amount_paid' => 'nullable|numeric|min:0|required_without:paid_amount',
             'paid_amount' => 'nullable|numeric|min:0|required_without:amount_paid',
@@ -559,138 +497,87 @@ public function removeItem($orderId, $itemId)
         $validated = $this->normalizeLegacyAdjustmentPayload($validated);
 
         try {
+            $methodStr = strtolower($validated['payment_method'] ?? '');
 
-            /**
-             * MIDTRANS
-             */
-            if (in_array($validated['payment_method'], ['Qris', 'Card'])) {
-
-                $result = $this->orderService
-                    ->createCheckoutOrderForMidtrans(
-                        $validated,
-                        $validated['outlet_id'] ?? null
-                    );
+            if (in_array($methodStr, ['qris', 'card', 'credit_card', 'midtrans'])) {
+                $result = $this->orderService->createCheckoutOrderForMidtrans(
+                    $validated,
+                    $validated['outlet_id'] ?? null
+                );
 
                 $order = $result['order'];
+                $order = Order::with(['items.product', 'table', 'discount'])->findOrFail($order->id);
 
-                /**
-                 * PENTING: Reload order untuk memastikan discount_amount & tax_amount
-                 * terisi dengan benar dari database
-                 */
-                $order = Order::with('items.product', 'table', 'discount')
-                    ->findOrFail($order->id);
+                // RE-CALCULATE TOTALS AGAR DISKON DAN PAJAK TERSINKRONISASI KE KOLOM DATABASE
+                $order->recalculateTotals();
+                $order->refresh();
 
                 Config::$serverKey = env('MIDTRANS_SERVER_KEY');
                 Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
                 Config::$isSanitized = true;
                 Config::$is3ds = true;
 
-                // Multi MIDTRANS key: jika role manager dan manager isi server key sendiri,
-                // maka transaksi Midtrans-nya memakai merchant manager tersebut.
                 if ($user && $user->role === 'manager') {
-                    if (empty($user->midtrans_server_key)) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Midtrans server key manager belum diisi',
-                        ], 403);
+                    if (!empty($user->midtrans_server_key)) {
+                        Config::$serverKey = $user->midtrans_server_key;
                     }
-                    Config::$serverKey = $user->midtrans_server_key;
                 }
 
-
                 $itemDetails = [];
-                $calculatedGrossAmount = 0; // KUNCI: Hitung total berbarengan dengan build array
-
                 foreach ($order->items as $item) {
-                    $itemPrice = (int) $item->price;
-                    $itemQty = (int) $item->qty;
-
                     $itemDetails[] = [
                         'id' => (string) $item->product_id,
                         'name' => substr($item->product->name, 0, 50),
-                        'price' => $itemPrice,
-                        'quantity' => $itemQty,
+                        'price' => (int) $item->price,
+                        'quantity' => (int) $item->qty,
                     ];
-
-                    $calculatedGrossAmount += ($itemPrice * $itemQty);
                 }
 
-                /**
-                 * DISKON MASUK MIDTRANS
-                 */
                 $discountAmount = (int) ($order->discount_amount ?? 0);
                 if ($discountAmount > 0) {
                     $itemDetails[] = [
                         'id' => 'DISCOUNT',
                         'name' => 'Discount',
-                        'price' => -$discountAmount, // Minus harga
+                        'price' => -$discountAmount,
                         'quantity' => 1,
                     ];
-                    // Kurangi total tagihan
-                    $calculatedGrossAmount -= $discountAmount;
                 }
 
-                /**
-                 * PAJAK MASUK MIDTRANS
-                 */
                 $taxAmount = (int) ($order->tax_amount ?? 0);
                 if ($taxAmount > 0) {
                     $itemDetails[] = [
                         'id' => 'TAX',
                         'name' => 'Tax',
-                        'price' => $taxAmount, // Tambah harga
+                        'price' => $taxAmount,
                         'quantity' => 1,
                     ];
-                    // Tambah ke total tagihan
-                    $calculatedGrossAmount += $taxAmount;
                 }
+
+                // AMBIL TOTAL AKHIR LANGSUNG DARI ATRIBUT DATABASE TERINTEGRASI
+                $finalGrossAmount = (int) $order->total_price;
 
                 $params = [
                     'transaction_details' => [
                         'order_id' => $order->invoice_number,
-                        'gross_amount' => $calculatedGrossAmount,
+                        'gross_amount' => $finalGrossAmount,
                     ],
                     'customer_details' => [
                         'first_name' => $order->customer_name ?: 'Customer POS',
                     ],
                     'item_details' => $itemDetails,
-                        'callbacks' => [
+                    'callbacks' => [
                         'finish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
                         'unfinish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
                         'error' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
                     ]
                 ];
 
-                // ========================================================
-                // FITUR BARU: SKIP HALAMAN PEMILIHAN MIDTRANS
-                // Jika array enabled_payments isinya HANYA 1, Midtrans akan otomatis
-                // lompat (direct) ke halaman barcode QRIS atau form Kartu
-                // ========================================================
-                $methodStr = strtolower($validated['payment_method'] ?? '');
-
-                $user = $user ?? auth()->user();
-                if ($user && $user->role === 'manager') {
-                    if (empty($user->midtrans_server_key)) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Midtrans server key manager belum diisi',
-                        ], 403);
-                    }
-                    Config::$serverKey = $user->midtrans_server_key;
-                }
-
-                if ($methodStr === 'qris') {
-
-                    // 'gopay' di Midtrans secara default memunculkan barcode QRIS dinamis
-                    // yang bisa di-scan oleh semua dompet digital (ShopeePay, Dana, OVO, m-banking dll)
+                if ($methodStr === 'qris' || $methodStr === 'midtrans') {
                     $params['enabled_payments'] = ['gopay'];
-
-                    // Catatan: Jika di dashboard lu 'gopay' belum diaktifkan, ubah array di atas menjadi ['other_qris']
                 } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
                     $params['enabled_payments'] = ['credit_card'];
                 }
 
-                // Terakhir, eksekusi pemanggilan Midtrans Snap
                 $paymentUrl = Snap::createTransaction($params)->redirect_url;
 
                 return response()->json([
@@ -703,9 +590,7 @@ public function removeItem($orderId, $itemId)
                 ], 201);
             }
 
-            /**
-             * CASH
-             */
+            // CASH FLOW
             $result = $this->orderService->createCheckoutOrder(
                 $validated,
                 $validated['outlet_id'] ?? null
@@ -726,7 +611,6 @@ public function removeItem($orderId, $itemId)
      */
     public function pay(Request $request, Order $order)
     {
-        // Backward compatibility: allow non-split payload on /payments endpoint.
         if (!$request->has('payments') && $request->filled('amount_paid')) {
             $request->merge([
                 'payments' => [[
@@ -746,7 +630,6 @@ public function removeItem($orderId, $itemId)
 
         try {
             $result = $this->orderService->processPayments($order, $validated['payments']);
-
             $status = $result['is_paid'] ? 200 : 202;
 
             return response()->json([
@@ -760,10 +643,7 @@ public function removeItem($orderId, $itemId)
             ], $status);
         } catch (\Throwable $e) {
             $status = str_contains(strtolower($e->getMessage()), 'forbidden') ? 403 : 400;
-
-            return response()->json([
-                'message' => $e->getMessage(),
-            ], $status);
+            return response()->json(['message' => $e->getMessage()], $status);
         }
     }
 
@@ -826,7 +706,7 @@ public function removeItem($orderId, $itemId)
     }
 
     /**
-     * Void items (DENGAN VALIDASI MINIMUM DISKON)
+     * Void items
      */
     public function voidItems(Request $request, Order $order)
     {
@@ -836,7 +716,7 @@ public function removeItem($orderId, $itemId)
             return response()->json(['message' => 'Order cancelled'], 400);
         }
 
-        $validated = $request->validate([
+                $validated = $request->validate([
             'reason' => 'required|string|max:255',
             'items' => 'required|array',
             'items.*.id' => 'required|exists:order_items,id',
@@ -984,9 +864,6 @@ public function removeItem($orderId, $itemId)
         }
     }
 
-    /**
-     * Update multiple order items qty by ID (for kitchen/customer sync)
-     */
     public function updateItems(Request $request, Order $order)
     {
         $this->authorizeOutletAccess($order);
