@@ -92,7 +92,9 @@ class OrderService
             $order->recalculateTotals($validated);
 
             $amountPaid = (int) $validated['amount_paid'];
-            if ($amountPaid < (int) $order->total_price) {
+            $payableTotal = $order->payableTotal();
+
+            if ($amountPaid < $payableTotal) {
                 throw new \Exception('Nominal bayar kurang dari total tagihan');
             }
 
@@ -301,8 +303,9 @@ class OrderService
         DB::beginTransaction();
 
         try {
+            $payableTotal = $order->payableTotal();
             $alreadyPaid = $order->payments()->sum('amount_paid') - $order->payments()->sum('change_amount');
-            $remaining = max(0, $order->total_price - $alreadyPaid);
+            $remaining = max(0, $payableTotal - $alreadyPaid);
 
             foreach ($payments as $paymentData) {
                 if ($remaining <= 0) break;
@@ -331,7 +334,7 @@ class OrderService
             }
 
             $effectivePaid = $order->payments()->sum('amount_paid') - $order->payments()->sum('change_amount');
-            $isFullyPaid = $effectivePaid >= $order->total_price;
+            $isFullyPaid = $effectivePaid >= $payableTotal;
 
             if ($isFullyPaid) {
                 $order->update(['status' => Order::STATUS_PAID]);
@@ -351,7 +354,7 @@ class OrderService
 
             return [
                 'is_paid' => $isFullyPaid,
-                'remaining' => max(0, $order->total_price - $effectivePaid),
+                'remaining' => max(0, $payableTotal - $effectivePaid),
                 'order' => $order->fresh()->load('items.product', 'payments'),
             ];
 
@@ -434,7 +437,7 @@ private function handleAdjustments(Order $order, array $data): void
         if (!$discount) {
             throw new \Exception("Diskon dengan ID {$discountId} tidak ditemukan di database.");
         }
-        
+
         if ($discount->scope === 'global') {
             // Validasi syarat minimal pembelian
             if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
@@ -519,7 +522,7 @@ private function handleAdjustments(Order $order, array $data): void
 
     private function createPayment(Order $order, int $amountPaid, string $method): Payment
     {
-        $change = max(0, $amountPaid - $order->total_price);
+        $change = max(0, $amountPaid - $order->payableTotal());
         $user = $this->currentUser();
 
         return Payment::create([

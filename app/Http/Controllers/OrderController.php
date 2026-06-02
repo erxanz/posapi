@@ -747,7 +747,7 @@ public function removeItem($orderId, $itemId)
                 'message' => $result['is_paid'] ? 'Order lunas' : 'Pembayaran tercatat',
                 'order' => $result['order'],
                 'payment_summary' => [
-                    'order_total' => $result['order']->total_price,
+                    'order_total' => $result['order']->payableTotal(),
                     'effective_paid' => $result['order']->payments->sum(fn($p) => $p->amount_paid - $p->change_amount),
                     'remaining' => $result['remaining'],
                 ],
@@ -1045,7 +1045,7 @@ public function removeItem($orderId, $itemId)
         if (!isset($payload['discount_id']) && !empty($payload['discount_ids']) && is_array($payload['discount_ids'])) {
             $payload['discount_id'] = (int) collect($payload['discount_ids'])->first();
         }
-        
+
         if (isset($payload['discount_id'])) {
             $payload['discount_id'] = (int) $payload['discount_id'];
         }

@@ -181,6 +181,16 @@ class Order extends Model
         return $this->status === self::STATUS_PENDING;
     }
 
+    public function payableTotal(): int
+    {
+        return max(
+            0,
+            (int) $this->subtotal_price
+            - (int) $this->discount_amount
+            + (int) $this->tax_amount
+        );
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Recalculate Total
@@ -372,7 +382,7 @@ class Order extends Model
                     $newTaxBreakdown[] = $tb;
 
                     $taxAmount += $amt;
-                    $taxBase += $amt; 
+                    $taxBase += $amt;
                 }
             } elseif ($this->tax_amount > 0 && $this->subtotal_price > 0) {
                 $oldAmountAfterDiscount = max(0, $this->subtotal_price - $this->discount_amount);
