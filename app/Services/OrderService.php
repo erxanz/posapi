@@ -431,19 +431,20 @@ private function handleAdjustments(Order $order, array $data): void
     $totalDiscountAmount = 0;
     $discount = null;
 
-    // JALUR 1: Jika pelanggan memilih Master Diskon Global (Voucher) dari UI QR Menu
+        // JALUR 1: Jika pelanggan memilih Master Diskon Global (Voucher) dari UI QR Menu
     if ($discountId) {
         $discount = Discount::find($discountId);
         if (!$discount) {
             throw new \Exception("Diskon dengan ID {$discountId} tidak ditemukan di database.");
         }
 
-        if ($discount->scope === 'global') {
-            // Validasi syarat minimal pembelian
-            if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
-                throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
-            }
+        // Validasi syarat minimal pembelian untuk SEMUA tipe scope
+        if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
+            throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
+        }
 
+        // Perbaikan Bug: Dukung tipe 'global' maupun 'transaction', dan jangan tolak products/categories
+        if (in_array($discount->scope, ['global', 'transaction', 'all'])) {
             if ($discount->type === 'percentage') {
                 $calc = $subtotal * ((int)$discount->value / 100);
                 if ($discount->max_discount && $calc > $discount->max_discount) {
@@ -453,13 +454,15 @@ private function handleAdjustments(Order $order, array $data): void
             } else {
                 $totalDiscountAmount = min((int)$discount->value, $subtotal);
             }
-
-            $updates['discount_id'] = $discount->id;
-            $updates['manual_discount_type'] = null;
-            $updates['manual_discount_value'] = 0;
         } else {
-            throw new \Exception("Diskon '{$discount->name}' bukan tipe global. Scope: {$discount->scope}");
+            // Untuk scope products/categories, nilai presisi akan dihitung tuntas di Order::recalculateTotals()
+            $totalDiscountAmount = 0;
         }
+
+        $updates['discount_id'] = $discount->id;
+        $updates['manual_discount_type'] = null;
+        $updates['manual_discount_value'] = 0;
+
     } elseif (!empty($data['manual_discount_type']) && isset($data['manual_discount_value'])) {
         $updates['manual_discount_type'] = $data['manual_discount_type'];
         $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
