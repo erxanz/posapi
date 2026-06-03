@@ -437,13 +437,12 @@ class OrderController extends Controller
 
                 // --- PERUBAHAN DI SINI ---
                 if ($methodStr === 'qris') {
-                    // Panggil gopay, other_qris, dan qris agar QR barcode pasti muncul
-                    $params['enabled_payments'] = ['gopay', 'other_qris', 'qris'];
+                    // Samakan dengan publicOrder agar aman saat dibuka via HP Kasir
+                    $params['enabled_payments'] = ['other_qris', 'gopay', 'shopeepay'];
                 } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
                     $params['enabled_payments'] = ['credit_card'];
                 } elseif ($methodStr === 'midtrans') {
-                    // Biarkan kosong / tidak di-set agar Midtrans memunculkan semua metode (QRIS, VA, E-Wallet, dll)
-                    // yang sudah aktif di dashboard Midtrans Anda.
+                    // Biarkan kosong
                 }
                 // -------------------------
 
@@ -611,15 +610,12 @@ class OrderController extends Controller
 
                 // --- PERUBAHAN DI SINI ---
                 if ($methodStr === 'qris') {
-                    // Hanya memunculkan QRIS
-                    $params['enabled_payments'] = ['qris'];
+                    // Samakan dengan publicOrder agar aman saat dibuka via HP Kasir
+                    $params['enabled_payments'] = ['other_qris', 'gopay', 'shopeepay'];
                 } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
-                    // Hanya memunculkan Kartu Kredit
                     $params['enabled_payments'] = ['credit_card'];
                 } elseif ($methodStr === 'midtrans') {
-                    // Menampilkan semua opsi yang aktif di dashboard Midtrans (QRIS, e-wallet, VA, dll.)
-                    // Caranya cukup dengan TIDAK mendefinisikan 'enabled_payments' atau daftarkan secara spesifik
-                    $params['enabled_payments'] = ['qris', 'gopay', 'shopeepay', 'bank_transfer', 'echannel'];
+                    // Biarkan kosong
                 }
                 // -------------------------
 
