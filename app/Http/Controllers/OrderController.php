@@ -603,11 +603,19 @@ class OrderController extends Controller
                     ]
                 ];
 
-                if ($methodStr === 'qris' || $methodStr === 'midtrans') {
-                    $params['enabled_payments'] = ['gopay'];
+                // --- PERUBAHAN DI SINI ---
+                if ($methodStr === 'qris') {
+                    // Hanya memunculkan QRIS
+                    $params['enabled_payments'] = ['qris'];
                 } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
+                    // Hanya memunculkan Kartu Kredit
                     $params['enabled_payments'] = ['credit_card'];
+                } elseif ($methodStr === 'midtrans') {
+                    // Menampilkan semua opsi yang aktif di dashboard Midtrans (QRIS, e-wallet, VA, dll.)
+                    // Caranya cukup dengan TIDAK mendefinisikan 'enabled_payments' atau daftarkan secara spesifik
+                    $params['enabled_payments'] = ['qris', 'gopay', 'shopeepay', 'bank_transfer', 'echannel'];
                 }
+                // -------------------------
 
                 $paymentUrl = Snap::createTransaction($params)->redirect_url;
 
