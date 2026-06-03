@@ -435,16 +435,17 @@ class OrderController extends Controller
                     ],
                 ];
 
-                // --- PERUBAHAN DI SINI ---
+                // --- UBAH BAGIAN INI DI ORDERCONTROLLER.PHP ---
                 if ($methodStr === 'qris') {
-                    // Samakan dengan publicOrder agar aman saat dibuka via HP Kasir
-                    $params['enabled_payments'] = ['other_qris', 'gopay', 'shopeepay'];
+                    // Gunakan hanya 'other_qris' agar Midtrans HANYA men-generate gambar Barcode QRIS,
+                    // tanpa mempedulikan apakah ini dibuka di HP atau Komputer Desktop.
+                    $params['enabled_payments'] = ['other_qris'];
                 } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
                     $params['enabled_payments'] = ['credit_card'];
                 } elseif ($methodStr === 'midtrans') {
-                    // Biarkan kosong
+                    // Biarkan kosong agar semua metode muncul
                 }
-                // -------------------------
+                // ----------------------------------------------
 
                 $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
 
@@ -608,16 +609,17 @@ class OrderController extends Controller
                     ]
                 ];
 
-                // --- PERUBAHAN DI SINI ---
+                // --- UBAH BAGIAN INI DI ORDERCONTROLLER.PHP ---
                 if ($methodStr === 'qris') {
-                    // Samakan dengan publicOrder agar aman saat dibuka via HP Kasir
-                    $params['enabled_payments'] = ['other_qris', 'gopay', 'shopeepay'];
+                    // Gunakan hanya 'other_qris' agar Midtrans HANYA men-generate gambar Barcode QRIS,
+                    // tanpa mempedulikan apakah ini dibuka di HP atau Komputer Desktop.
+                    $params['enabled_payments'] = ['other_qris'];
                 } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
                     $params['enabled_payments'] = ['credit_card'];
                 } elseif ($methodStr === 'midtrans') {
-                    // Biarkan kosong
+                    // Biarkan kosong agar semua metode muncul
                 }
-                // -------------------------
+                // ----------------------------------------------
 
                 $paymentUrl = Snap::createTransaction($params)->redirect_url;
 
