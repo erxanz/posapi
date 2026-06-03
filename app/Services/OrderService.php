@@ -255,18 +255,13 @@ class OrderService
             $order->recalculateTotals($validated);
             $this->reserveTable($table);
 
-            // --- PERBAIKAN DI SINI ---
             // Panggil fungsi yang menggunakan lockForUpdate tadi
             $invoiceNumber = $this->generateInvoiceNumber($outlet->id);
 
             // Update order dengan invoice number yang asli
             $order->update(['invoice_number' => $invoiceNumber]);
-            // -------------------------
 
             $paymentUrl = null;
-            if (isset($validated['payment_method']) && $validated['payment_method'] === 'midtrans') {
-                //
-            }
 
             DB::commit();
 
@@ -292,9 +287,6 @@ class OrderService
         if (!$this->canAccessOrder($order)) {
             throw new \Exception('Forbidden');
         }
-
-
-
 
         if ($order->status === Order::STATUS_PAID || $order->status === Order::STATUS_CANCELLED) {
             throw new \Exception('Order cannot be paid');
@@ -327,8 +319,6 @@ class OrderService
                 // Sync method payment terakhir ke orders.payment_method (agar Flutter tahu pembayarannya).
                 $order->payment_method = $this->normalizePaymentMethod($createdPayment->method);
                 $order->save();
-
-
 
                 $remaining -= $applied;
             }
@@ -420,113 +410,113 @@ class OrderService
         }
     }
 
-private function handleAdjustments(Order $order, array $data): void
-{
-    $updates = [];
-    $order->loadMissing('items.product');
-    $subtotal = $order->items->sum('total_price');
+    private function handleAdjustments(Order $order, array $data): void
+    {
+        $updates = [];
+        $order->loadMissing('items.product');
+        $subtotal = $order->items->sum('total_price');
 
-    // Ambil discount_id tunggal hasil normalisasi di controller
-    $discountId = $data['discount_id'] ?? null;
-    $totalDiscountAmount = 0;
-    $discount = null;
+        // Ambil discount_id tunggal hasil normalisasi di controller
+        $discountId = $data['discount_id'] ?? null;
+        $totalDiscountAmount = 0;
+        $discount = null;
 
-    // JALUR 1: Jika pelanggan memilih Master Diskon Global (Voucher) dari UI QR Menu
-    if ($discountId) {
-        $discount = Discount::find($discountId);
-        if (!$discount) {
-            throw new \Exception("Diskon dengan ID {$discountId} tidak ditemukan di database.");
-        }
+        // JALUR 1: Jika pelanggan memilih Master Diskon Global (Voucher) dari UI QR Menu
+        if ($discountId) {
+            $discount = Discount::find($discountId);
+            if (!$discount) {
+                throw new \Exception("Diskon dengan ID {$discountId} tidak ditemukan di database.");
+            }
 
-        // Validasi syarat minimal pembelian untuk SEMUA tipe scope
-        if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
-            throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
-        }
+            // Validasi syarat minimal pembelian untuk SEMUA tipe scope
+            if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
+                throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
+            }
 
-        // PERBAIKAN BUG: Amankan dari huruf besar/kecil & spasi di database
-        $scope = strtolower(trim($discount->scope ?? 'global'));
-        $type = strtolower(trim($discount->type ?? 'nominal'));
+            // PERBAIKAN BUG: Amankan dari huruf besar/kecil & spasi di database
+            $scope = strtolower(trim($discount->scope ?? 'global'));
+            $type = strtolower(trim($discount->type ?? 'nominal'));
 
-        // Dukung tipe 'global' maupun 'transaction', dan jangan tolak products/categories
-        if (in_array($scope, ['global', 'transaction', 'all', ''])) {
-            if ($type === 'percentage') {
-                // PERBAIKAN BUG: Gunakan (float) agar hitungan tidak jadi 0
-                $calc = $subtotal * ((float)$discount->value / 100);
-                if ($discount->max_discount && $calc > $discount->max_discount) {
-                    $calc = $discount->max_discount;
+            // Dukung tipe 'global' maupun 'transaction', dan jangan tolak products/categories
+            if (in_array($scope, ['global', 'transaction', 'all', ''])) {
+                if ($type === 'percentage') {
+                    // PERBAIKAN BUG: Gunakan (float) agar hitungan tidak jadi 0
+                    $calc = $subtotal * ((float)$discount->value / 100);
+                    if ($discount->max_discount && $calc > $discount->max_discount) {
+                        $calc = $discount->max_discount;
+                    }
+                    $totalDiscountAmount = (int) $calc;
+                } else {
+                    $totalDiscountAmount = (int) min($discount->value, $subtotal);
                 }
-                $totalDiscountAmount = (int) $calc;
             } else {
-                $totalDiscountAmount = (int) min($discount->value, $subtotal);
+                // Untuk scope products/categories, nilai presisi akan dihitung tuntas di Order::recalculateTotals()
+                $totalDiscountAmount = 0;
             }
-        } else {
-            // Untuk scope products/categories, nilai presisi akan dihitung tuntas di Order::recalculateTotals()
-            $totalDiscountAmount = 0;
-        }
 
-        $updates['discount_id'] = $discount->id;
-        $updates['manual_discount_type'] = null;
-        $updates['manual_discount_value'] = 0;
+            $updates['discount_id'] = $discount->id;
+            $updates['manual_discount_type'] = null;
+            $updates['manual_discount_value'] = 0;
 
-    } elseif (!empty($data['manual_discount_type']) && isset($data['manual_discount_value'])) {
-        $updates['manual_discount_type'] = $data['manual_discount_type'];
-        $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
+        } elseif (!empty($data['manual_discount_type']) && isset($data['manual_discount_value'])) {
+            $updates['manual_discount_type'] = $data['manual_discount_type'];
+            $updates['manual_discount_value'] = (int) $data['manual_discount_value'];
 
-        if ($data['manual_discount_type'] === 'percentage') {
-            $totalDiscountAmount = (int) round($subtotal * ((float)$data['manual_discount_value'] / 100));
-        } else {
-            $totalDiscountAmount = (int) $data['manual_discount_value'];
-        }
-        $updates['discount_id'] = null;
-    } elseif (!$discountId && empty($data['manual_discount_type'])) {
-        // JALUR 3 (FALLBACK): Hanya jika TIDAK ada discount_id dan TIDAK ada manual_discount
-        // Di sini sistem akan menghitung total akumulasi diskon produk bawaan item menu.
-        $totalProductDiscount = 0;
-        foreach ($order->items as $item) {
-            if ($item->product && $item->product->is_promo) {
-                $totalProductDiscount += $item->product->discount_amount_per_item * $item->qty;
+            if ($data['manual_discount_type'] === 'percentage') {
+                $totalDiscountAmount = (int) round($subtotal * ((float)$data['manual_discount_value'] / 100));
+            } else {
+                $totalDiscountAmount = (int) $data['manual_discount_value'];
             }
-        }
-
-        if ($totalProductDiscount > 0) {
-            $updates['manual_discount_type'] = 'nominal';
-            $updates['manual_discount_value'] = $totalProductDiscount;
-            $totalDiscountAmount = $totalProductDiscount;
             $updates['discount_id'] = null;
+        } elseif (!$discountId && empty($data['manual_discount_type'])) {
+            // JALUR 3 (FALLBACK): Hanya jika TIDAK ada discount_id dan TIDAK ada manual_discount
+            // Di sini sistem akan menghitung total akumulasi diskon produk bawaan item menu.
+            $totalProductDiscount = 0;
+            foreach ($order->items as $item) {
+                if ($item->product && $item->product->is_promo) {
+                    $totalProductDiscount += $item->product->discount_amount_per_item * $item->qty;
+                }
+            }
+
+            if ($totalProductDiscount > 0) {
+                $updates['manual_discount_type'] = 'nominal';
+                $updates['manual_discount_value'] = $totalProductDiscount;
+                $totalDiscountAmount = $totalProductDiscount;
+                $updates['discount_id'] = null;
+            }
+        }
+
+        // Amankan nilai akhir diskon agar masuk ke properti order sebelum update tunggal database
+        $order->discount_amount = (int) min($subtotal, max(0, $totalDiscountAmount));
+        $updates['discount_amount'] = $order->discount_amount;
+
+        // ==========================================================================
+        // LOGIKA HANDLING PAJAK (Bawaan asli kode Anda, dipertahankan agar tetap stabil)
+        // ==========================================================================
+        if (isset($data['tax_id'])) {
+            $updates['tax_id'] = $data['tax_id'];
+        } elseif (isset($data['tax_type']) && isset($data['tax_value'])) {
+            $taxType = (string) $data['tax_type'];
+            $taxValue = (int) $data['tax_value'];
+            $matchedTax = Tax::query()->where('type', $taxType)->where('active', true)->get()->first(function (Tax $tax) use ($taxValue) {
+                $expectedValue = $tax->type === 'percentage' ? (int) round(((float) $tax->rate) * 100) : (int) round((float) $tax->rate);
+                return $expectedValue === $taxValue;
+            });
+            if ($matchedTax) $updates['tax_id'] = $matchedTax->id;
+        }
+
+        if (array_key_exists('tax_breakdown', $data)) {
+            $updates['tax_breakdown'] = $data['tax_breakdown'];
+        }
+
+        if (array_key_exists('tax_amount', $data)) {
+            $updates['tax_amount'] = max(0, (int) $data['tax_amount']);
+        }
+
+        if (!empty($updates)) {
+            $order->update($updates);
         }
     }
-
-    // Amankan nilai akhir diskon agar masuk ke properti order sebelum update tunggal database
-    $order->discount_amount = (int) min($subtotal, max(0, $totalDiscountAmount));
-    $updates['discount_amount'] = $order->discount_amount;
-
-    // ==========================================================================
-    // LOGIKA HANDLING PAJAK (Bawaan asli kode Anda, dipertahankan agar tetap stabil)
-    // ==========================================================================
-    if (isset($data['tax_id'])) {
-        $updates['tax_id'] = $data['tax_id'];
-    } elseif (isset($data['tax_type']) && isset($data['tax_value'])) {
-        $taxType = (string) $data['tax_type'];
-        $taxValue = (int) $data['tax_value'];
-        $matchedTax = Tax::query()->where('type', $taxType)->where('active', true)->get()->first(function (Tax $tax) use ($taxValue) {
-            $expectedValue = $tax->type === 'percentage' ? (int) round(((float) $tax->rate) * 100) : (int) round((float) $tax->rate);
-            return $expectedValue === $taxValue;
-        });
-        if ($matchedTax) $updates['tax_id'] = $matchedTax->id;
-    }
-
-    if (array_key_exists('tax_breakdown', $data)) {
-        $updates['tax_breakdown'] = $data['tax_breakdown'];
-    }
-
-    if (array_key_exists('tax_amount', $data)) {
-        $updates['tax_amount'] = max(0, (int) $data['tax_amount']);
-    }
-
-    if (!empty($updates)) {
-        $order->update($updates);
-    }
-}
 
     private function createPayment(Order $order, int $amountPaid, string $method): Payment
     {
@@ -648,7 +638,14 @@ private function handleAdjustments(Order $order, array $data): void
 
         $m = strtolower(trim($method));
 
-        if (in_array($m, ['qris', 'midtrans'])) {
+        // --- PERBAIKAN BUG ---
+        // Biarkan 'midtrans' tetap menjadi 'midtrans' agar data tidak ditiban menjadi qris
+        if ($m === 'midtrans') {
+            return 'midtrans';
+        }
+
+        // Tambahkan pengelompokan e-wallet baru ke kategori 'qris'
+        if (in_array($m, ['qris', 'other_qris', 'gopay', 'shopeepay'])) {
             return 'qris';
         }
 
@@ -671,4 +668,3 @@ private function handleAdjustments(Order $order, array $data): void
         ]);
     }
 }
-
