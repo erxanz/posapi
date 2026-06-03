@@ -353,11 +353,11 @@ class OrderController extends Controller
             $order->refresh();
 
             $methodStr = strtolower($request->payment_method);
-            if (in_array($methodStr, ['midtrans', 'qris', 'card'])) {
+            if (in_array($methodStr, ['midtrans', 'qris', 'card', 'credit_card'])) {
 
                 $serverKey = $order->midtrans_server_key_used;
                 if (empty($serverKey) && $order->outlet_id) {
-                    $ownerId = Outlet::whereKey($order->outlet_id)->value('owner_id');
+                    $ownerId = \App\Models\Outlet::whereKey($order->outlet_id)->value('owner_id');
                     $serverKey = \App\Models\User::whereKey($ownerId)->value('midtrans_server_key');
                 }
 
@@ -435,11 +435,17 @@ class OrderController extends Controller
                     ],
                 ];
 
-                if ($methodStr === 'qris' || $methodStr === 'midtrans') {
-                    $params['enabled_payments'] = ['gopay'];
-                } elseif ($methodStr === 'card') {
+                // --- PERUBAHAN DI SINI ---
+                if ($methodStr === 'qris') {
+                    // Panggil gopay, other_qris, dan qris agar QR barcode pasti muncul
+                    $params['enabled_payments'] = ['gopay', 'other_qris', 'qris'];
+                } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
                     $params['enabled_payments'] = ['credit_card'];
+                } elseif ($methodStr === 'midtrans') {
+                    // Biarkan kosong / tidak di-set agar Midtrans memunculkan semua metode (QRIS, VA, E-Wallet, dll)
+                    // yang sudah aktif di dashboard Midtrans Anda.
                 }
+                // -------------------------
 
                 $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
 
