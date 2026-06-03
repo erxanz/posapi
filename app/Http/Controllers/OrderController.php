@@ -536,21 +536,23 @@ class OrderController extends Controller
                 $order->recalculateTotals($validated);
                 $order->refresh();
 
-                Config::$serverKey = env('MIDTRANS_SERVER_KEY');
+                // 1. SET SERVER KEY DI AWAL
+                $serverKey = env('MIDTRANS_SERVER_KEY');
+                if ($user && $user->role === 'manager') {
+                    if (!empty($user->midtrans_server_key)) {
+                        $serverKey = $user->midtrans_server_key;
+                    }
+                }
+
+                Config::$serverKey = $serverKey;
                 Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
                 Config::$isSanitized = true;
                 Config::$is3ds = true;
 
-                if ($user && $user->role === 'manager') {
-                    if (!empty($user->midtrans_server_key)) {
-                        Config::$serverKey = $user->midtrans_server_key;
-                    }
-                }
-
                 $itemDetails = [];
-                $calculatedGrossAmount = 0; // Tambahkan penampung hitungan manual
+                $calculatedGrossAmount = 0;
 
-                // 1. Masukkan Item Produk
+                // 2. MASUKKAN ITEM PRODUK
                 foreach ($order->items as $item) {
                     $itemPrice = (int) $item->price;
                     $itemQty = (int) $item->qty;
@@ -562,11 +564,10 @@ class OrderController extends Controller
                         'price' => $itemPrice,
                         'quantity' => $itemQty,
                     ];
-
-                    $calculatedGrossAmount += $itemTotalPrice; // Tambah subtotal item
+                    $calculatedGrossAmount += $itemTotalPrice;
                 }
 
-                // 2. Masukkan Diskon
+                // 3. MASUKKAN DISKON
                 $discountAmount = (int) ($order->discount_amount ?? 0);
                 if ($discountAmount > 0) {
                     $itemDetails[] = [
@@ -575,10 +576,10 @@ class OrderController extends Controller
                         'price' => -$discountAmount,
                         'quantity' => 1,
                     ];
-                    $calculatedGrossAmount -= $discountAmount; // Kurangi total dari diskon
+                    $calculatedGrossAmount -= $discountAmount;
                 }
 
-                // 3. Masukkan Pajak
+                // 4. MASUKKAN PAJAK
                 $taxAmount = (int) ($order->tax_amount ?? 0);
                 if ($taxAmount > 0) {
                     $itemDetails[] = [
@@ -587,50 +588,84 @@ class OrderController extends Controller
                         'price' => $taxAmount,
                         'quantity' => 1,
                     ];
-                    $calculatedGrossAmount += $taxAmount; // Tambah total dari pajak
+                    $calculatedGrossAmount += $taxAmount;
                 }
 
-                // KUNCI UTAMA: Gunakan calculated amount
                 $finalGrossAmount = $calculatedGrossAmount > 0 ? $calculatedGrossAmount : (int) $order->total_price;
 
-                $params = [
-                    'transaction_details' => [
-                        'order_id' => $order->invoice_number,
-                        'gross_amount' => $finalGrossAmount, // <-- Panggil nilai kalkulasi akhir
-                    ],
-                    'customer_details' => [
-                        'first_name' => $order->customer_name ?: 'Customer POS',
-                    ],
-                    'item_details' => $itemDetails,
-                    'callbacks' => [
-                        'finish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
-                        'unfinish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
-                        'error' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
-                    ]
-                ];
-
-                // --- UBAH BAGIAN INI DI ORDERCONTROLLER.PHP ---
+                // =======================================================
+                // PERCABANGAN: JIKA QRIS -> CORE API, LAINNYA -> SNAP
+                // =======================================================
                 if ($methodStr === 'qris') {
-                    // Gunakan hanya 'other_qris' agar Midtrans HANYA men-generate gambar Barcode QRIS,
-                    // tanpa mempedulikan apakah ini dibuka di HP atau Komputer Desktop.
-                    $params['enabled_payments'] = ['other_qris'];
-                } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
-                    $params['enabled_payments'] = ['credit_card'];
-                } elseif ($methodStr === 'midtrans') {
-                    // Biarkan kosong agar semua metode muncul
+                    // JALUR 1: MENGGUNAKAN CORE API (KHUSUS QRIS)
+                    $params = [
+                        'payment_type' => 'qris',
+                        'transaction_details' => [
+                            'order_id' => $order->invoice_number,
+                            'gross_amount' => $finalGrossAmount,
+                        ],
+                        'customer_details' => [
+                            'first_name' => $order->customer_name ?: 'Customer POS',
+                        ],
+                        'item_details' => $itemDetails,
+                    ];
+
+                    $chargeResponse = \Midtrans\CoreApi::charge($params);
+                    $qrImageUrl = null;
+
+                    if (isset($chargeResponse->actions)) {
+                        foreach ($chargeResponse->actions as $action) {
+                            if ($action->name === 'generate-qr-code') {
+                                $qrImageUrl = $action->url;
+                                break;
+                            }
+                        }
+                    }
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Order berhasil dibuat',
+                        'data' => [
+                            'order' => $order->load('items.product', 'table'),
+                            'qr_image_url' => $qrImageUrl,
+                            'redirect_url' => null // Tidak ada Snap Web untuk Core API
+                        ]
+                    ], 201);
+
+                } else {
+                    // JALUR 2: MENGGUNAKAN SNAP (KHUSUS CARD & METODE LAIN)
+                    $params = [
+                        'transaction_details' => [
+                            'order_id' => $order->invoice_number,
+                            'gross_amount' => $finalGrossAmount,
+                        ],
+                        'customer_details' => [
+                            'first_name' => $order->customer_name ?: 'Customer POS',
+                        ],
+                        'item_details' => $itemDetails,
+                        'callbacks' => [
+                            'finish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
+                            'unfinish' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
+                            'error' => env('FRONTEND_URL', 'https://pos.etres.my.id') . '/status/' . $order->id,
+                        ]
+                    ];
+
+                    if ($methodStr === 'card' || $methodStr === 'credit_card') {
+                        $params['enabled_payments'] = ['credit_card'];
+                    }
+
+                    $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Order berhasil dibuat',
+                        'data' => [
+                            'order' => $order->load('items.product', 'table'),
+                            'qr_image_url' => null, // Snap tidak me-return raw image
+                            'redirect_url' => $paymentUrl
+                        ]
+                    ], 201);
                 }
-                // ----------------------------------------------
-
-                $paymentUrl = Snap::createTransaction($params)->redirect_url;
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Order berhasil dibuat',
-                    'data' => [
-                        'order' => $order->load('items.product', 'table'),
-                        'redirect_url' => $paymentUrl
-                    ]
-                ], 201);
             }
 
             // CASH FLOW
