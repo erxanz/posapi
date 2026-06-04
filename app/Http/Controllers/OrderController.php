@@ -435,28 +435,61 @@ class OrderController extends Controller
                     ],
                 ];
 
-                // --- UBAH BAGIAN INI DI ORDERCONTROLLER.PHP ---
+                // PERCABANGAN: JIKA QRIS -> CORE API (GAMBAR), LAINNYA -> SNAP (WEB)
                 if ($methodStr === 'qris') {
-                    // Gunakan hanya 'other_qris' agar Midtrans HANYA men-generate gambar Barcode QRIS,
-                    // tanpa mempedulikan apakah ini dibuka di HP atau Komputer Desktop.
-                    $params['enabled_payments'] = ['other_qris'];
-                } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
-                    $params['enabled_payments'] = ['credit_card'];
-                } elseif ($methodStr === 'midtrans') {
-                    // Biarkan kosong agar semua metode muncul
+                    // JALUR 1: CORE API KHUSUS QRIS UNTUK DAPAT URL GAMBAR
+                    $coreParams = [
+                        'payment_type' => 'qris',
+                        'transaction_details' => [
+                            'order_id' => $order->invoice_number,
+                            'gross_amount' => $finalGrossAmount,
+                        ],
+                        'customer_details' => [
+                            'first_name' => $order->customer_name ?: 'Customer POS',
+                        ],
+                        'item_details' => $itemDetails,
+                    ];
+
+                    $chargeResponse = \Midtrans\CoreApi::charge($coreParams);
+                    $qrImageUrl = null;
+
+                    if (isset($chargeResponse->actions)) {
+                        foreach ($chargeResponse->actions as $action) {
+                            if ($action->name === 'generate-qr-code') {
+                                $qrImageUrl = $action->url;
+                                break;
+                            }
+                        }
+                    }
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Order berhasil dibuat',
+                        'data' => [
+                            'order' => $order->load('items.product', 'table'),
+                            'qr_image_url' => $qrImageUrl, // Kirim URL gambar ke Flutter
+                            'redirect_url' => null
+                        ]
+                    ], 201);
+
+                } else {
+                    // JALUR 2: MENGGUNAKAN SNAP UNTUK KARTU KREDIT / METODE LAINNYA
+                    if ($methodStr === 'card' || $methodStr === 'credit_card') {
+                        $params['enabled_payments'] = ['credit_card'];
+                    }
+
+                    $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Order berhasil dibuat',
+                        'data' => [
+                            'order' => $order->load('items.product', 'table'),
+                            'qr_image_url' => null,
+                            'redirect_url' => $paymentUrl // Kirim web URL ke Flutter
+                        ]
+                    ], 201);
                 }
-                // ----------------------------------------------
-
-                $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Order berhasil dibuat',
-                    'data' => [
-                        'order' => $order->load('items.product', 'table'),
-                        'redirect_url' => $paymentUrl
-                    ]
-                ], 201);
             }
 
             $tableId = $order->table_id ?? null;
