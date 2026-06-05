@@ -104,12 +104,14 @@ class OrderController extends Controller
             'qty' => 'required|integer|min:1'
         ]);
 
+        // Ambil order berdasarkan outlet kasir yang sedang login
         $order = Order::where('id', $orderId)
             ->where('outlet_id', auth()->user()->outlet_id)
             ->firstOrFail();
 
-        if ($order->status !== 'pending') {
-            return response()->json(['message' => 'Order sudah tidak bisa diubah'], 400);
+        // Izinkan edit jika status masih pending (belum dibayar lunas)
+        if ($order->status !== Order::STATUS_PENDING && $order->status !== 'pending') {
+            return response()->json(['message' => 'Order sudah diproses/lunas dan tidak bisa diubah'], 400);
         }
 
         $product = Outlet::query()
@@ -120,11 +122,10 @@ class OrderController extends Controller
             ->firstOrFail();
 
         $requestQty = (int) $request->qty;
-        $existingQty = (int) ($order->items()->where('product_id', $request->product_id)->value('qty') ?? 0);
-        $targetQty = $existingQty + $requestQty;
         $availableStock = (int) $product->pivot->stock;
 
-        if ($targetQty > $availableStock) {
+        // Cek kecukupan stok produk di outlet
+        if ($requestQty > $availableStock) {
             return response()->json([
                 'message' => "Stok {$product->name} tidak cukup (maksimal {$availableStock})"
             ], 400);
@@ -140,19 +141,38 @@ class OrderController extends Controller
                 $item->qty += $requestQty;
                 $item->total_price = $item->qty * $item->price;
                 $item->save();
-            } else {
+            } {
+                $stationId = $product->pivot->station_id ?? $product->station_id;
                 $order->items()->create([
                     'product_id' => $product->id,
+                    'station_id' => $stationId,
                     'qty' => $requestQty,
                     'price' => $price,
                     'total_price' => $price * $requestQty
                 ]);
             }
 
-            $this->updateTotal($order);
+            // Potong stok produk di outlet & catat riwayatnya
+            $newStock = $availableStock - $requestQty;
+            Outlet::findOrFail($order->outlet_id)->products()->updateExistingPivot($product->id, ['stock' => $newStock]);
+
+            \App\Models\StockHistory::create([
+                'outlet_id' => $order->outlet_id,
+                'product_id' => $product->id,
+                'user_id' => auth()->id(),
+                'type' => 'sale',
+                'quantity' => -$requestQty,
+                'final_stock' => $newStock,
+                'reference' => 'Tambah Item Kasir: ' . $order->invoice_number,
+            ]);
+
+            // Kalkulasi ulang total harga, diskon, dan pajak
+            $order->refresh();
+            $order->recalculateTotals(); 
+            
             DB::commit();
 
-            return response()->json($order->load('items.product'), 201);
+            return response()->json($order->load('items.product'), 200);
         } catch (\Throwable $e) {
             DB::rollBack();
             return response()->json(['message' => $e->getMessage()], 500);
@@ -193,33 +213,44 @@ class OrderController extends Controller
             ->where('outlet_id', auth()->user()->outlet_id)
             ->firstOrFail();
 
-        if ($order->status !== 'pending') {
-            return response()->json(['message' => 'Order sudah tidak bisa diubah'], 400);
+        if ($order->status !== Order::STATUS_PENDING && $order->status !== 'pending') {
+            return response()->json(['message' => 'Order sudah diproses/lunas dan tidak bisa diubah'], 400);
         }
 
-        $item = $order->items()->findOrFail($itemId);
-        $outlet = \App\Models\Outlet::find($order->outlet_id);
-        $product = $outlet->products()->where('products.id', $item->product_id)->first();
+        DB::beginTransaction();
+        try {
+            $item = $order->items()->findOrFail($itemId);
+            $outlet = \App\Models\Outlet::find($order->outlet_id);
+            $product = $outlet->products()->where('products.id', $item->product_id)->first();
 
-        if ($product) {
-            $newStock = $product->pivot->stock + $item->qty;
-            $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+            // Kembalikan stok ke outlet karena item dibatalkan/dihapus
+            if ($product) {
+                $newStock = $product->pivot->stock + $item->qty;
+                $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
 
-            \App\Models\StockHistory::create([
-                'outlet_id' => $order->outlet_id,
-                'product_id' => $item->product_id,
-                'user_id' => auth()->id(),
-                'type' => 'restore',
-                'quantity' => $item->qty,
-                'final_stock' => $newStock,
-                'reference' => 'Remove Item: ' . $order->invoice_number,
-            ]);
+                \App\Models\StockHistory::create([
+                    'outlet_id' => $order->outlet_id,
+                    'product_id' => $item->product_id,
+                    'user_id' => auth()->id(),
+                    'type' => 'restore',
+                    'quantity' => $item->qty,
+                    'final_stock' => $newStock,
+                    'reference' => 'Hapus Item Kasir: ' . $order->invoice_number,
+                ]);
+            }
+
+            $item->delete();
+            
+            // Kalkulasi ulang total, diskon, dan pajak setelah item dihapus
+            $order->refresh();
+            $order->recalculateTotals();
+
+            DB::commit();
+            return response()->json($order->load('items.product'), 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json(['message' => $e->getMessage()], 500);
         }
-
-        $item->delete();
-        $this->updateTotal($order);
-
-        return response()->json($order->load('items.product'));
     }
 
     /**
