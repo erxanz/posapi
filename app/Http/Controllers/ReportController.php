@@ -489,7 +489,7 @@ class ReportController extends Controller
             ->selectRaw('products.name, SUM(order_items.qty) as sold')
             ->groupBy('products.id', 'products.name')
             ->orderByDesc('sold')
-            ->limit(3)
+            ->limit(4)
             ->get();
 
         return response()->json(['top_products' => $topProducts]);
