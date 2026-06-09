@@ -193,12 +193,12 @@ class OrderService
 
             $this->reserveTable($table);
 
-            // Jangan buat payment di sini, tunggu webhook dari Midtrans
 
             DB::commit();
 
-            $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
-            broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            if ($order->payment_method === 'cash') {
+                broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            }
 
             return [
                 'success' => true,
@@ -265,8 +265,9 @@ class OrderService
 
             DB::commit();
 
-            $broadcastOrder = $order->fresh()->load('items.product', 'table');
-            broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            if ($order->payment_method === 'cash') {
+                broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            }
 
             return [
                 'message' => 'Public order berhasil',

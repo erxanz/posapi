@@ -364,7 +364,23 @@ class OrderController extends Controller
             'items.*.qty' => 'required|integer|min:1',
             'items.*.price' => 'nullable|integer|min:1',
             'items.*.notes' => 'nullable|string|max:500',
+            'previous_order_id' => 'nullable',
         ]);
+
+        if (!empty($validated['previous_order_id'])) {
+            $oldOrder = \App\Models\Order::where('id', $validated['previous_order_id'])
+                ->where('status', 'pending')
+                ->where('table_id', $validated['table_id'])
+                ->first();
+
+            if ($oldOrder) {
+                // Batalkan order lama
+                $oldOrder->update(['status' => 'cancelled']);
+                
+                // Beri tahu aplikasi PosMobile kasir untuk menghilangkan pesanan lama ini dari layar
+                broadcast(new \App\Events\OrderUpdated($oldOrder))->toOthers();
+            }
+        }
 
         $validated = $this->normalizeLegacyAdjustmentPayload($validated);
 
@@ -466,16 +482,13 @@ class OrderController extends Controller
                     ],
                 ];
 
-                // --- PERUBAHAN DI SINI ---
                 if ($methodStr === 'qris') {
-                    // Samakan dengan publicOrder agar aman saat dibuka via HP Kasir
                     $params['enabled_payments'] = ['other_qris', 'gopay', 'shopeepay'];
                 } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
                     $params['enabled_payments'] = ['credit_card'];
                 } elseif ($methodStr === 'midtrans') {
                     // Biarkan kosong
                 }
-                // -------------------------
 
                 $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
 
@@ -639,16 +652,13 @@ class OrderController extends Controller
                     ]
                 ];
 
-                // --- PERUBAHAN DI SINI ---
                 if ($methodStr === 'qris') {
-                    // Samakan dengan publicOrder agar aman saat dibuka via HP Kasir
                     $params['enabled_payments'] = ['other_qris', 'gopay', 'shopeepay'];
                 } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
                     $params['enabled_payments'] = ['credit_card'];
                 } elseif ($methodStr === 'midtrans') {
                     // Biarkan kosong
                 }
-                // -------------------------
 
                 $paymentUrl = Snap::createTransaction($params)->redirect_url;
 
@@ -1109,6 +1119,7 @@ class OrderController extends Controller
                 $this->orderService->syncHistoryTransaction($order->fresh());
 
                 $broadcastOrder = $order->fresh()->load(['items.product', 'table', 'payments']);
+                broadcast(new \App\Events\OrderCreated($broadcastOrder))->toOthers();
                 event(new \App\Events\PaymentPaid($broadcastOrder));
                 event(new \App\Events\OrderUpdated($broadcastOrder));
             } elseif (in_array($request->transaction_status, ['cancel', 'deny', 'expire'], true)) {
