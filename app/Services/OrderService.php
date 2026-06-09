@@ -196,6 +196,7 @@ class OrderService
 
             DB::commit();
 
+            $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
             if ($order->payment_method === 'cash') {
                 broadcast(new OrderCreated($broadcastOrder))->toOthers();
             }
@@ -265,6 +266,7 @@ class OrderService
 
             DB::commit();
 
+            $broadcastOrder = $order->fresh()->load('items.product', 'table');
             if ($order->payment_method === 'cash') {
                 broadcast(new OrderCreated($broadcastOrder))->toOthers();
             }
