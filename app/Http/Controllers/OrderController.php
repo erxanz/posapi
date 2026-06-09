@@ -1119,9 +1119,9 @@ class OrderController extends Controller
                 $this->orderService->syncHistoryTransaction($order->fresh());
 
                 $broadcastOrder = $order->fresh()->load(['items.product', 'table', 'payments', 'discount']);
-                broadcast(new \App\Events\OrderCreated($broadcastOrder));
+                // broadcast(new \App\Events\OrderCreated($broadcastOrder));
                 event(new \App\Events\PaymentPaid($broadcastOrder));
-                // event(new \App\Events\OrderUpdated($broadcastOrder));
+                event(new \App\Events\OrderUpdated($broadcastOrder));
             } elseif (in_array($request->transaction_status, ['cancel', 'deny', 'expire'], true)) {
                 $order->update(['status' => Order::STATUS_CANCELLED]);
 

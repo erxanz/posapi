@@ -197,10 +197,7 @@ class OrderService
             DB::commit();
 
             $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
-            if ($order->payment_method === 'cash') {
-                broadcast(new OrderCreated($broadcastOrder))->toOthers();
-            }
-
+            broadcast(new OrderCreated($broadcastOrder))->toOthers();
             return [
                 'success' => true,
                 'message' => 'Order dibuat, silakan lanjut ke pembayaran Midtrans',
@@ -267,9 +264,7 @@ class OrderService
             DB::commit();
 
             $broadcastOrder = $order->fresh()->load('items.product', 'table');
-            if ($order->payment_method === 'cash') {
-                broadcast(new OrderCreated($broadcastOrder))->toOthers();
-            }
+            broadcast(new OrderCreated($broadcastOrder))->toOthers();
 
             return [
                 'message' => 'Public order berhasil',
