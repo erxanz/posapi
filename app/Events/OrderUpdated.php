@@ -54,6 +54,7 @@ class OrderUpdated implements ShouldBroadcastNow
                 'customer_name' => $this->order->customer_name,
                 'total_price'   => $this->order->total_price,
                 'status'        => $this->order->status,
+                'payment_method' => $this->order->payment_method,
                 'updated_at'    => $this->order->updated_at,
             ]
         ];

@@ -56,7 +56,9 @@ class OrderCreated implements ShouldBroadcastNow
                 'customer_name' => $this->order->customer_name,
                 'total_price'   => $this->order->total_price,
                 'status'        => $this->order->status,
+                'payment_method' => $this->order->payment_method,
                 'created_at'    => $this->order->created_at,
+
             ]
         ];
     }
