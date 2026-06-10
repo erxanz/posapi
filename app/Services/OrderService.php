@@ -644,7 +644,7 @@ class OrderService
         // --- PERBAIKAN BUG ---
         // Biarkan 'midtrans' tetap menjadi 'midtrans' agar data tidak ditiban menjadi qris
         if ($m === 'midtrans') {
-            return 'Qris';
+            return 'qris';
         }
 
         // Tambahkan pengelompokan e-wallet baru ke kategori 'qris'
