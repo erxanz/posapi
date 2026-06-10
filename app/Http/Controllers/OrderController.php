@@ -46,8 +46,24 @@ class OrderController extends Controller
 
         $query = Order::with(['items.product', 'table', 'user', 'outlet', 'latestAcceptance']);
 
-        if ($request->filled('status') && $request->status === Order::STATUS_PENDING) {
-            $query->with(['payments:id,order_id,method,paid_at']);
+        if ($request->filled('status')) {
+            if ($request->status === Order::STATUS_PENDING) {
+                // MODIFIKASI: Tarik data PENDING + PAID (yang belum di-ACC Kasir)
+                $query->where(function ($q) {
+                    // 1. Tarik semua pesanan yang memang masih murni PENDING
+                    $q->where('status', Order::STATUS_PENDING)
+                      ->orWhere(function ($subQ) {
+                          // 2. ATAU tarik pesanan yang sudah LUNAS, dengan syarat:
+                          $subQ->where('status', Order::STATUS_PAID)
+                               ->whereNull('user_id') // Harus murni dari POS QR (Bukan kasir)
+                               ->where('payment_method', '!=', 'cash') // Hanya untuk pembayaran online/Midtrans
+                               ->doesntHave('latestAcceptance'); // Belum ditekan tombol "Terima" (Accept) oleh Kasir
+                      });
+                });
+            } else {
+                // Untuk status lain (seperti paid/cancelled/dsb), filter normal seperti biasa
+                $query->where('status', $request->status);
+            }
         }
 
         if ($user->role === 'karyawan') {
