@@ -105,7 +105,9 @@ class OrderService
             DB::commit();
 
             $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
+            if (is_null($order->user_id)) {
             broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            }
 
             return [
                 'success' => true,
@@ -197,7 +199,9 @@ class OrderService
             DB::commit();
 
             $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
+            if (is_null($order->user_id)) {
             broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            }
             return [
                 'success' => true,
                 'message' => 'Order dibuat, silakan lanjut ke pembayaran Midtrans',
@@ -547,6 +551,7 @@ class OrderService
                 'price' => (int) $item->price,
                 'total_price' => (int) $item->total_price,
                 'cancelled_qty' => (int) ($item->cancelled_qty ?? 0),
+                'notes' => $item->notes,
             ];
         })->values()->all();
 

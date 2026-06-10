@@ -101,7 +101,8 @@ class OrderController extends Controller
     {
         $request->validate([
             'product_id' => 'required|exists:products,id',
-            'qty' => 'required|integer|min:1'
+            'qty' => 'required|integer|min:1',
+            'notes' => 'nullable|string|max:500',
         ]);
 
         // Ambil order berdasarkan outlet kasir yang sedang login
@@ -140,15 +141,19 @@ class OrderController extends Controller
             if ($item) {
                 $item->qty += $requestQty;
                 $item->total_price = $item->qty * $item->price;
+                if ($request->has('notes')) {
+                    $item->notes = $request->notes; 
+                }
                 $item->save();
-            } {
+            } else {
                 $stationId = $product->pivot->station_id ?? $product->station_id;
                 $order->items()->create([
                     'product_id' => $product->id,
                     'station_id' => $stationId,
                     'qty' => $requestQty,
                     'price' => $price,
-                    'total_price' => $price * $requestQty
+                    'total_price' => $price * $requestQty,
+                    'notes' => $request->notes ?? null,
                 ]);
             }
 
@@ -958,22 +963,32 @@ class OrderController extends Controller
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|exists:order_items,id',
             'items.*.qty' => 'required|integer|min:0',
+            'items.*.notes' => 'nullable|string|max:500',
         ]);
 
         DB::beginTransaction();
         try {
             foreach ($validated['items'] as $itemData) {
+                // 1. Tampung dulu semua data yang mau diupdate ke dalam satu variabel
+                $updateData = [
+                    'qty' => $itemData['qty'],
+                    'total_price' => $itemData['qty'] * (
+                        \App\Models\OrderItem::where('id', $itemData['id'])
+                        ->where('order_id', $order->id)
+                        ->value('price') ?? 0
+                    ),
+                ];
+
+                // 2. Tambahkan notes ke array JIKA ada input notes dari kasir
+                if (array_key_exists('notes', $itemData)) {
+                    $updateData['notes'] = $itemData['notes'];
+                }
+
+                // 3. Eksekusi update-nya SEKALI saja per item
                 \App\Models\OrderItem::where('id', $itemData['id'])
                     ->where('order_id', $order->id)
                     ->lockForUpdate()
-                    ->update([
-                        'qty' => $itemData['qty'],
-                        'total_price' => $itemData['qty'] * (
-                            \App\Models\OrderItem::where('id', $itemData['id'])
-                            ->where('order_id', $order->id)
-                            ->value('price') ?? 0
-                        ),
-                    ]);
+                    ->update($updateData);
             }
 
             $this->recalculateOrderTotals($order);
