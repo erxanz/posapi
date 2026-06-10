@@ -644,16 +644,12 @@ class OrderService
         // --- PERBAIKAN BUG ---
         // Biarkan 'midtrans' tetap menjadi 'midtrans' agar data tidak ditiban menjadi qris
         if ($m === 'midtrans') {
-            return 'midtrans';
+            return 'Qris';
         }
 
         // Tambahkan pengelompokan e-wallet baru ke kategori 'qris'
         if (in_array($m, ['qris', 'other_qris', 'gopay', 'shopeepay'])) {
             return 'qris';
-        }
-
-        if (in_array($m, ['card', 'credit_card'])) {
-            return 'card';
         }
 
         if (in_array($m, ['cash', 'tunai'])) {

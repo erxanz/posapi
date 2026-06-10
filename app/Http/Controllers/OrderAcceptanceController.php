@@ -29,13 +29,16 @@ class OrderAcceptanceController extends Controller
         }
 
         return DB::transaction(function () use ($order, $user, $scope) {
-            // Accept dipakai untuk trigger printer di kasir mobile.
-            // Midtrans menandai order paid terlebih dahulu, lalu kasir menekan acc untuk cetak.
             if ($order->status === Order::STATUS_CANCELLED) {
                 return response()->json(['message' => 'Order sudah dibatalkan.'], 422);
             }
 
-            // Izinkan pesanan diterima jika berstatus PAID, 
+            if (is_null($order->user_id) && $order->payment_method === 'qris' && $order->status !== Order::STATUS_PAID) {
+                return response()->json([
+                    'message' => 'Gagal! Pelanggan belum menyelesaikan pembayaran.'
+                ], 422);
+            }
+
             // ATAU jika metodenya bukan cash (online/QRIS) meskipun statusnya masih PENDING di sistem.
             if ($order->status !== Order::STATUS_PAID && $order->payment_method !== 'cash') {
                 // Kita izinkan masuk jika dia non-cash dan statusnya pending
