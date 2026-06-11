@@ -78,7 +78,7 @@ class OrderController extends Controller
         }
 
         if ($request->filled('status')) {
-            $query->where('status', $request->status);
+            // $query->where('status', $request->status);
 
             if (in_array($request->status, [Order::STATUS_PENDING, Order::STATUS_PAID], true)) {
                 $query->whereDoesntHave('acceptances', function ($acceptanceQuery) {
