@@ -105,8 +105,8 @@ class OrderService
             DB::commit();
 
             $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
-            if (is_null($order->user_id)) {
-            // broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            if (is_null($order->user_id) && $order->payment_method !== 'qris') {
+                broadcast(new OrderCreated($broadcastOrder))->toOthers();
             }
 
             return [
@@ -199,8 +199,8 @@ class OrderService
             DB::commit();
 
             $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
-            if (is_null($order->user_id)) {
-            // broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            if (is_null($order->user_id) && $order->payment_method !== 'qris') {
+              broadcast(new OrderCreated($broadcastOrder))->toOthers();
             }
             return [
                 'success' => true,
@@ -268,7 +268,9 @@ class OrderService
             DB::commit();
 
             $broadcastOrder = $order->fresh()->load('items.product', 'table');
-            // broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            if ($order->payment_method !== 'qris') {
+              broadcast(new OrderCreated($broadcastOrder))->toOthers();
+            }
 
             return [
                 'message' => 'Public order berhasil',
