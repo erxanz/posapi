@@ -504,14 +504,60 @@ class OrderController extends Controller
                 ];
 
                 if ($methodStr === 'qris') {
-                    $params['enabled_payments'] = ['other_qris', 'gopay', 'shopeepay'];
-                } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
-                    $params['enabled_payments'] = ['credit_card'];
-                } elseif ($methodStr === 'midtrans') {
-                    // Biarkan kosong
+                    $params = [
+                        'payment_type' => 'qris',
+                        'transaction_details' => [
+                            'order_id' => $order->invoice_number,
+                            'gross_amount' => $finalGrossAmount,
+                        ],
+                        'customer_details' => [
+                            'first_name' => $order->customer_name ?: 'Customer POS',
+                        ],
+                        'item_details' => $itemDetails,
+                        'qris' => [
+                            'acquirer' => 'gopay', // opsional, bisa dilepas
+                        ],
+                    ];
+
+                    $charge = \Midtrans\CoreApi::charge($params);
+
+                    $qrUrl = null;
+                    foreach ($charge->actions as $action) {
+                        if (in_array($action->name, ['generate-qr-code-v2', 'generate-qr-code'])) {
+                            $qrUrl = $action->url;
+                            break;
+                        }
+                    }
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Order berhasil dibuat',
+                        'data' => [
+                            'order' => $order->load('items.product', 'table'),
+                            'qr_url' => $qrUrl,
+                            'transaction_id' => $charge->transaction_id,
+                            'transaction_status' => $charge->transaction_status,
+                            'expiry_time' => $charge->expiry_time ?? null,
+                        ]
+                    ], 201);
                 }
 
-                $paymentUrl = \Midtrans\Snap::createTransaction($params)->redirect_url;
+                if (in_array($methodStr, ['card', 'credit_card', 'midtrans'])) {
+                    // sisanya pakai Snap seperti sebelumnya (card butuh Snap/Midtrans.js karena perlu card token)
+                    if ($methodStr === 'card' || $methodStr === 'credit_card') {
+                        $params['enabled_payments'] = ['credit_card'];
+                    }
+                    $paymentUrl = Snap::createTransaction($params)->redirect_url;
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Order berhasil dibuat',
+                        'data' => [
+                            'order' => $order->load('items.product', 'table'),
+                            'redirect_url' => $paymentUrl
+                        ]
+                    ], 201);
+                }
 
                 return response()->json([
                     'success' => true,
@@ -674,14 +720,60 @@ class OrderController extends Controller
                 ];
 
                 if ($methodStr === 'qris') {
-                    $params['enabled_payments'] = ['other_qris', 'gopay', 'shopeepay'];
-                } elseif ($methodStr === 'card' || $methodStr === 'credit_card') {
-                    $params['enabled_payments'] = ['credit_card'];
-                } elseif ($methodStr === 'midtrans') {
-                    // Biarkan kosong
+                    $params = [
+                        'payment_type' => 'qris',
+                        'transaction_details' => [
+                            'order_id' => $order->invoice_number,
+                            'gross_amount' => $finalGrossAmount,
+                        ],
+                        'customer_details' => [
+                            'first_name' => $order->customer_name ?: 'Customer POS',
+                        ],
+                        'item_details' => $itemDetails,
+                        'qris' => [
+                            'acquirer' => 'gopay', // opsional, bisa dilepas
+                        ],
+                    ];
+
+                    $charge = \Midtrans\CoreApi::charge($params);
+
+                    $qrUrl = null;
+                    foreach ($charge->actions as $action) {
+                        if (in_array($action->name, ['generate-qr-code-v2', 'generate-qr-code'])) {
+                            $qrUrl = $action->url;
+                            break;
+                        }
+                    }
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Order berhasil dibuat',
+                        'data' => [
+                            'order' => $order->load('items.product', 'table'),
+                            'qr_url' => $qrUrl,
+                            'transaction_id' => $charge->transaction_id,
+                            'transaction_status' => $charge->transaction_status,
+                            'expiry_time' => $charge->expiry_time ?? null,
+                        ]
+                    ], 201);
                 }
 
-                $paymentUrl = Snap::createTransaction($params)->redirect_url;
+                if (in_array($methodStr, ['card', 'credit_card', 'midtrans'])) {
+                    // sisanya pakai Snap seperti sebelumnya (card butuh Snap/Midtrans.js karena perlu card token)
+                    if ($methodStr === 'card' || $methodStr === 'credit_card') {
+                        $params['enabled_payments'] = ['credit_card'];
+                    }
+                    $paymentUrl = Snap::createTransaction($params)->redirect_url;
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Order berhasil dibuat',
+                        'data' => [
+                            'order' => $order->load('items.product', 'table'),
+                            'redirect_url' => $paymentUrl
+                        ]
+                    ], 201);
+                }
 
                 return response()->json([
                     'success' => true,
