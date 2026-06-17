@@ -53,6 +53,13 @@ class OrderAcceptanceController extends Controller
             // Pastikan history_transactions ikut tercatat saat tombol accept/terima
             $this->orderService->syncHistoryTransaction($order->fresh());
 
+            $history = \App\Models\HistoryTransaction::where('order_id', $order->id)->first();
+            if ($history && is_null($history->cashier_id)) {
+                $history->update([
+                    'cashier_id' => $user->id // Mengisi ID Kasir yang nge-accept pesanan posqr ini
+                ]);
+            }
+
             /** @var OrderAcceptance $acceptance */
             $acceptance = OrderAcceptance::query()
                 ->where('order_id', $order->id)
@@ -93,4 +100,3 @@ class OrderAcceptanceController extends Controller
         });
     }
 }
-
