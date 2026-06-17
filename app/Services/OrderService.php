@@ -542,8 +542,15 @@ class OrderService
         $order->load(['payments', 'items.product']);
         $lastPayment = $order->payments->sortByDesc('id')->first();
         $methods = $order->payments->pluck('method')->unique()->values()->all();
-        $paymentMethod = count($methods) === 1 ? $methods[0] : (count($methods) > 1 ? 'split' : null);
+        
+        $paymentMethod = count($methods) === 1 ? $methods[0] : (count($methods) > 1 ? 'split' : $order->payment_method);
+        
         $paidAmount = $order->payments->sum(fn($p) => $p->amount_paid - $p->change_amount);
+        
+        if ($paidAmount == 0 && $order->status === Order::STATUS_PAID) {
+            $paidAmount = $order->total_price;
+        }
+
         $changeAmount = $order->payments->sum('change_amount');
         $orderItemsSummary = $order->items->map(function ($item) {
             return [
@@ -571,8 +578,8 @@ class OrderService
                 'paid_amount' => $paidAmount,
                 'change_amount' => $changeAmount,
                 'payment_method' => $paymentMethod,
-                'paid_at' => $lastPayment?->paid_at ?? now(),
-                'cashier_id' => $lastPayment?->paid_by,
+                'paid_at' => $lastPayment?->paid_at ?? $order->updated_at ?? now(),
+                'cashier_id' => $lastPayment?->paid_by ?? $order->user_id, 
                 'status' => Order::STATUS_PAID,
                 'metadata' => [
                     'payments_count' => $order->payments->count(),
