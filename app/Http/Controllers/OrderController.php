@@ -131,27 +131,32 @@ class OrderController extends Controller
             return response()->json(['message' => 'Order sudah diproses/lunas dan tidak bisa diubah'], 400);
         }
 
-        $product = Outlet::query()
-            ->findOrFail($order->outlet_id)
-            ->products()
-            ->where('products.id', $request->product_id)
-            ->wherePivot('is_active', true)
-            ->firstOrFail();
-
         $requestQty = (int) $request->qty;
-        $availableStock = (int) $product->pivot->stock;
-
-        // Cek kecukupan stok produk di outlet
-        if ($requestQty > $availableStock) {
-            return response()->json([
-                'message' => "Stok {$product->name} tidak cukup (maksimal {$availableStock})"
-            ], 400);
-        }
-
-        $price = (int) $product->pivot->price;
 
         DB::beginTransaction();
         try {
+            // Kunci baris produk SEBELUM membaca stok, supaya 2 request
+            // bersamaan untuk produk yang sama tidak bisa lolos validasi
+            // stok berdasarkan nilai yang sama-sama sudah usang (overselling).
+            $product = Outlet::query()
+                ->findOrFail($order->outlet_id)
+                ->products()
+                ->where('products.id', $request->product_id)
+                ->wherePivot('is_active', true)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $availableStock = (int) $product->pivot->stock;
+
+            if ($requestQty > $availableStock) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => "Stok {$product->name} tidak cukup (maksimal {$availableStock})"
+                ], 400);
+            }
+
+            $price = (int) $product->pivot->price;
+
             $item = $order->items()->where('product_id', $product->id)->first();
 
             if ($item) {
@@ -240,9 +245,9 @@ class OrderController extends Controller
 
         DB::beginTransaction();
         try {
-            $item = $order->items()->findOrFail($itemId);
+            $item = $order->items()->lockForUpdate()->findOrFail($itemId);
             $outlet = \App\Models\Outlet::find($order->outlet_id);
-            $product = $outlet->products()->where('products.id', $item->product_id)->first();
+            $product = $outlet->products()->where('products.id', $item->product_id)->lockForUpdate()->first();
 
             // Kembalikan stok ke outlet karena item dibatalkan/dihapus
             if ($product) {
@@ -338,7 +343,7 @@ class OrderController extends Controller
             $order->update(['logs' => $logs]);
 
             $order->refresh();
-            $order->recalculateTotals($validated);
+            $order->recalculateTotals();
 
             if ($order->status === Order::STATUS_PAID) {
                 $this->orderService->syncHistoryTransaction($order->fresh());
@@ -429,8 +434,39 @@ class OrderController extends Controller
                     $serverKey = \App\Models\User::whereKey($ownerId)->value('midtrans_server_key');
                 }
 
+                // PENTING: jangan fallback diam-diam ke MIDTRANS_SERVER_KEY global.
+                // Sistem ini multi-tenant (server key per owner outlet) - kalau
+                // owner belum setup server key sendiri, memaksakan pakai key
+                // global bisa membuat pembayaran customer masuk ke akun Midtrans
+                // yang salah merchant. Lebih aman menolak transaksi online di sini
+                // daripada memproses pembayaran ke rekening yang salah.
                 if (empty($serverKey)) {
-                    $serverKey = env('MIDTRANS_SERVER_KEY');
+                    $order->loadMissing('items');
+                    $outletForRestock = \App\Models\Outlet::find($order->outlet_id);
+                    if ($outletForRestock) {
+                        foreach ($order->items as $item) {
+                            $product = $outletForRestock->products()->where('products.id', $item->product_id)->first();
+                            if ($product) {
+                                $newStock = $product->pivot->stock + $item->qty;
+                                $outletForRestock->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+                                \App\Models\StockHistory::create([
+                                    'outlet_id' => $order->outlet_id,
+                                    'product_id' => $item->product_id,
+                                    'user_id' => null,
+                                    'type' => 'restore',
+                                    'quantity' => $item->qty,
+                                    'final_stock' => $newStock,
+                                    'reference' => 'Auto-Cancel (Server Key Belum Diatur): ' . $order->invoice_number,
+                                ]);
+                            }
+                        }
+                    }
+
+                    $order->update(['status' => Order::STATUS_CANCELLED]);
+                    return response()->json([
+                        'message' => 'Outlet ini belum mengaktifkan pembayaran online. Silakan hubungi pengelola outlet atau gunakan metode pembayaran cash.'
+                    ], 422);
                 }
 
                 \Midtrans\Config::$serverKey = $serverKey;
@@ -646,16 +682,49 @@ class OrderController extends Controller
                 $order->recalculateTotals($validated);
                 $order->refresh();
 
-                Config::$serverKey = env('MIDTRANS_SERVER_KEY');
+                $serverKey = $order->midtrans_server_key_used;
+                if (empty($serverKey) && $order->outlet_id) {
+                    $ownerId = \App\Models\Outlet::whereKey($order->outlet_id)->value('owner_id');
+                    $serverKey = \App\Models\User::whereKey($ownerId)->value('midtrans_server_key');
+                }
+
+                // PENTING: jangan fallback diam-diam ke MIDTRANS_SERVER_KEY global, dan
+                // jangan berbasis role user yang sedang checkout (karyawan vs manager) -
+                // server key yang dipakai harus selalu milik owner outlet tersebut.
+                // Lihat catatan yang sama di publicOrder().
+                if (empty($serverKey)) {
+                    $order->loadMissing('items');
+                    $outletForRestock = \App\Models\Outlet::find($order->outlet_id);
+                    if ($outletForRestock) {
+                        foreach ($order->items as $item) {
+                            $product = $outletForRestock->products()->where('products.id', $item->product_id)->first();
+                            if ($product) {
+                                $newStock = $product->pivot->stock + $item->qty;
+                                $outletForRestock->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+                                \App\Models\StockHistory::create([
+                                    'outlet_id' => $order->outlet_id,
+                                    'product_id' => $item->product_id,
+                                    'user_id' => null,
+                                    'type' => 'restore',
+                                    'quantity' => $item->qty,
+                                    'final_stock' => $newStock,
+                                    'reference' => 'Auto-Cancel (Server Key Belum Diatur): ' . $order->invoice_number,
+                                ]);
+                            }
+                        }
+                    }
+
+                    $order->update(['status' => Order::STATUS_CANCELLED]);
+                    return response()->json([
+                        'message' => 'Outlet ini belum mengaktifkan pembayaran online. Silakan hubungi pengelola outlet atau gunakan metode pembayaran cash.'
+                    ], 422);
+                }
+
+                Config::$serverKey = $serverKey;
                 Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
                 Config::$isSanitized = true;
                 Config::$is3ds = true;
-
-                if ($user && $user->role === 'manager') {
-                    if (!empty($user->midtrans_server_key)) {
-                        Config::$serverKey = $user->midtrans_server_key;
-                    }
-                }
 
                 $itemDetails = [];
                 $calculatedGrossAmount = 0; // Tambahkan penampung hitungan manual
@@ -1076,27 +1145,62 @@ class OrderController extends Controller
 
         DB::beginTransaction();
         try {
+            $outlet = $order->outlet;
+
             foreach ($validated['items'] as $itemData) {
-                // 1. Tampung dulu semua data yang mau diupdate ke dalam satu variabel
+                $item = \App\Models\OrderItem::where('id', $itemData['id'])
+                    ->where('order_id', $order->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$item) continue;
+
+                $oldQty = (int) $item->qty;
+                $newQty = (int) $itemData['qty'];
+                $diff = $newQty - $oldQty; // positif = nambah, negatif = kurangi
+
+                // Sesuaikan stok produk sesuai selisih qty, konsisten dengan
+                // addItem/removeItem/voidItems/cancelItem yang selalu menjaga
+                // stok pivot outlet tetap sinkron dengan qty order.
+                if ($diff !== 0 && $outlet) {
+                    $productPivot = $outlet->products()
+                        ->where('products.id', $item->product_id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($productPivot) {
+                        $currentStock = (int) $productPivot->pivot->stock;
+
+                        // diff > 0 (nambah qty) butuh stok dipotong sejumlah diff
+                        if ($diff > 0 && $currentStock < $diff) {
+                            throw new \Exception("Stok {$productPivot->name} tidak cukup (Sisa: {$currentStock})");
+                        }
+
+                        $newStock = $currentStock - $diff;
+                        $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+                        \App\Models\StockHistory::create([
+                            'outlet_id' => $order->outlet_id,
+                            'product_id' => $item->product_id,
+                            'user_id' => auth()->id(),
+                            'type' => $diff > 0 ? 'sale' : 'restore',
+                            'quantity' => -$diff,
+                            'final_stock' => $newStock,
+                            'reference' => 'Update Item Kasir: ' . $order->invoice_number,
+                        ]);
+                    }
+                }
+
                 $updateData = [
-                    'qty' => $itemData['qty'],
-                    'total_price' => $itemData['qty'] * (
-                        \App\Models\OrderItem::where('id', $itemData['id'])
-                        ->where('order_id', $order->id)
-                        ->value('price') ?? 0
-                    ),
+                    'qty' => $newQty,
+                    'total_price' => $newQty * (int) $item->price,
                 ];
 
-                // 2. Tambahkan notes ke array JIKA ada input notes dari kasir
                 if (array_key_exists('notes', $itemData)) {
                     $updateData['notes'] = $itemData['notes'];
                 }
 
-                // 3. Eksekusi update-nya SEKALI saja per item
-                \App\Models\OrderItem::where('id', $itemData['id'])
-                    ->where('order_id', $order->id)
-                    ->lockForUpdate()
-                    ->update($updateData);
+                $item->update($updateData);
             }
 
             $this->recalculateOrderTotals($order);
@@ -1203,6 +1307,13 @@ class OrderController extends Controller
             return response()->json(['message' => 'Order not found'], 404);
         }
 
+        // Catatan: fallback ke env() di sini sengaja dipertahankan sebagai
+        // jaring pengaman untuk order LAMA yang mungkin sudah terlanjur dibuat
+        // dengan midtrans_server_key_used kosong sebelum proteksi di
+        // publicOrder()/checkoutOrder() ditambahkan (lihat catatan di sana).
+        // Order BARU dengan server key kosong sekarang langsung ditolak
+        // sebelum sempat mengirim transaksi ke Midtrans, sehingga tidak akan
+        // pernah memicu webhook nyata dari Midtrans untuk kasus ini lagi.
         $serverKey = $order->midtrans_server_key_used ?: env('MIDTRANS_SERVER_KEY');
         $hashed = hash('sha512', $request->order_id . $request->status_code . $request->gross_amount . $serverKey);
 
@@ -1213,6 +1324,20 @@ class OrderController extends Controller
         DB::beginTransaction();
 
         try {
+            // Kunci baris order ini untuk mencegah race condition jika Midtrans
+            // mengirim webhook yang sama lebih dari sekali secara bersamaan
+            // (retry mechanism Midtrans memang umum terjadi).
+            $lockedOrder = Order::where('id', $order->id)->lockForUpdate()->first();
+
+            // Idempotency guard: order yang statusnya sudah final (paid/cancelled)
+            // tidak boleh diproses ulang. Tanpa ini, webhook duplikat akan
+            // mengembalikan stok dua kali untuk status cancel/expire, atau
+            // membroadcast event PaymentPaid/OrderUpdated berkali-kali.
+            if (in_array($lockedOrder->status, [Order::STATUS_PAID, Order::STATUS_CANCELLED], true)) {
+                DB::commit();
+                return response()->json(['message' => 'Callback already processed']);
+            }
+
             if (in_array($request->transaction_status, ['settlement', 'capture'], true)) {
                 // Pastikan perhitungan diskon & pajak tersinkron sebelum status paid & history dibuat.
                 // Ini mencegah kasus diskon "hilang" ketika callback datang.

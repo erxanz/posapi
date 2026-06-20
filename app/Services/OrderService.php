@@ -155,8 +155,10 @@ class OrderService
                 try {
                     $invoice = $this->generateInvoiceNumber($outlet->id);
 
-                    $midtransKeyUsed = $user->role === 'manager'
-                        ? ($user->midtrans_server_key ?: null)
+                    // Resolve midtrans key dari owner outlet (multi-tenant), bukan dari
+                    // role user yang sedang checkout - konsisten dengan createPublicOrder().
+                    $midtransKeyUsed = $outlet->owner_id
+                        ? User::whereKey($outlet->owner_id)->value('midtrans_server_key')
                         : null;
 
                     $order = Order::create([

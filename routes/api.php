@@ -58,6 +58,7 @@ Route::prefix('v1')->group(function () {
         ->name('login');
 
     Route::post('/login-pin', [AuthController::class, 'loginPin'])
+        ->middleware('throttle:5,1')
         ->name('login.pin');
 
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword'])
@@ -248,16 +249,6 @@ Route::prefix('v1')->group(function () {
 
             // Update Items
             Route::put('/{order}/items', [OrderController::class, 'updateItems']);
-        });
-
-        /*
-        |--------------------------------------------------------------------------
-        | ORDER ITEMS (KITCHEN)
-        |--------------------------------------------------------------------------
-        */
-
-        Route::prefix('order-items')->group(function () {
-            Route::patch('/{id}/status', [OrderController::class, 'updateItemStatus']);
         });
 
         /*
