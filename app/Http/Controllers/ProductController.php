@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Outlet;
 use App\Models\Product;
 use App\Models\Table;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
@@ -88,9 +89,27 @@ class ProductController extends Controller
             $table->update(['status' => 'occupied']);
         }
 
+        // Cek kesiapan pembayaran online: outlet baru bisa terima QRIS/card
+        // kalau owner-nya sudah setup midtrans_server_key sendiri (SaaS
+        // multi-tenant, tiap owner pakai akun Midtrans masing-masing).
+        // Di-cache bareng data menu supaya tidak menambah query per-request.
+        $onlinePaymentAvailable = Cache::remember(
+            "outlet_payment_ready_{$outletId}",
+            60,
+            function () use ($outletId) {
+                $outlet = Outlet::find($outletId);
+                if (!$outlet || !$outlet->owner_id) {
+                    return false;
+                }
+                $serverKey = User::whereKey($outlet->owner_id)->value('midtrans_server_key');
+                return !empty($serverKey);
+            }
+        );
+
         return response()->json([
             'table' => $table,
-            'products' => $products
+            'products' => $products,
+            'online_payment_available' => $onlinePaymentAvailable,
         ], 200);
     }
 
