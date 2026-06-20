@@ -110,20 +110,15 @@ class AuthController extends Controller
             ], 401);
         }
 
-        $shiftId = null;
-
+        // Karyawan hanya boleh login lewat PIN (lihat loginPin()). Password
+        // mereka diisi default ('12345678') saat akun dibuat dan tidak pernah
+        // dikomunikasikan ke karyawan, jadi endpoint email+password ini HARUS
+        // ditolak untuk role karyawan - kalau tidak, siapa pun yang tahu/menebak
+        // email karyawan bisa login pakai password default yang predictable.
         if ($user->role === 'karyawan') {
-            if (!$user->is_active) {
-                return response()->json([
-                    'message' => 'Akun karyawan tidak aktif'
-                ], 403);
-            }
-
-            $activeShift = $this->getActiveShift($user, (int) $user->outlet_id);
-
-            if ($activeShift) {
-                $shiftId = $activeShift->id;
-            }
+            return response()->json([
+                'message' => 'Akun karyawan hanya bisa login menggunakan PIN.'
+            ], 403);
         }
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -131,7 +126,7 @@ class AuthController extends Controller
         return response()->json([
             'message' => 'Login berhasil',
             'token' => $token,
-            'shift_id' => $shiftId,
+            'shift_id' => null,
             'user' => $user->load('outlet')
         ]);
     }
