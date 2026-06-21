@@ -112,19 +112,19 @@ class UserController extends Controller
             $imagePath = $request->image;
         }
 
-        $user = User::create([
-            'name' => $request->name,
-            'email' => strtolower($request->email),
+        $user = new User();
+        $user->name = $request->name;
+        $user->email = strtolower($request->email);
 
-            // PERBAIKAN: Jika password kosong (karyawan), set default ke '12345678'
-            'password' => Hash::make($request->password ?: '12345678'),
+        // PERBAIKAN: Jika password kosong (karyawan), set default ke '12345678'
+        $user->password = Hash::make($request->password ?: '12345678');
 
-            'image' => $imagePath,
-            'phone_number' => $request->phone_number,
-            'pin' => $request->pin,
-            'role' => $role,
-            'outlet_id' => $outlet_id
-        ]);
+        $user->image = $imagePath;
+        $user->phone_number = $request->phone_number;
+        $user->pin = $request->pin;
+        $user->role = $role;
+        $user->outlet_id = $outlet_id;
+        $user->save();
 
         return response()->json(['message' => 'User berhasil dibuat', 'data' => $user], 201);
     }

@@ -77,14 +77,14 @@ class AuthController extends Controller
             'phone_number' => 'nullable|string|max:30',
         ]);
 
-        $user = User::create([
-            'name' => $request->name,
-            'email' => strtolower($request->email),
-            'password' => Hash::make($request->password),
-            'image' => $this->storeImageIfUploaded($request),
-            'phone_number' => $request->phone_number,
-            'role' => 'manager'
-        ]);
+        $user = new User();
+        $user->name = $request->name;
+        $user->email = strtolower($request->email);
+        $user->password = Hash::make($request->password);
+        $user->image = $this->storeImageIfUploaded($request);
+        $user->phone_number = $request->phone_number;
+        $user->role = 'manager';
+        $user->save();
 
         $token = $user->createToken('auth_token')->plainTextToken;
 

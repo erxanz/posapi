@@ -28,11 +28,16 @@ class User extends Authenticatable
         'password',
         'image',
         'phone_number',
-        'role',
         'pin',
         'outlet_id',
         'is_active',
         'midtrans_server_key',
+        // 'role' SENGAJA TIDAK dimasukkan di sini. Field ini paling sensitif
+        // untuk privilege escalation - kalau lewat $fillable, request mentah
+        // yang lolos ke create()/update()/fill() bisa menyelundupkan
+        // role=developer/manager. Semua titik yang sah mengubah role sudah
+        // memakai direct property assignment ($user->role = ...), yang tidak
+        // terikat $fillable sama sekali.
     ];
 
 
