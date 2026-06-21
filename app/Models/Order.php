@@ -237,6 +237,18 @@ public function recalculateTotals(array $overrides = [])
 
         if ($discountId) {
             $discount = \App\Models\Discount::find($discountId);
+
+            // Pastikan diskon ini memang milik owner outlet order ini -
+            // mencegah discount_id milik tenant lain diterapkan lewat
+            // SALAH SATU dari 9 titik yang memanggil recalculateTotals().
+            // Validasi ini sengaja diletakkan di level model (bukan hanya
+            // di OrderService) supaya berlaku ke semua jalur pemanggilan.
+            if ($discount) {
+                $orderOwnerId = \App\Models\Outlet::query()->whereKey($this->outlet_id)->value('owner_id');
+                if (!$orderOwnerId || (int) $discount->owner_id !== (int) $orderOwnerId) {
+                    $discount = null;
+                }
+            }
         }
 
         if ($discount) {
@@ -310,6 +322,12 @@ public function recalculateTotals(array $overrides = [])
         $tax = null;
         if ($taxId) {
             $tax = \App\Models\Tax::find($taxId);
+
+            // Pastikan pajak ini memang milik outlet order ini - lihat
+            // catatan yang sama untuk validasi diskon di atas.
+            if ($tax && (int) $tax->outlet_id !== (int) $this->outlet_id) {
+                $tax = null;
+            }
         }
 
         $taxAmount = 0;
@@ -414,12 +432,16 @@ public function recalculateTotals(array $overrides = [])
         $updates = [
             'subtotal_price'        => $subtotal,
 
-            'discount_id'          => $discountId,
+            // Simpan ID yang sudah tervalidasi kepemilikannya ($discount/$tax
+            // di-null-kan di langkah 4 & 5&6 kalau bukan milik outlet ini),
+            // bukan $discountId/$taxId mentah - supaya data yang tersimpan
+            // konsisten dengan apa yang benar-benar diterapkan ke perhitungan.
+            'discount_id'          => $discount?->id,
             'manual_discount_type' => $manualDiscountType,
             'manual_discount_value'=> $manualDiscountType ? $manualDiscountValue : null,
             'discount_amount'      => $discountAmount,
 
-            'tax_id'               => $taxId,
+            'tax_id'               => $tax?->id,
             'tax_amount'           => $taxAmount,
 
             'total_price'          => $grandTotal,
