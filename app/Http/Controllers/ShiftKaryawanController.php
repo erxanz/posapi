@@ -20,6 +20,11 @@ class ShiftKaryawanController extends Controller
         if ($user->role === 'manager') {
             $outletIds = Outlet::where('owner_id', $user->id)->pluck('id');
             $query->whereIn('outlet_id', $outletIds);
+        } elseif ($user->role === 'karyawan') {
+            // Sebelumnya tidak ada filter sama sekali untuk karyawan - mereka
+            // bisa lihat riwayat shift karyawan lain (termasuk outlet/tenant
+            // lain) hanya dengan mengirim parameter outlet_id.
+            $query->where('user_id', $user->id);
         }
 
         if ($request->filled('outlet_id')) {
@@ -57,6 +62,15 @@ class ShiftKaryawanController extends Controller
         ]);
 
         $shift = ShiftKaryawan::findOrFail($id);
+
+        // Manager hanya boleh verifikasi shift di outlet miliknya sendiri.
+        // Sebelumnya tidak ada pengecekan ini sama sekali.
+        if ($user->role === 'manager') {
+            $isMine = Outlet::where('id', $shift->outlet_id)->where('owner_id', $user->id)->exists();
+            if (!$isMine) {
+                return response()->json(['message' => 'Akses ditolak'], 403);
+            }
+        }
 
         // 1. HITUNG ULANG uang tunai masuk
         $cashSales = Payment::where('method', 'cash')
@@ -227,7 +241,24 @@ class ShiftKaryawanController extends Controller
 
     public function destroy($id)
     {
-        ShiftKaryawan::findOrFail($id)->delete();
+        $user = auth()->user();
+        $shift = ShiftKaryawan::findOrFail($id);
+
+        // Menghapus riwayat shift (data finansial kas) adalah kewenangan
+        // manajerial. Sebelumnya siapa pun yang authenticated bisa hapus
+        // record shift siapa pun di outlet manapun tanpa pengecekan apa pun.
+        if (!in_array($user->role, ['manager', 'developer'])) {
+            return response()->json(['message' => 'Akses ditolak'], 403);
+        }
+
+        if ($user->role === 'manager') {
+            $isMine = Outlet::where('id', $shift->outlet_id)->where('owner_id', $user->id)->exists();
+            if (!$isMine) {
+                return response()->json(['message' => 'Akses ditolak'], 403);
+            }
+        }
+
+        $shift->delete();
         return response()->json(['message' => 'Data dihapus']);
     }
 }
