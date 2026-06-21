@@ -12,13 +12,31 @@ use Illuminate\Support\Facades\DB;
 class AutoCancelOrders extends Command
 {
     protected $signature = 'orders:auto-cancel';
-    protected $description = 'Membatalkan pesanan pending yang usianya lewat 30 menit dan mengembalikan stok';
+    protected $description = 'Membatalkan pesanan pending yang kedaluwarsa dan mengembalikan stok';
+
+    // Order QRIS/online: 30 menit, sesuai durasi wajar pembayaran via Midtrans.
+    private const QRIS_TIMEOUT_MINUTES = 30;
+
+    // Order cash: jauh lebih panjang. Order cash pending itu wajar (menunggu
+    // kasir accept/checkout, pelanggan masih makan di tempat) - bukan soal
+    // pembayaran kedaluwarsa seperti QRIS. 30 menit terlalu agresif dan bisa
+    // membatalkan order yang masih aktif diproses secara normal.
+    private const CASH_TIMEOUT_MINUTES = 180;
 
     public function handle()
     {
         $expiredOrders = Order::with('items')
             ->where('status', 'pending')
-            ->where('created_at', '<=', Carbon::now()->subMinutes(30))
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->where('payment_method', 'qris')
+                        ->where('created_at', '<=', Carbon::now()->subMinutes(self::QRIS_TIMEOUT_MINUTES));
+                })->orWhere(function ($q) {
+                    $q->where(function ($qq) {
+                        $qq->where('payment_method', 'cash')->orWhereNull('payment_method');
+                    })->where('created_at', '<=', Carbon::now()->subMinutes(self::CASH_TIMEOUT_MINUTES));
+                });
+            })
             ->get();
 
         if ($expiredOrders->isEmpty()) {
@@ -41,6 +59,10 @@ class AutoCancelOrders extends Command
 
                 $outlet = Outlet::find($order->outlet_id);
                 if ($outlet) {
+                    $timeoutLabel = $order->payment_method === 'qris'
+                        ? self::QRIS_TIMEOUT_MINUTES . ' Menit'
+                        : self::CASH_TIMEOUT_MINUTES . ' Menit';
+
                     foreach ($order->items as $item) {
                         $product = $outlet->products()->where('products.id', $item->product_id)->first();
 
@@ -55,7 +77,7 @@ class AutoCancelOrders extends Command
                                 'type' => 'restore',
                                 'quantity' => $item->qty,
                                 'final_stock' => $newStock,
-                                'reference' => 'Sistem Auto-Cancel (30 Menit): ' . $order->invoice_number,
+                                'reference' => "Sistem Auto-Cancel ({$timeoutLabel}): " . $order->invoice_number,
                             ]);
                         }
                     }
