@@ -36,14 +36,30 @@ Route::prefix('v1')->group(function () {
         Route::post('/order', [OrderController::class, 'publicOrder'])->name('public.order');
 
         // TAMBAHAN BARU: Ambil pajak dan diskon untuk halaman QR
-        Route::get('/taxes', function() {
-            // Ambil semua pajak yang aktif
-            return response()->json(\App\Models\Tax::where('active', true)->get());
+        // PENTING: outlet_id WAJIB dan dipakai untuk filter, supaya endpoint
+        // publik ini tidak membocorkan data pajak/diskon milik SEMUA tenant
+        // ke siapa pun yang scan QR outlet manapun (sebelumnya tanpa filter
+        // sama sekali). Lihat juga validasi ulang di OrderService saat order
+        // dibuat - discount_id/tax_id yang dikirim tetap harus divalidasi
+        // ulang di sana sebagai defense kedua.
+        Route::get('/taxes', function (\Illuminate\Http\Request $request) {
+            $outletId = $request->integer('outlet_id');
+            if (!$outletId) {
+                return response()->json(['message' => 'outlet_id wajib diisi'], 422);
+            }
+            return response()->json(\App\Models\Tax::where('active', true)->where('outlet_id', $outletId)->get());
         });
 
-        Route::get('/discounts', function() {
-            // Ambil promo global/publik yang sedang aktif
-            return response()->json(\App\Models\Discount::where('is_active', true)->get());
+        Route::get('/discounts', function (\Illuminate\Http\Request $request) {
+            $outletId = $request->integer('outlet_id');
+            if (!$outletId) {
+                return response()->json(['message' => 'outlet_id wajib diisi'], 422);
+            }
+            $ownerId = \App\Models\Outlet::query()->whereKey($outletId)->value('owner_id');
+            if (!$ownerId) {
+                return response()->json([]);
+            }
+            return response()->json(\App\Models\Discount::where('is_active', true)->where('owner_id', $ownerId)->get());
         });
 
         Route::get('/order/{id}', [OrderController::class, 'publicShow'])->name('public.order.show');

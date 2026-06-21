@@ -434,6 +434,14 @@ class OrderService
                 throw new \Exception("Diskon dengan ID {$discountId} tidak ditemukan di database.");
             }
 
+            // Pastikan diskon ini memang milik owner outlet tempat order dibuat.
+            // Tanpa ini, discount_id milik tenant lain bisa diterapkan ke order
+            // (defense kedua setelah filter di endpoint publik /public/discounts).
+            $orderOwnerId = Outlet::query()->whereKey($order->outlet_id)->value('owner_id');
+            if (!$orderOwnerId || (int) $discount->owner_id !== (int) $orderOwnerId) {
+                throw new \Exception("Diskon tidak berlaku untuk outlet ini.");
+            }
+
             // Validasi syarat minimal pembelian untuk SEMUA tipe scope
             if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
                 throw new \Exception("Minimum belanja Rp " . number_format($discount->min_purchase, 0, ',', '.') . " belum terpenuhi.");
@@ -500,11 +508,16 @@ class OrderService
         // LOGIKA HANDLING PAJAK (Bawaan asli kode Anda, dipertahankan agar tetap stabil)
         // ==========================================================================
         if (isset($data['tax_id'])) {
-            $updates['tax_id'] = $data['tax_id'];
+            // Pastikan pajak ini memang milik outlet tempat order dibuat -
+            // defense kedua setelah filter di endpoint publik /public/taxes.
+            $taxBelongsToOutlet = Tax::query()->whereKey($data['tax_id'])->where('outlet_id', $order->outlet_id)->exists();
+            if ($taxBelongsToOutlet) {
+                $updates['tax_id'] = $data['tax_id'];
+            }
         } elseif (isset($data['tax_type']) && isset($data['tax_value'])) {
             $taxType = (string) $data['tax_type'];
             $taxValue = (int) $data['tax_value'];
-            $matchedTax = Tax::query()->where('type', $taxType)->where('active', true)->get()->first(function (Tax $tax) use ($taxValue) {
+            $matchedTax = Tax::query()->where('type', $taxType)->where('active', true)->where('outlet_id', $order->outlet_id)->get()->first(function (Tax $tax) use ($taxValue) {
                 $expectedValue = $tax->type === 'percentage' ? (int) round(((float) $tax->rate) * 100) : (int) round((float) $tax->rate);
                 return $expectedValue === $taxValue;
             });

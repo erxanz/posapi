@@ -28,6 +28,19 @@ class OrderAcceptanceController extends Controller
             return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
+        // Tanpa ini siapa pun yang authenticated bisa accept order outlet
+        // manapun hanya dengan menebak ID order, memicu broadcast print ke
+        // printer outlet lain dan mengklaim cashier_id secara tidak sah.
+        if ($user->role !== 'developer') {
+            $authorized = $user->role === 'manager'
+                ? \App\Models\Outlet::where('id', $order->outlet_id)->where('owner_id', $user->id)->exists()
+                : (int) $user->outlet_id === (int) $order->outlet_id;
+
+            if (!$authorized) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
+
         return DB::transaction(function () use ($order, $user, $scope) {
             if ($order->status === Order::STATUS_CANCELLED) {
                 return response()->json(['message' => 'Order sudah dibatalkan.'], 422);

@@ -136,6 +136,14 @@ class HistoryTransactionController extends Controller
             return $forbiddenResponse;
         }
 
+        // Mengoreksi data finansial riwayat transaksi yang sudah lunas adalah
+        // kewenangan manajerial - karyawan/kasir tidak boleh mengubah angka
+        // di transaksi historis tanpa jejak approval, konsisten dengan
+        // pembatasan serupa di DiscountController/TaxController/ScheduleController.
+        if (auth()->user()->isKaryawan()) {
+            return response()->json(['message' => 'Karyawan tidak diizinkan mengubah riwayat transaksi'], 403);
+        }
+
         // 2. Validasi Input
         $validated = $request->validate([
             'invoice_number'    => 'sometimes|nullable|string|max:255',

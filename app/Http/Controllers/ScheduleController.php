@@ -20,6 +20,20 @@ class ScheduleController extends Controller
         ]);
 
         $user = auth()->user();
+
+        // Kalau outlet_id eksplisit dikirim, tetap wajib dicek kepemilikannya -
+        // tanpa ini siapa pun bisa lihat jadwal outlet tenant lain hanya
+        // dengan menebak outlet_id (exists:outlets,id tidak peduli pemilik).
+        if (isset($validated['outlet_id']) && $user->role !== 'developer') {
+            $authorized = $user->role === 'manager'
+                ? Outlet::where('id', $validated['outlet_id'])->where('owner_id', $user->id)->exists()
+                : (int) $user->outlet_id === (int) $validated['outlet_id'];
+
+            if (!$authorized) {
+                return response()->json(['message' => 'Akses ditolak.'], 403);
+            }
+        }
+
         $query = Schedule::with(['shift:id,name,start_time,end_time,color,outlet_id', 'user:id,name', 'outlet:id,name'])
             ->forDateRange($validated['start_date'], $validated['end_date']);
 
@@ -54,6 +68,15 @@ class ScheduleController extends Controller
         ]);
 
         $user = auth()->user();
+
+        // Membuat jadwal kerja adalah kewenangan manajerial. Sebelumnya
+        // pengecekan ini hanya berlaku untuk role manager - karyawan bisa
+        // lolos tanpa otorisasi sama sekali dan menugaskan jadwal karyawan
+        // lain di outlet manapun.
+        if ($user->role === 'karyawan') {
+            return response()->json(['message' => 'Karyawan tidak diizinkan membuat jadwal.'], 403);
+        }
+
         if ($user->role === 'manager') {
             $isMine = Outlet::where('id', $validated['outlet_id'])->where('owner_id', $user->id)->exists();
             if (!$isMine) {
