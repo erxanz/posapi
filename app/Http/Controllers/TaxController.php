@@ -38,6 +38,15 @@ class TaxController extends Controller
      */
     public function store(Request $request)
     {
+        $user = auth()->user();
+
+        // Mengatur pajak/biaya adalah kewenangan manajerial.
+        if ($user->role === 'karyawan') {
+            return response()->json(['message' => 'Karyawan tidak diizinkan mengatur pajak/biaya'], 403);
+        }
+
+        $this->authorizeOutletId($request->outlet_id);
+
         $validated = $request->validate([
             'name' => [
                 'required',
@@ -68,6 +77,8 @@ class TaxController extends Controller
      */
     public function show(Tax $tax)
     {
+        $this->authorizeOutletId($tax->outlet_id);
+
         $tax->load('outlet');
         return response()->json($tax);
     }
@@ -77,6 +88,19 @@ class TaxController extends Controller
      */
     public function update(Request $request, Tax $tax)
     {
+        $user = auth()->user();
+
+        if ($user->role === 'karyawan') {
+            return response()->json(['message' => 'Karyawan tidak diizinkan mengatur pajak/biaya'], 403);
+        }
+
+        // Cek otorisasi outlet saat ini DAN outlet tujuan (kalau diubah),
+        // mencegah pajak "dipindah" ke/dari outlet yang bukan miliknya.
+        $this->authorizeOutletId($tax->outlet_id);
+        if ($request->filled('outlet_id')) {
+            $this->authorizeOutletId($request->outlet_id);
+        }
+
         $validated = $request->validate([
             'name' => [
                 'sometimes',
@@ -106,7 +130,47 @@ class TaxController extends Controller
      */
     public function destroy(Tax $tax)
     {
+        $user = auth()->user();
+
+        if ($user->role === 'karyawan') {
+            return response()->json(['message' => 'Karyawan tidak diizinkan mengatur pajak/biaya'], 403);
+        }
+
+        $this->authorizeOutletId($tax->outlet_id);
+
         $tax->delete();
         return response()->json(null, 204);
+    }
+
+    /**
+     * Pastikan user yang login berhak mengakses outlet ini (developer =
+     * semua, manager = outlet miliknya via owner_id, karyawan = outlet
+     * tempatnya bekerja). Mengikuti pola yang sama dengan controller lain
+     * (OutletController::authorizeOutlet, TableController::authorizeOutletId).
+     */
+    private function authorizeOutletId(?int $outletId): void
+    {
+        $user = auth()->user();
+
+        if ($user->role === 'developer') {
+            return;
+        }
+
+        if ($user->role === 'karyawan') {
+            if ((int) $user->outlet_id !== (int) $outletId) {
+                abort(403, 'Forbidden');
+            }
+            return;
+        }
+
+        if ($user->role === 'manager') {
+            $ownsOutlet = \App\Models\Outlet::where('id', $outletId)->where('owner_id', $user->id)->exists();
+            if (!$ownsOutlet) {
+                abort(403, 'Forbidden');
+            }
+            return;
+        }
+
+        abort(403, 'Forbidden');
     }
 }

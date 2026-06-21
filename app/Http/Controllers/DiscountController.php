@@ -55,6 +55,14 @@ class DiscountController extends Controller
     }
 
     public function store(Request $request) {
+        $user = auth()->user();
+
+        // Membuat promo adalah kewenangan manajerial - karyawan/kasir tidak
+        // boleh membuat promo sendiri, konsisten dengan ProductController::store.
+        if ($user->role === 'karyawan') {
+            return response()->json(['message' => 'Karyawan tidak diizinkan membuat promo'], 403);
+        }
+
         $data = $request->validate([
             'name' => 'required|string',
             'scope' => 'required|in:global,products,categories',
@@ -69,7 +77,10 @@ class DiscountController extends Controller
             'is_active' => 'required|boolean'
         ]);
 
-        $data['owner_id'] = auth()->id();
+        // Developer membuat promo atas nama dirinya sendiri kecuali ditentukan
+        // lain (mengikuti pola resolveOwnerId di controller lain bila suatu
+        // saat developer perlu membuat promo atas nama owner tertentu).
+        $data['owner_id'] = $user->id;
 
         if ($data['scope'] !== 'products') {
             $data['product_ids'] = null;
@@ -90,6 +101,8 @@ class DiscountController extends Controller
     }
 
     public function update(Request $request, Discount $discount) {
+        $this->authorizeDiscount($discount);
+
         $data = $request->validate([
             'name' => 'required|string',
             'scope' => 'required|in:global,products,categories',
@@ -123,10 +136,34 @@ class DiscountController extends Controller
     }
 
     public function destroy(Discount $discount) {
+        $this->authorizeDiscount($discount);
+
         $discount->delete();
 
         return response()->json([
             'message' => 'Promo berhasil dihapus'
         ]);
+    }
+
+    /**
+     * Pastikan promo yang diakses memang milik owner yang sesuai dengan
+     * user yang login. Tanpa ini siapa pun yang authenticated bisa
+     * update/hapus promo milik tenant manapun hanya dengan menebak ID.
+     */
+    private function authorizeDiscount(Discount $discount): void
+    {
+        $user = auth()->user();
+
+        if ($user->role === 'developer') {
+            return;
+        }
+
+        $ownerId = $user->role === 'manager'
+            ? $user->id
+            : ($user->outlet_id ? \App\Models\Outlet::query()->whereKey($user->outlet_id)->value('owner_id') : null);
+
+        if (!$ownerId || (int) $discount->owner_id !== (int) $ownerId) {
+            abort(403, 'Forbidden');
+        }
     }
 }
