@@ -41,6 +41,7 @@ class ProductController extends Controller
                 ->products()
                 ->select([
                     'products.id',
+                    'products.owner_id',
                     'products.category_id',
                     'products.station_id',
                     'products.name',
@@ -133,6 +134,7 @@ class ProductController extends Controller
                 ->products()
                 ->select([
                     'products.id',
+                    'products.owner_id',
                     'products.category_id',
                     'products.station_id',
                     'products.name',

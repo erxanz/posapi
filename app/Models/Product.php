@@ -45,6 +45,7 @@ class Product extends Model
     public function getIsPromoAttribute(): bool
     {
         $discounts = Discount::where('is_active', true)
+            ->where('owner_id', $this->owner_id)
             ->whereIn('scope', ['products', 'categories'])
             ->get();
 
@@ -81,6 +82,7 @@ class Product extends Model
     public function getMinPurchaseAttribute(): int
     {
         $discounts = Discount::where('is_active', true)
+            ->where('owner_id', $this->owner_id)
             ->whereIn('scope', ['products', 'categories'])
             ->get();
 
@@ -115,6 +117,7 @@ class Product extends Model
     public function getDiscountAmountPerItemAttribute(): int
     {
         $discounts = Discount::where('is_active', true)
+            ->where('owner_id', $this->owner_id)
             ->whereIn('scope', ['products', 'categories'])
             ->get();
 
