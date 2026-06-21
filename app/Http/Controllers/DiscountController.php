@@ -10,9 +10,6 @@ class DiscountController extends Controller
     public function index() {
         $today = now()->format('Y-m-d');
 
-        // Sebaiknya pindahkan ke scheduler (biar tidak berat)
-        Discount::whereDate('end_date', '<', $today)->delete();
-
         // EAGER LOADING outlet (hindari query tambahan)
         $user = auth()->user()->load('outlet');
 
