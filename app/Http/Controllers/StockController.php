@@ -25,27 +25,31 @@ class StockController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $product = $outlet->products()->where('products.id', $validated['product_id'])->firstOrFail();
-
-        $currentStock = (int) $product->pivot->stock;
-        $newStock = $currentStock;
-        $qtyChange = (int) $validated['quantity'];
-
-        if ($validated['type'] === 'in') {
-            $newStock += $qtyChange;
-        } elseif ($validated['type'] === 'out') {
-            if ($currentStock < $qtyChange) {
-                return response()->json(['message' => 'Stok tidak cukup untuk dikeluarkan'], 400);
-            }
-            $newStock -= $qtyChange;
-            $qtyChange = -$qtyChange; // Jadikan minus untuk pencatatan
-        } elseif ($validated['type'] === 'opname') {
-            $newStock = $qtyChange; // Jika opname, quantity = stok fisik sebenarnya
-            $qtyChange = $newStock - $currentStock; // Selisihnya
-        }
-
         DB::beginTransaction();
         try {
+            // Kunci baris produk SEBELUM membaca stok, supaya 2 request
+            // penyesuaian stok bersamaan untuk produk yang sama tidak saling
+            // menimpa berdasarkan nilai stok yang sama-sama sudah usang.
+            $product = $outlet->products()->where('products.id', $validated['product_id'])->lockForUpdate()->firstOrFail();
+
+            $currentStock = (int) $product->pivot->stock;
+            $newStock = $currentStock;
+            $qtyChange = (int) $validated['quantity'];
+
+            if ($validated['type'] === 'in') {
+                $newStock += $qtyChange;
+            } elseif ($validated['type'] === 'out') {
+                if ($currentStock < $qtyChange) {
+                    DB::rollBack();
+                    return response()->json(['message' => 'Stok tidak cukup untuk dikeluarkan'], 400);
+                }
+                $newStock -= $qtyChange;
+                $qtyChange = -$qtyChange; // Jadikan minus untuk pencatatan
+            } elseif ($validated['type'] === 'opname') {
+                $newStock = $qtyChange; // Jika opname, quantity = stok fisik sebenarnya
+                $qtyChange = $newStock - $currentStock; // Selisihnya
+            }
+
             // Update tabel pivot
             $outlet->products()->updateExistingPivot($product->id, ['stock' => $newStock]);
 

@@ -10,6 +10,37 @@ use Illuminate\Support\Str;
 class TableController extends Controller
 {
     /**
+     * Pastikan user yang login berhak mengakses meja di outlet ini.
+     * Tanpa ini, siapa pun yang authenticated bisa membuat/mengubah/menghapus
+     * meja milik outlet siapa pun hanya dengan menebak outlet_id/table id.
+     */
+    private function authorizeOutletId(?int $outletId): void
+    {
+        $user = auth()->user();
+
+        if ($user->role === 'developer') {
+            return;
+        }
+
+        if ($user->role === 'karyawan') {
+            if ((int) $user->outlet_id !== (int) $outletId) {
+                abort(403, 'Forbidden');
+            }
+            return;
+        }
+
+        if ($user->role === 'manager') {
+            $ownsOutlet = Outlet::where('id', $outletId)->where('owner_id', $user->id)->exists();
+            if (!$ownsOutlet) {
+                abort(403, 'Forbidden');
+            }
+            return;
+        }
+
+        abort(403, 'Forbidden');
+    }
+
+    /**
      * List meja
      */
     public function index(Request $request)
@@ -77,6 +108,8 @@ class TableController extends Controller
             'capacity'  => 'nullable|integer|min:1',
             'is_active' => 'nullable|boolean',
         ]);
+
+        $this->authorizeOutletId($request->outlet_id);
 
         /*
         |--------------------------------------------------------------------------
@@ -147,6 +180,11 @@ class TableController extends Controller
             'is_active' => 'nullable|boolean',
         ]);
 
+        // Cek otorisasi untuk outlet meja saat ini DAN outlet tujuan (kalau
+        // beda) - mencegah meja "dipindah" ke/dari outlet yang bukan miliknya.
+        $this->authorizeOutletId($table->outlet_id);
+        $this->authorizeOutletId($request->outlet_id);
+
         /*
         |--------------------------------------------------------------------------
         | CEK NAMA DUPLIKAT
@@ -192,6 +230,8 @@ class TableController extends Controller
      */
     public function destroy(Table $table)
     {
+        $this->authorizeOutletId($table->outlet_id);
+
         $table->delete();
 
         return response()->json([
@@ -204,6 +244,8 @@ class TableController extends Controller
      */
     public function regenerateToken(Table $table)
     {
+        $this->authorizeOutletId($table->outlet_id);
+
         $token = (string) Str::uuid();
 
         // FIX: Ubah 'token' jadi 'qr_token'
