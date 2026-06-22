@@ -198,30 +198,18 @@ class Order extends Model
     | FIX MASTER: Mengamankan Diskon Bersyarat & Perhitungan Pajak Berjenjang
     |--------------------------------------------------------------------------
     */
-public function recalculateTotals(array $overrides = [])
+    public function recalculateTotals(array $overrides = [])
     {
-        /*
-        |--------------------------------------------------------------------------
-        | 1. Ambil Item Aktif
-        |--------------------------------------------------------------------------
-        */
-        $items = clone collect($this->items);
+        $this->loadMissing('outlet');
+        $outletOwnerId = $this->outlet?->owner_id;
 
-        /*
-        |--------------------------------------------------------------------------
-        | 2. Hitung Subtotal Murni
-        |--------------------------------------------------------------------------
-        */
+        $items = clone $this->items;
+
         $subtotal = 0;
         foreach ($items as $item) {
             $subtotal += max(0, (int) $item->total_price);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | 3. Set up Override / Existing Values
-        |--------------------------------------------------------------------------
-        */
         $discountId = array_key_exists('discount_id', $overrides) ? $overrides['discount_id'] : $this->discount_id;
         $manualDiscountType = array_key_exists('manual_discount_type', $overrides) ? $overrides['manual_discount_type'] : $this->manual_discount_type;
         $manualDiscountValue = array_key_exists('manual_discount_value', $overrides) ? $overrides['manual_discount_value'] : $this->manual_discount_value;
@@ -255,11 +243,9 @@ public function recalculateTotals(array $overrides = [])
             $eligibleTotal = 0;
             $eligibleQty = 0;
 
-            // PERBAIKAN BUG: Amankan dari perbedaan huruf/spasi di database
             $scope = strtolower(trim($discount->scope ?? 'global'));
             $type = strtolower(trim($discount->type ?? 'nominal'));
 
-            // Filter item berdasarkan scope promonya
             if ($scope === 'products' && !empty($discount->product_ids)) {
                 $itemsInScope = $items->whereIn('product_id', $discount->product_ids);
                 $eligibleTotal = $itemsInScope->sum('total_price');
@@ -454,31 +440,4 @@ public function recalculateTotals(array $overrides = [])
         $this->update($updates);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Helper Hitung Discount / Nominal
-    |--------------------------------------------------------------------------
-    */
-    private function computeAdjustmentAmount(
-        ?string $type,
-        float $value,
-        int $baseAmount
-    ): int {
-        if (!$type || $baseAmount <= 0 || $value <= 0) {
-            return 0;
-        }
-
-        if ($type === self::DISCOUNT_TYPE_PERCENTAGE) {
-            $percent = min(100, max(0, $value));
-
-            return (int) round(
-                ($baseAmount * $percent) / 100
-            );
-        }
-
-        return min(
-            $baseAmount,
-            max(0, (int) $value)
-        );
-    }
 }

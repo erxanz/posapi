@@ -216,18 +216,23 @@ class OrderController extends Controller
         $order->recalculateTotals($normalizedOverrides);
     }
 
-    /**
-     * Detail order
-     */
     public function show(Order $order)
     {
-        if ($order->outlet_id !== auth()->user()->outlet_id) {
+        if (!$this->canAccessOrder($order)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         return response()->json(
             $order->load('items.product', 'table', 'payments', 'latestAcceptance', 'discount')
         );
+    }
+
+    private function canAccessOrder(Order $order): bool
+    {
+        $user = auth()->user();
+        if ($user->role === 'developer') return true;
+        if ($user->role === 'manager') return \App\Models\Outlet::where('id', $order->outlet_id)->where('owner_id', $user->id)->exists();
+        return (int) $user->outlet_id === (int) $order->outlet_id;
     }
 
     /**
@@ -400,10 +405,31 @@ class OrderController extends Controller
                 ->first();
 
             if ($oldOrder) {
-                // Batalkan order lama
+                $oldOrder->loadMissing('items');
+                $outletForRestock = \App\Models\Outlet::find($oldOrder->outlet_id);
+                
+                if ($outletForRestock) {
+                    foreach ($oldOrder->items as $item) {
+                        $product = $outletForRestock->products()->where('products.id', $item->product_id)->first();
+                        if ($product) {
+                            $newStock = $product->pivot->stock + $item->qty;
+                            $outletForRestock->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+                            \App\Models\StockHistory::create([
+                                'outlet_id' => $oldOrder->outlet_id,
+                                'product_id' => $item->product_id,
+                                'user_id' => null,
+                                'type' => 'restore',
+                                'quantity' => $item->qty,
+                                'final_stock' => $newStock,
+                                'reference' => 'Auto-Cancel Previous Order: ' . $oldOrder->invoice_number,
+                            ]);
+                        }
+                    }
+                }
+
                 $oldOrder->update(['status' => 'cancelled']);
                 
-                // Beri tahu aplikasi PosMobile kasir untuk menghilangkan pesanan lama ini dari layar
                 broadcast(new \App\Events\OrderUpdated($oldOrder))->toOthers();
             }
         }
@@ -421,8 +447,8 @@ class OrderController extends Controller
             // Force load dengan relasi discount agar data diskon terbaca
             $order = Order::with(['items.product', 'table', 'discount'])->findOrFail($order->id);
 
-            // KUNCI UTAMA: Jalankan ulang hitung total bawaan model agar kolom database tersinkronisasi 100%
-            $order->recalculateTotals($validated);
+            // KUNCI UTAMA: Hitung total hanya sekali (sudah dipanggil di Service)
+            // $order->recalculateTotals($validated); // dihapus
             $order->refresh();
 
             $methodStr = strtolower($request->payment_method);

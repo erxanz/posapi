@@ -43,45 +43,18 @@ class OrderService
 
         try {
 
-            // RETRY UNTUK INVOICE DUPLICATE
-            $maxRetry = 5;
-            $attempt = 0;
+            $invoice = $this->generateInvoiceNumberWithRetry($outlet->id);
 
-            do {
-                try {
-
-                    $invoice = $this->generateInvoiceNumber($outlet->id);
-
-                    $order = Order::create([
-                        'outlet_id' => $outlet->id,
-                        'user_id' => $user->id,
-                        'table_id' => $table->id,
-                        'customer_name' => $validated['customer_name'] ?? null,
-                        'invoice_number' => $invoice,
-                    'status' => Order::STATUS_PAID,
-                    'total_price' => 0,
-                    'payment_method' => $this->normalizePaymentMethod($validated['payment_method'] ?? null),
-                ]);
-
-
-                    break; // sukses → keluar loop
-
-                } catch (\Illuminate\Database\QueryException $e) {
-
-                    if (str_contains($e->getMessage(), 'Duplicate entry')) {
-                        $attempt++;
-                        usleep(100000); // delay 0.1 detik
-                    } else {
-                        throw $e;
-                    }
-
-                }
-
-            } while ($attempt < $maxRetry);
-
-            if (!isset($order)) {
-                throw new \Exception('Gagal generate invoice unik, coba lagi');
-            }
+            $order = Order::create([
+                'outlet_id' => $outlet->id,
+                'user_id' => $user->id,
+                'table_id' => $table->id,
+                'customer_name' => $validated['customer_name'] ?? null,
+                'invoice_number' => $invoice,
+                'status' => Order::STATUS_PAID,
+                'total_price' => 0,
+                'payment_method' => $this->normalizePaymentMethod($validated['payment_method'] ?? null),
+            ]);
 
             // ===============================
             // LANJUT PROSES NORMAL
@@ -148,48 +121,25 @@ class OrderService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $maxRetry = 5;
-            $attempt = 0;
+            $invoice = $this->generateInvoiceNumberWithRetry($outlet->id);
 
-            do {
-                try {
-                    $invoice = $this->generateInvoiceNumber($outlet->id);
+            // Resolve midtrans key dari owner outlet (multi-tenant), bukan dari
+            // role user yang sedang checkout - konsisten dengan createPublicOrder().
+            $midtransKeyUsed = $outlet->owner_id
+                ? User::whereKey($outlet->owner_id)->value('midtrans_server_key')
+                : null;
 
-                    // Resolve midtrans key dari owner outlet (multi-tenant), bukan dari
-                    // role user yang sedang checkout - konsisten dengan createPublicOrder().
-                    $midtransKeyUsed = $outlet->owner_id
-                        ? User::whereKey($outlet->owner_id)->value('midtrans_server_key')
-                        : null;
-
-                    $order = Order::create([
-                        'outlet_id' => $outlet->id,
-                        'user_id' => $user->id,
-                        'table_id' => $table->id,
-                        'customer_name' => $validated['customer_name'] ?? null,
-                        'invoice_number' => $invoice,
-                        'status' => Order::STATUS_PENDING, // PENDING karena menunggu pembayaran Midtrans
-                        'total_price' => 0,
-                        'midtrans_server_key_used' => $midtransKeyUsed,
-                        'payment_method' => $this->normalizePaymentMethod($validated['payment_method'] ?? null),
-                    ]);
-
-
-                    break;
-
-                } catch (\Illuminate\Database\QueryException $e) {
-                    if (str_contains($e->getMessage(), 'Duplicate entry')) {
-                        $attempt++;
-                        usleep(100000);
-                    } else {
-                        throw $e;
-                    }
-                }
-
-            } while ($attempt < $maxRetry);
-
-            if (!isset($order)) {
-                throw new \Exception('Gagal generate invoice unik, coba lagi');
-            }
+            $order = Order::create([
+                'outlet_id' => $outlet->id,
+                'user_id' => $user->id,
+                'table_id' => $table->id,
+                'customer_name' => $validated['customer_name'] ?? null,
+                'invoice_number' => $invoice,
+                'status' => Order::STATUS_PENDING, // PENDING karena menunggu pembayaran Midtrans
+                'total_price' => 0,
+                'midtrans_server_key_used' => $midtransKeyUsed,
+                'payment_method' => $this->normalizePaymentMethod($validated['payment_method'] ?? null),
+            ]);
 
             $this->createOrderItems($order, $validated['items'], $outlet);
             $this->handleAdjustments($order, $validated);
@@ -302,7 +252,8 @@ class OrderService
 
         try {
             $payableTotal = $order->payableTotal();
-            $alreadyPaid = $order->payments()->sum('amount_paid') - $order->payments()->sum('change_amount');
+            $paymentSum = $order->payments()->selectRaw('SUM(amount_paid) as total_paid, SUM(change_amount) as total_change')->first();
+            $alreadyPaid = ($paymentSum->total_paid ?? 0) - ($paymentSum->total_change ?? 0);
             $remaining = max(0, $payableTotal - $alreadyPaid);
 
             foreach ($payments as $paymentData) {
@@ -329,7 +280,8 @@ class OrderService
                 $remaining -= $applied;
             }
 
-            $effectivePaid = $order->payments()->sum('amount_paid') - $order->payments()->sum('change_amount');
+            $paymentSumFinal = $order->payments()->selectRaw('SUM(amount_paid) as total_paid, SUM(change_amount) as total_change')->first();
+            $effectivePaid = ($paymentSumFinal->total_paid ?? 0) - ($paymentSumFinal->total_change ?? 0);
             $isFullyPaid = $effectivePaid >= $payableTotal;
 
             if ($isFullyPaid) {
@@ -368,8 +320,15 @@ class OrderService
     private function createOrderItems(Order $order, array $items, Outlet $outlet, bool $checkStock = true): void
     {
         $user = auth()->user();
+        $userId = $user?->id;
+        $invoiceNumber = $order->invoice_number;
 
-        foreach (collect($items)->sortBy('product_id')->values() as $item) {
+        $sortedItems = collect($items)->sortBy('product_id')->values();
+
+        $stockUpdates = [];
+        $stockHistories = [];
+
+        foreach ($sortedItems as $item) {
             $product = $outlet->products()->where('products.id', $item['product_id'])->wherePivot('is_active', true)->lockForUpdate()->firstOrFail();
 
             $stock = (int) $product->pivot->stock;
@@ -401,18 +360,28 @@ class OrderService
 
             if ($checkStock) {
                 $newStock = $stock - $qty;
-                $outlet->products()->updateExistingPivot($product->id, ['stock' => $newStock]);
+                $stockUpdates[$product->id] = $newStock;
 
-                StockHistory::create([
+                $stockHistories[] = [
                     'outlet_id' => $outlet->id,
                     'product_id' => $product->id,
-                    'user_id' => $user?->id,
+                    'user_id' => $userId,
                     'type' => 'sale',
                     'quantity' => -$qty,
                     'final_stock' => $newStock,
-                    'reference' => 'Order: ' . $order->invoice_number,
-                ]);
+                    'reference' => 'Order: ' . $invoiceNumber,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
             }
+        }
+
+        foreach ($stockUpdates as $productId => $newStock) {
+            $outlet->products()->updateExistingPivot($productId, ['stock' => $newStock]);
+        }
+
+        if (!empty($stockHistories)) {
+            StockHistory::insert($stockHistories);
         }
     }
 
@@ -608,35 +577,49 @@ class OrderService
 
     private function generateInvoiceNumber(int $outletId): string
     {
-        return DB::transaction(function () use ($outletId) {
+        $date = now()->format('Ymd');
 
-            $date = now()->format('Ymd');
+        $counter = InvoiceCounter::lockForUpdate()
+            ->firstOrCreate(
+                [
+                    'outlet_id' => $outletId,
+                    'date' => $date
+                ],
+                [
+                    'last_number' => 0
+                ]
+            );
 
-            // ambil / buat row khusus outlet + tanggal
-            $counter = InvoiceCounter::lockForUpdate()
-                ->firstOrCreate(
-                    [
-                        'outlet_id' => $outletId,
-                        'date' => $date
-                    ],
-                    [
-                        'last_number' => 0
-                    ]
-                );
+        $counter->increment('last_number');
 
-            // increment AMAN (tidak bisa bentrok)
-            $counter->increment('last_number');
+        $number = $counter->last_number;
 
-            $number = $counter->last_number;
+        if ($number > 9999) {
+            throw new \Exception('Invoice limit harian tercapai');
+        }
 
-            if ($number > 9999) {
-                throw new \Exception('Invoice limit harian tercapai');
+        $sequence = str_pad($number, 4, '0', STR_PAD_LEFT);
+
+        return "INV-{$date}-{$sequence}";
+    }
+
+    private function generateInvoiceNumberWithRetry(int $outletId): string
+    {
+        $maxRetry = 5;
+        $attempt = 0;
+        do {
+            try {
+                return $this->generateInvoiceNumber($outletId);
+            } catch (\Illuminate\Database\QueryException $e) {
+                if (str_contains($e->getMessage(), 'Duplicate entry')) {
+                    $attempt++;
+                    usleep(100000);
+                } else {
+                    throw $e;
+                }
             }
-
-            $sequence = str_pad($number, 4, '0', STR_PAD_LEFT);
-
-            return "INV-{$date}-{$sequence}";
-        });
+        } while ($attempt < $maxRetry);
+        throw new \Exception('Gagal generate invoice unik, coba lagi');
     }
 
     private function canAccessOutlet(int $outletId): bool
@@ -665,14 +648,8 @@ class OrderService
 
         $m = strtolower(trim($method));
 
-        // --- PERBAIKAN BUG ---
-        // Biarkan 'midtrans' tetap menjadi 'midtrans' agar data tidak ditiban menjadi qris
-        if ($m === 'midtrans') {
-            return 'qris';
-        }
-
-        // Tambahkan pengelompokan e-wallet baru ke kategori 'qris'
-        if (in_array($m, ['qris', 'other_qris', 'gopay', 'shopeepay'])) {
+        // Kelompokkan 'midtrans' ke 'qris' supaya tidak terlalu universal
+        if (in_array($m, ['midtrans', 'qris', 'other_qris', 'gopay', 'shopeepay'])) {
             return 'qris';
         }
 
