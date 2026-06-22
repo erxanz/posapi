@@ -454,31 +454,4 @@ public function recalculateTotals(array $overrides = [])
         $this->update($updates);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Helper Hitung Discount / Nominal
-    |--------------------------------------------------------------------------
-    */
-    private function computeAdjustmentAmount(
-        ?string $type,
-        float $value,
-        int $baseAmount
-    ): int {
-        if (!$type || $baseAmount <= 0 || $value <= 0) {
-            return 0;
-        }
-
-        if ($type === self::DISCOUNT_TYPE_PERCENTAGE) {
-            $percent = min(100, max(0, $value));
-
-            return (int) round(
-                ($baseAmount * $percent) / 100
-            );
-        }
-
-        return min(
-            $baseAmount,
-            max(0, (int) $value)
-        );
-    }
 }

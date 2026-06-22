@@ -42,7 +42,7 @@ class Outlet extends Model
     public function products()
     {
         return $this->belongsToMany(Product::class, 'outlet_product')
-                    ->withPivot('stock', 'price', 'is_active')
+                    ->withPivot('stock', 'price', 'is_active', 'station_id')
                     ->wherePivot('is_active', true);
     }
 }

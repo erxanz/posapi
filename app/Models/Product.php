@@ -42,124 +42,101 @@ class Product extends Model
             ->withTimestamps();
     }
 
-    public function getIsPromoAttribute(): bool
+    /*
+    |--------------------------------------------------------------------------
+    | Discount Accessor Cache
+    |--------------------------------------------------------------------------
+    | Ketiga accessor di bawah (is_promo, discount_amount_per_item, min_purchase)
+    | butuh query Discount yang persis sama. Dulu masing-masing tembak DB
+    | sendiri → 3 query per produk → 150 query untuk 50 produk di publicMenu.
+    |
+    | Sekarang query dijalankan sekali dan hasilnya di-cache di $_discountCache
+    | selama lifetime request. Cache di-reset otomatis tiap kali model di-fresh
+    | dari DB (karena instance baru = property baru).
+    |--------------------------------------------------------------------------
+    */
+
+    /** @var \Illuminate\Support\Collection|null */
+    private ?object $_discountCache = null;
+
+    /**
+     * Ambil discount yang relevan untuk produk ini (cached per-instance).
+     * Return discount pertama yang cocok, atau null kalau tidak ada.
+     */
+    private function _getMatchingDiscount(): ?Discount
     {
-        $discounts = Discount::where('is_active', true)
-            ->where('owner_id', $this->owner_id)
-            ->whereIn('scope', ['products', 'categories'])
-            ->get();
+        if ($this->_discountCache === null) {
+            $this->_discountCache = Discount::where('is_active', true)
+                ->where('owner_id', $this->owner_id)
+                ->whereIn('scope', ['products', 'categories'])
+                ->get();
+        }
 
-        foreach ($discounts as $discount) {
-            $isMatch = false;
-
+        foreach ($this->_discountCache as $discount) {
             if ($discount->scope === 'products') {
-                $productIds = [];
-                if (!empty($discount->product_ids)) {
-                    $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
-                }
+                $productIds = is_string($discount->product_ids)
+                    ? json_decode($discount->product_ids, true)
+                    : ($discount->product_ids ?? []);
 
                 if (!empty($productIds) && in_array($this->id, $productIds)) {
-                    $isMatch = true;
+                    return $discount;
                 }
             } elseif ($discount->scope === 'categories') {
-                $categoryIds = [];
-                if (!empty($discount->category_ids)) {
-                    $categoryIds = is_string($discount->category_ids) ? json_decode($discount->category_ids, true) : $discount->category_ids;
-                }
+                $categoryIds = is_string($discount->category_ids)
+                    ? json_decode($discount->category_ids, true)
+                    : ($discount->category_ids ?? []);
 
                 if (!empty($categoryIds) && in_array($this->category_id, $categoryIds)) {
-                    $isMatch = true;
+                    return $discount;
                 }
             }
-
-            if ($isMatch) {
-                return true;
-            }
         }
-        return false;
+
+        return null;
+    }
+
+    /**
+     * Harga dasar produk ini: pivot.price (per-outlet) → cost_price (fallback).
+     *
+     * $this->price bukan kolom di tabel products — harga ada di pivot
+     * outlet_product. Dulu ada `$this->price ??` di sini yang selalu null,
+     * lalu fallback ke pivot, lalu ke cost_price. Sekarang langsung ke pivot.
+     */
+    private function _basePrice(): int
+    {
+        return $this->pivot ? (int) $this->pivot->price : (int) $this->cost_price;
+    }
+
+    public function getIsPromoAttribute(): bool
+    {
+        return $this->_getMatchingDiscount() !== null;
     }
 
     public function getMinPurchaseAttribute(): int
     {
-        $discounts = Discount::where('is_active', true)
-            ->where('owner_id', $this->owner_id)
-            ->whereIn('scope', ['products', 'categories'])
-            ->get();
-
-        foreach ($discounts as $discount) {
-            $isMatch = false;
-
-            if ($discount->scope === 'products') {
-                $productIds = [];
-                if (!empty($discount->product_ids)) {
-                    $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
-                }
-                if (!empty($productIds) && in_array($this->id, $productIds)) {
-                    $isMatch = true;
-                }
-            } elseif ($discount->scope === 'categories') {
-                $categoryIds = [];
-                if (!empty($discount->category_ids)) {
-                    $categoryIds = is_string($discount->category_ids) ? json_decode($discount->category_ids, true) : $discount->category_ids;
-                }
-                if (!empty($categoryIds) && in_array($this->category_id, $categoryIds)) {
-                    $isMatch = true;
-                }
-            }
-
-            if ($isMatch) {
-                return (int) ($discount->min_purchase ?? 0);
-            }
-        }
-        return 0;
+        $discount = $this->_getMatchingDiscount();
+        return $discount ? (int) ($discount->min_purchase ?? 0) : 0;
     }
 
     public function getDiscountAmountPerItemAttribute(): int
     {
-        $discounts = Discount::where('is_active', true)
-            ->where('owner_id', $this->owner_id)
-            ->whereIn('scope', ['products', 'categories'])
-            ->get();
+        $discount = $this->_getMatchingDiscount();
+        if (!$discount) return 0;
 
-        foreach ($discounts as $discount) {
-            $isMatch = false;
+        $originalPrice = $this->_basePrice();
 
-            if ($discount->scope === 'products') {
-                $productIds = [];
-                if (!empty($discount->product_ids)) {
-                    $productIds = is_string($discount->product_ids) ? json_decode($discount->product_ids, true) : $discount->product_ids;
-                }
-
-                if (!empty($productIds) && in_array($this->id, $productIds)) {
-                    $isMatch = true;
-                }
-            } elseif ($discount->scope === 'categories') {
-                $categoryIds = [];
-                if (!empty($discount->category_ids)) {
-                    $categoryIds = is_string($discount->category_ids) ? json_decode($discount->category_ids, true) : $discount->category_ids;
-                }
-
-                if (!empty($categoryIds) && in_array($this->category_id, $categoryIds)) {
-                    $isMatch = true;
-                }
-            }
-
-            if ($isMatch) {
-                $originalPrice = $this->price ?? ($this->pivot ? (int) $this->pivot->price : (int) $this->cost_price);
-
-                if ($discount->type === 'percentage') {
-                    $calc = $originalPrice * ((int) $discount->value / 100);
-                    return $discount->max_discount && $calc > $discount->max_discount ? (int) $discount->max_discount : (int) $calc;
-                }
-                return (int) $discount->value;
-            }
+        if ($discount->type === 'percentage') {
+            $calc = $originalPrice * ((float) $discount->value / 100);
+            return ($discount->max_discount && $calc > $discount->max_discount)
+                ? (int) $discount->max_discount
+                : (int) $calc;
         }
-        return 0;
+
+        return (int) $discount->value;
     }
 
     public function getPromoPriceAttribute(): int
     {
-        $originalPrice = $this->price ?? ($this->pivot ? (int) $this->pivot->price : (int) $this->cost_price);
-        return max(0, $originalPrice - $this->getDiscountAmountPerItemAttribute());
+        return max(0, $this->_basePrice() - $this->getDiscountAmountPerItemAttribute());
     }
 }
