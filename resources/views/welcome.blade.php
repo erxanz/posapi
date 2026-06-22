@@ -227,11 +227,6 @@
                         <span class="api-method-list">GET, POST, GET /{id}, PUT /{id}, DELETE /{id}</span>
                         <span class="note">Auth Required</span>
                     </div>
-                    <div class="endpoint-row">
-                        <span class="badge badge-delete">DELETE</span>
-                        <code class="api-path">/api/v1/tables/{id}</code>
-                        <span class="note">Auth Required</span>
-                    </div>
                 </div>
             </details>
         </div>
@@ -536,6 +531,11 @@
                     </div>
                     <div class="endpoint-row">
                         <span class="badge badge-post">POST</span>
+                        <code class="api-path">/api/v1/orders/{order}/items/{item}/cancel</code>
+                        <span class="note">Auth Required (Partial/Full)</span>
+                    </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-post">POST</span>
                         <code class="api-path">/api/v1/orders/{order}/checkout</code>
                         <span class="note">Auth Required</span>
                     </div>
@@ -557,26 +557,6 @@
                     <div class="endpoint-row">
                         <span class="badge badge-put">PUT</span>
                         <code class="api-path">/api/v1/orders/{order}/items</code>
-                        <span class="note">Auth Required</span>
-                    </div>
-                </div>
-            </details>
-        </div>
-
-        <!-- Order Items (Kitchen) Section -->
-        <div class="section-card">
-            <details>
-                <summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; list-style: none;">
-                    <h2 class="section-title" style="margin: 0;">Order Items (Kitchen)</h2>
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <i class="fa-solid fa-list" style="color: #f59e0b; font-size: 1.125rem;"></i>
-                        <i class="fa-solid fa-chevron-down" style="color: #f59e0b; font-size: 0.875rem; transition: transform 0.2s;"></i>
-                    </div>
-                </summary>
-                <div style="padding: 0 1rem 1rem 1rem;">
-                    <div class="endpoint-row">
-                        <span class="badge badge-patch">PATCH</span>
-                        <code class="api-path">/api/v1/order-items/{id}/status</code>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>
