@@ -251,10 +251,12 @@ class ReportController extends Controller
         });
 
         // --- H. TABLE PERFORMANCE ---
-        $tablePerformance = DB::table('orders')
+        $tablePerformance = DB::table('history_transactions')
+            ->leftJoin('orders', 'history_transactions.order_id', '=', 'orders.id')
             ->leftJoin('tables', 'orders.table_id', '=', 'tables.id')
-            ->join('history_transactions', 'orders.id', '=', 'history_transactions.order_id')
-            ->whereIn('history_transactions.id', (clone $trxQuery)->select('history_transactions.id'))
+            ->where('history_transactions.status', 'paid')
+            ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
+            ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
             ->selectRaw('
                 tables.name,
                 COUNT(orders.id) as orders_count,

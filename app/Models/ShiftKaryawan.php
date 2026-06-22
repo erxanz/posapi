@@ -9,6 +9,9 @@ class ShiftKaryawan extends Model
 {
     use HasFactory;
 
+    public const STATUS_ACTIVE = 'active';
+    public const STATUS_CLOSED = 'closed';
+
     protected $fillable = [
         'outlet_id',
         'user_id',
