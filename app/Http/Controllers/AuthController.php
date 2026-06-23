@@ -38,10 +38,10 @@ class AuthController extends Controller
                         })
                         ->orWhere(function ($q) use ($currentTime) {
                             $q->whereColumn('start_time', '>', 'end_time')
-                              ->where(function ($q2) use ($currentTime) {
-                                  $q2->whereTime('start_time', '<=', $currentTime)
-                                     ->orWhereTime('end_time', '>=', $currentTime);
-                              });
+                                ->where(function ($q2) use ($currentTime) {
+                                $q2->whereTime('start_time', '<=', $currentTime)
+                                ->orWhereTime('end_time', '>=', $currentTime);
+                            });
                         });
                 })->first();
         }
@@ -163,7 +163,7 @@ class AuthController extends Controller
         $shiftId = $activeShift ? $activeShift->id : null;
 
         // ==============================================================
-        // 🌟 PERBAIKAN: CEK VALIDASI KAS AWAL LANGSUNG DARI DATABASE
+        // CEK VALIDASI KAS AWAL LANGSUNG DARI DATABASE
         // ==============================================================
         $openingBalance = null; // Default null (belum isi kas awal)
 

@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\Broadcast;
 
 use App\Http\Controllers\OrderAcceptanceController;
 
-// Controllers
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DiscountController;
@@ -99,7 +98,7 @@ Route::prefix('v1')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
 
-        // ✅ Broadcasting routes untuk Reverb
+        // Broadcasting routes untuk Reverb
         Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
         /*

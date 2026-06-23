@@ -26,10 +26,4 @@ class Shift extends Model
     {
         return $this->hasMany(Schedule::class);
     }
-
-    // DEPRECATED: Old pivot relation
-    // public function users()
-    // {
-    //     return $this->belongsToMany(User::class, 'shift_user');
-    // }
 }

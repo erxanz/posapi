@@ -9,7 +9,6 @@ class Discount extends Model
 {
     use HasFactory;
 
-    // WAJIB: Daftarkan semua nama kolom di sini agar diizinkan masuk ke database
     protected $fillable = [
         'owner_id',
         'name',
@@ -25,7 +24,6 @@ class Discount extends Model
         'is_active'
     ];
 
-    // WAJIB: Beritahu Laravel kalau data ini bentuknya Array/JSON
     protected $casts = [
         'is_active' => 'boolean',
         'value' => 'integer',
@@ -39,9 +37,4 @@ class Discount extends Model
     {
         return $this->belongsTo(Product::class);
     }
-
-    // public function orders()
-    // {
-    //     return $this->hasMany(Order::class);
-    // }
 }

@@ -20,12 +20,12 @@ class HistoryTransactionController extends Controller
                 'outlet:id,name',
                 'cashier:id,name',
                 'payment:id,order_id,method,amount_paid,change_amount,paid_at',
-                // PERBAIKAN: Tambahkan 'logs' ke sini agar data log tidak terpotong (di-select oleh SQL)
+                // untuk 'logs' ke sini agar data log tidak terpotong (di-select oleh SQL)
                 'order:id,table_id,customer_name,logs,payment_method,status,invoice_number,discount_id,discount_amount,manual_discount_type,manual_discount_value',
                 'order.table:id,name',
                 'order.items.product',
                 'order.discount:id,name,type,value,scope,min_purchase,max_discount',
-                // Pastikan kolom di-prefiks dengan nama tabel untuk menghindari ambiguitas SQL
+                // untuk kolom di-prefiks dengan nama tabel untuk menghindari ambiguitas SQL
                 'order.latestAcceptance:order_acceptances.id,order_acceptances.order_id,order_acceptances.scope,order_acceptances.accepted_by,order_acceptances.accepted_at,order_acceptances.printed_at',
             ])
             ->latest('paid_at');
@@ -162,7 +162,6 @@ class HistoryTransactionController extends Controller
         ]);
 
         /**
-         * PERBAIKAN:
          * Jangan gunakan unset() jika ingin mempertahankan nilai.
          * Jika frontend tidak mengirim tax_amount, kita isi dengan nilai yang sudah ada di DB.
          */

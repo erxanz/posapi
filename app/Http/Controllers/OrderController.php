@@ -92,13 +92,13 @@ class OrderController extends Controller
                 $query->where(function ($q) {
                     // 1. Tarik semua pesanan yang memang masih murni PENDING
                     $q->where('status', Order::STATUS_PENDING)
-                      ->orWhere(function ($subQ) {
+                        ->orWhere(function ($subQ) {
                           // 2. ATAU tarik pesanan yang sudah LUNAS, dengan syarat:
-                          $subQ->where('status', Order::STATUS_PAID)
+                            $subQ->where('status', Order::STATUS_PAID)
                                ->whereNull('user_id') // Harus murni dari POS QR (Bukan kasir)
                                ->where('payment_method', '!=', 'cash') // Hanya untuk pembayaran online/Midtrans
                                ->doesntHave('latestAcceptance'); // Belum ditekan tombol "Terima" (Accept) oleh Kasir
-                      });
+                    });
                 });
             } else {
                 // Untuk status lain (seperti paid/cancelled/dsb), filter normal seperti biasa
@@ -203,7 +203,7 @@ class OrderController extends Controller
                 $item->qty += $requestQty;
                 $item->total_price = $item->qty * $item->price;
                 if ($request->has('notes')) {
-                    $item->notes = $request->notes; 
+                    $item->notes = $request->notes;
                 }
                 $item->save();
             } else {
@@ -234,8 +234,8 @@ class OrderController extends Controller
 
             // Kalkulasi ulang total harga, diskon, dan pajak
             $order->refresh();
-            $order->recalculateTotals(); 
-            
+            $order->recalculateTotals();
+
             DB::commit();
 
             return response()->json($order->load('items.product'), 200);
@@ -311,7 +311,7 @@ class OrderController extends Controller
             }
 
             $item->delete();
-            
+
             // Kalkulasi ulang total, diskon, dan pajak setelah item dihapus
             $order->refresh();
             $order->recalculateTotals();
@@ -447,7 +447,7 @@ class OrderController extends Controller
             if ($oldOrder) {
                 $oldOrder->loadMissing('items');
                 $outletForRestock = \App\Models\Outlet::find($oldOrder->outlet_id);
-                
+
                 if ($outletForRestock) {
                     foreach ($oldOrder->items as $item) {
                         $product = $outletForRestock->products()->where('products.id', $item->product_id)->first();
@@ -469,7 +469,7 @@ class OrderController extends Controller
                 }
 
                 $oldOrder->update(['status' => 'cancelled']);
-                
+
                 broadcast(new \App\Events\OrderUpdated($oldOrder))->toOthers();
             }
         }
