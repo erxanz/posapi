@@ -50,11 +50,6 @@ class User extends Authenticatable
         'password',
         'remember_token',
         'pin',
-        // Kredensial pembayaran (server key Midtrans milik owner). Default
-        // disembunyikan dari serialisasi supaya tidak ikut bocor lewat endpoint
-        // daftar/detail user (mis. developer melihat list manager, atau relasi
-        // user di response lain). Endpoint self-profile yang memang butuh
-        // (me / updateProfile / login) memunculkannya kembali via makeVisible().
         'midtrans_server_key',
     ];
 

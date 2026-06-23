@@ -8,6 +8,7 @@ use App\Models\Tax;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use App\Http\Requests\CancelOrderItemRequest;
 use App\Models\OrderItem;
 use Midtrans\Config;
@@ -16,7 +17,7 @@ use Midtrans\Snap;
 class OrderController extends Controller
 {
     public function __construct(private OrderService $orderService) {
-        $this->middleware('auth:sanctum')->except(['publicOrder', 'midtransCallback', 'publicShow']);
+        $this->middleware('auth:sanctum')->except(['publicOrder', 'midtransCallback', 'publicShow', 'downloadQrImage']);
     }
 
     /**
@@ -35,6 +36,45 @@ class OrderController extends Controller
             'success' => true,
             'data' => $order
         ]);
+    }
+
+    /**
+     * Proxy unduh gambar QRIS Midtrans sebagai attachment.
+     *
+     * Browser tidak bisa fetch/canvas gambar QR Midtrans langsung karena endpoint
+     * QR-nya tidak mengirim header CORS. Endpoint ini mengambil gambar server-side
+     * lalu mengirim balik dengan Content-Disposition: attachment supaya pelanggan
+     * bisa langsung mengunduh fotonya (bukan dibuka di tab baru).
+     *
+     * Host di-whitelist ke domain Midtrans saja untuk mencegah SSRF.
+     */
+    public function downloadQrImage(Request $request)
+    {
+        $url = (string) $request->query('url', '');
+        if ($url === '') {
+            abort(400, 'Parameter url wajib diisi.');
+        }
+
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        $allowedHosts = ['api.midtrans.com', 'api.sandbox.midtrans.com'];
+        if (!in_array($host, $allowedHosts, true)) {
+            abort(403, 'Host tidak diizinkan.');
+        }
+
+        $response = Http::timeout(15)->get($url);
+        if (!$response->successful()) {
+            abort(502, 'Gagal mengambil gambar QR dari Midtrans.');
+        }
+
+        $contentType = $response->header('Content-Type') ?: 'image/png';
+        // Pastikan yang diunduh memang gambar, bukan envelope error JSON.
+        if (stripos($contentType, 'image/') !== 0) {
+            abort(502, 'Respons Midtrans bukan gambar QR.');
+        }
+
+        return response($response->body(), 200)
+            ->header('Content-Type', $contentType)
+            ->header('Content-Disposition', 'attachment; filename="QR-Pembayaran.png"');
     }
 
     /**
@@ -1280,7 +1320,15 @@ class OrderController extends Controller
 
     private function normalizeLegacyAdjustmentPayload(array $payload): array
     {
-        if (!isset($payload['discount_id'])) {
+        // Diskon bertumpuk (produk/kategori): kalau client mengirim lebih dari satu
+        // discount_ids, JANGAN dikecilkan jadi discount_id tunggal di sini. Biarkan
+        // array-nya utuh supaya OrderService::handleAdjustments menghitung gabungan
+        // semua diskon (per-item terbaik). discount_id tunggal cuma untuk 1 diskon.
+        $multipleDiscountIds = !empty($payload['discount_ids'])
+            && is_array($payload['discount_ids'])
+            && count($payload['discount_ids']) > 1;
+
+        if (!isset($payload['discount_id']) && !$multipleDiscountIds) {
             $discountSources = [];
 
             if (!empty($payload['discount_ids']) && is_array($payload['discount_ids'])) {

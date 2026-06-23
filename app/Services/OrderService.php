@@ -400,8 +400,28 @@ class OrderService
         $totalDiscountAmount = 0;
         $discount = null;
 
+        // Daftar discount_ids bertumpuk (khusus scope produk/kategori). Kalau ada
+        // lebih dari satu, controller sengaja TIDAK mengecilkannya jadi discount_id
+        // tunggal supaya kita bisa hitung gabungannya di sini.
+        $stackedDiscountIds = (!empty($data['discount_ids']) && is_array($data['discount_ids']))
+            ? array_values(array_unique(array_map('intval', $data['discount_ids'])))
+            : [];
+
+        $orderOwnerId = Outlet::query()->whereKey($order->outlet_id)->value('owner_id');
+
+        // JALUR 0: Beberapa diskon produk/kategori dipilih sekaligus (bertumpuk).
+        // Tiap item hanya didiskon SEKALI (ambil diskon paling menguntungkan),
+        // lalu nilai akhir disimpan sebagai discount_amount agar bertahan melewati
+        // recalculateTotals (yang memakai $this->discount_amount saat discount_id null).
+        if (count($stackedDiscountIds) > 1) {
+            $totalDiscountAmount = $this->computeStackedDiscount($order, $stackedDiscountIds, (int) $subtotal, $orderOwnerId);
+
+            $updates['discount_id'] = null;
+            $updates['manual_discount_type'] = null;
+            $updates['manual_discount_value'] = 0;
+
         // JALUR 1: Jika pelanggan memilih Master Diskon Global (Voucher) dari UI QR Menu
-        if ($discountId) {
+        } elseif ($discountId) {
             $discount = Discount::find($discountId);
             if (!$discount) {
                 throw new \Exception("Diskon dengan ID {$discountId} tidak ditemukan di database.");
@@ -508,6 +528,88 @@ class OrderService
         if (!empty($updates)) {
             $order->update($updates);
         }
+    }
+
+    /**
+     * Hitung total potongan untuk beberapa diskon produk/kategori yang dipilih
+     * sekaligus (bertumpuk). Aturan: tiap item hanya didiskon SEKALI memakai diskon
+     * yang paling menguntungkan pelanggan. Logika ini SENGAJA dibuat identik dengan
+     * perhitungan di frontend (posqr stores/cart.js) supaya total yang ditampilkan
+     * ke pelanggan sama persis dengan yang ditagih lewat Midtrans.
+     */
+    private function computeStackedDiscount(Order $order, array $discountIds, int $subtotal, $ownerId): int
+    {
+        $discounts = Discount::whereIn('id', $discountIds)->get()
+            ->filter(fn($d) => $ownerId && (int) $d->owner_id === (int) $ownerId)
+            ->filter(function ($d) use ($subtotal) {
+                $min = (int) ($d->min_purchase ?? 0);
+                return $min === 0 || $subtotal >= $min;
+            })
+            ->filter(fn($d) => in_array(strtolower(trim($d->scope ?? '')), ['products', 'categories']))
+            ->values();
+
+        if ($discounts->isEmpty()) {
+            return 0;
+        }
+
+        // Per item: pilih satu diskon dengan potongan terbesar, lalu akumulasi per diskon
+        // (supaya cap max_discount bisa diterapkan per diskon).
+        $perDiscountSum = [];
+
+        foreach ($order->items as $item) {
+            $line = (int) $item->price * (int) $item->qty;
+            $qty = (int) $item->qty;
+            $catId = $item->product->category_id ?? null;
+
+            $bestVal = 0.0;
+            $bestId = null;
+
+            foreach ($discounts as $d) {
+                $scope = strtolower(trim($d->scope));
+                $matches = false;
+
+                if ($scope === 'products') {
+                    $ids = is_array($d->product_ids) ? array_map('intval', $d->product_ids) : [];
+                    $matches = in_array((int) $item->product_id, $ids, true);
+                } elseif ($scope === 'categories') {
+                    $cats = is_array($d->category_ids) ? array_map('intval', $d->category_ids) : [];
+                    $matches = $catId !== null && in_array((int) $catId, $cats, true);
+                }
+
+                if (!$matches) {
+                    continue;
+                }
+
+                $type = strtolower(trim($d->type ?? 'nominal'));
+                $val = $type === 'percentage'
+                    ? $line * ((float) $d->value / 100)
+                    : (float) $d->value * $qty;
+
+                if ($val > $bestVal) {
+                    $bestVal = $val;
+                    $bestId = $d->id;
+                }
+            }
+
+            if ($bestId !== null && $bestVal > 0) {
+                $perDiscountSum[$bestId] = ($perDiscountSum[$bestId] ?? 0) + $bestVal;
+            }
+        }
+
+        $total = 0.0;
+        foreach ($perDiscountSum as $id => $sum) {
+            $d = $discounts->firstWhere('id', $id);
+            $type = strtolower(trim($d->type ?? 'nominal'));
+            if ($type === 'percentage') {
+                $max = (int) ($d->max_discount ?? 0);
+                if ($max > 0 && $sum > $max) {
+                    $sum = $max;
+                }
+            }
+            $total += $sum;
+        }
+
+        return (int) min($subtotal, round($total));
     }
 
     private function createPayment(Order $order, int $amountPaid, string $method): Payment
