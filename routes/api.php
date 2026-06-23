@@ -63,6 +63,10 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::get('/order/{id}', [OrderController::class, 'publicShow'])->name('public.order.show');
+        // Proxy unduh gambar QRIS Midtrans. Midtrans tidak mengirim header CORS di
+        // endpoint QR-nya, jadi browser tidak bisa fetch/canvas langsung. Endpoint
+        // ini mengambil gambarnya server-side lalu mengirim balik sebagai attachment.
+        Route::get('/qr-image', [OrderController::class, 'downloadQrImage'])->name('public.qr.image');
         Route::get('/top-products', [App\Http\Controllers\ReportController::class, 'publicTopProducts']);
     });
 

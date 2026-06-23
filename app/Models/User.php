@@ -49,7 +49,8 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
-        'pin'
+        'pin',
+        'midtrans_server_key',
     ];
 
     /**

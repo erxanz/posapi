@@ -8,6 +8,7 @@ use App\Models\Tax;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use App\Http\Requests\CancelOrderItemRequest;
 use App\Models\OrderItem;
 use Midtrans\Config;
@@ -16,7 +17,7 @@ use Midtrans\Snap;
 class OrderController extends Controller
 {
     public function __construct(private OrderService $orderService) {
-        $this->middleware('auth:sanctum')->except(['publicOrder', 'midtransCallback', 'publicShow']);
+        $this->middleware('auth:sanctum')->except(['publicOrder', 'midtransCallback', 'publicShow', 'downloadQrImage']);
     }
 
     /**
@@ -35,6 +36,45 @@ class OrderController extends Controller
             'success' => true,
             'data' => $order
         ]);
+    }
+
+    /**
+     * Proxy unduh gambar QRIS Midtrans sebagai attachment.
+     *
+     * Browser tidak bisa fetch/canvas gambar QR Midtrans langsung karena endpoint
+     * QR-nya tidak mengirim header CORS. Endpoint ini mengambil gambar server-side
+     * lalu mengirim balik dengan Content-Disposition: attachment supaya pelanggan
+     * bisa langsung mengunduh fotonya (bukan dibuka di tab baru).
+     *
+     * Host di-whitelist ke domain Midtrans saja untuk mencegah SSRF.
+     */
+    public function downloadQrImage(Request $request)
+    {
+        $url = (string) $request->query('url', '');
+        if ($url === '') {
+            abort(400, 'Parameter url wajib diisi.');
+        }
+
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        $allowedHosts = ['api.midtrans.com', 'api.sandbox.midtrans.com'];
+        if (!in_array($host, $allowedHosts, true)) {
+            abort(403, 'Host tidak diizinkan.');
+        }
+
+        $response = Http::timeout(15)->get($url);
+        if (!$response->successful()) {
+            abort(502, 'Gagal mengambil gambar QR dari Midtrans.');
+        }
+
+        $contentType = $response->header('Content-Type') ?: 'image/png';
+        // Pastikan yang diunduh memang gambar, bukan envelope error JSON.
+        if (stripos($contentType, 'image/') !== 0) {
+            abort(502, 'Respons Midtrans bukan gambar QR.');
+        }
+
+        return response($response->body(), 200)
+            ->header('Content-Type', $contentType)
+            ->header('Content-Disposition', 'attachment; filename="QR-Pembayaran.png"');
     }
 
     /**
@@ -967,6 +1007,12 @@ class OrderController extends Controller
      */
     public function updateAdjustments(Request $request, Order $order)
     {
+        // Konsisten dengan voidItems/updateItems/cancelItem: pastikan user
+        // hanya bisa mengubah diskon/pajak order milik outlet-nya sendiri.
+        // Tanpa ini, user mana pun yang tahu id order bisa mengedit adjustment
+        // order outlet/tenant lain.
+        $this->authorizeOutletAccess($order);
+
         if ($order->status !== Order::STATUS_PENDING) {
             return response()->json(['message' => 'Only pending orders'], 400);
         }
@@ -1010,7 +1056,10 @@ class OrderController extends Controller
             'reason' => 'required|string|max:255',
             'items' => 'required|array',
             'items.*.id' => 'required|exists:order_items,id',
-            'items.*.cancelled_qty' => 'required|integer|min:0|max:100', // Add max
+            // Batas atas per item divalidasi di dalam loop terhadap qty asli item
+            // (lihat di bawah), bukan angka magic seperti 100 - supaya tidak bisa
+            // membatalkan lebih banyak dari yang dipesan (total negatif / over-restock).
+            'items.*.cancelled_qty' => 'required|integer|min:0',
         ]);
 
         DB::beginTransaction();
@@ -1024,7 +1073,18 @@ class OrderController extends Controller
                 if (!$item) continue;
 
                 $oldQty = $item->cancelled_qty;
-                $newQty = $inputItem['cancelled_qty'];
+                $newQty = (int) $inputItem['cancelled_qty'];
+
+                // Jumlah dibatalkan tidak boleh melebihi qty item yang dipesan.
+                // Tanpa guard ini, total_price item bisa jadi negatif dan stok
+                // dikembalikan lebih banyak dari yang pernah dipotong.
+                if ($newQty > $item->qty) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => "Jumlah pembatalan untuk {$item->product->name} melebihi jumlah pesanan (maksimal {$item->qty}).",
+                    ], 422);
+                }
+
                 $diff = $newQty - $oldQty;
 
                 if ($diff !== 0) {
@@ -1260,7 +1320,15 @@ class OrderController extends Controller
 
     private function normalizeLegacyAdjustmentPayload(array $payload): array
     {
-        if (!isset($payload['discount_id'])) {
+        // Diskon bertumpuk (produk/kategori): kalau client mengirim lebih dari satu
+        // discount_ids, JANGAN dikecilkan jadi discount_id tunggal di sini. Biarkan
+        // array-nya utuh supaya OrderService::handleAdjustments menghitung gabungan
+        // semua diskon (per-item terbaik). discount_id tunggal cuma untuk 1 diskon.
+        $multipleDiscountIds = !empty($payload['discount_ids'])
+            && is_array($payload['discount_ids'])
+            && count($payload['discount_ids']) > 1;
+
+        if (!isset($payload['discount_id']) && !$multipleDiscountIds) {
             $discountSources = [];
 
             if (!empty($payload['discount_ids']) && is_array($payload['discount_ids'])) {
