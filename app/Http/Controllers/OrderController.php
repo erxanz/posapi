@@ -967,6 +967,12 @@ class OrderController extends Controller
      */
     public function updateAdjustments(Request $request, Order $order)
     {
+        // Konsisten dengan voidItems/updateItems/cancelItem: pastikan user
+        // hanya bisa mengubah diskon/pajak order milik outlet-nya sendiri.
+        // Tanpa ini, user mana pun yang tahu id order bisa mengedit adjustment
+        // order outlet/tenant lain.
+        $this->authorizeOutletAccess($order);
+
         if ($order->status !== Order::STATUS_PENDING) {
             return response()->json(['message' => 'Only pending orders'], 400);
         }
@@ -1010,7 +1016,10 @@ class OrderController extends Controller
             'reason' => 'required|string|max:255',
             'items' => 'required|array',
             'items.*.id' => 'required|exists:order_items,id',
-            'items.*.cancelled_qty' => 'required|integer|min:0|max:100', // Add max
+            // Batas atas per item divalidasi di dalam loop terhadap qty asli item
+            // (lihat di bawah), bukan angka magic seperti 100 - supaya tidak bisa
+            // membatalkan lebih banyak dari yang dipesan (total negatif / over-restock).
+            'items.*.cancelled_qty' => 'required|integer|min:0',
         ]);
 
         DB::beginTransaction();
@@ -1024,7 +1033,18 @@ class OrderController extends Controller
                 if (!$item) continue;
 
                 $oldQty = $item->cancelled_qty;
-                $newQty = $inputItem['cancelled_qty'];
+                $newQty = (int) $inputItem['cancelled_qty'];
+
+                // Jumlah dibatalkan tidak boleh melebihi qty item yang dipesan.
+                // Tanpa guard ini, total_price item bisa jadi negatif dan stok
+                // dikembalikan lebih banyak dari yang pernah dipotong.
+                if ($newQty > $item->qty) {
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => "Jumlah pembatalan untuk {$item->product->name} melebihi jumlah pesanan (maksimal {$item->qty}).",
+                    ], 422);
+                }
+
                 $diff = $newQty - $oldQty;
 
                 if ($diff !== 0) {

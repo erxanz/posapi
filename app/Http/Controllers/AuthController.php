@@ -127,7 +127,7 @@ class AuthController extends Controller
             'message' => 'Login berhasil',
             'token' => $token,
             'shift_id' => null,
-            'user' => $user->load('outlet')
+            'user' => $user->load('outlet')->makeVisible('midtrans_server_key')
         ]);
     }
 
@@ -197,7 +197,7 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         return response()->json([
-            'user' => $request->user()->load('outlet')
+            'user' => $request->user()->load('outlet')->makeVisible('midtrans_server_key')
         ]);
     }
 
@@ -238,7 +238,7 @@ class AuthController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Profil berhasil diperbarui.',
-            'user' => $user
+            'user' => $user->makeVisible('midtrans_server_key')
         ]);
     }
 

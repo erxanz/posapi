@@ -209,8 +209,12 @@ class OrderService
             $order->recalculateTotals($validated);
             $this->reserveTable($table);
 
-            // Panggil fungsi yang menggunakan lockForUpdate tadi
-            $invoiceNumber = $this->generateInvoiceNumber($outlet->id);
+            // Pakai varian dengan retry (sama seperti jalur cash & midtrans).
+            // Saat dua order QR publik dibuat bersamaan di hari yang sama dan
+            // baris counter harian belum ada, firstOrCreate bisa memicu
+            // "Duplicate entry" pada unique (outlet_id, date); retry menanganinya
+            // alih-alih menggagalkan order secara fatal.
+            $invoiceNumber = $this->generateInvoiceNumberWithRetry($outlet->id);
 
             // Update order dengan invoice number yang asli
             $order->update(['invoice_number' => $invoiceNumber]);
