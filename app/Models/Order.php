@@ -346,6 +346,11 @@ class Order extends Model
             if ($tax && (int) $tax->outlet_id !== (int) $this->outlet_id) {
                 $tax = null;
             }
+
+            // Jangan terapkan pajak yang sudah dinonaktifkan (active=false)
+            if ($tax && !$tax->active) {
+                $tax = null;
+            }
         }
 
         $taxAmount = 0;

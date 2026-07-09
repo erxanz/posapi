@@ -426,7 +426,7 @@ class OrderController extends Controller
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
-            'tax_type' => 'nullable|in:percentage,nominal,fixed',
+            'tax_type' => 'nullable|in:percentage,fixed',
             'tax_value' => 'nullable|integer|min:0',
             'tax_amount' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
@@ -712,7 +712,7 @@ class OrderController extends Controller
             'discount_value' => 'nullable|integer|min:0',
             'discount_amount' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
-            'tax_type' => 'nullable|in:percentage,nominal,fixed',
+            'tax_type' => 'nullable|in:percentage,fixed',
             'tax_value' => 'nullable|integer|min:0',
             'tax_amount' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
@@ -1025,7 +1025,7 @@ class OrderController extends Controller
             'discount_type' => 'nullable|in:percentage,nominal',
             'discount_value' => 'nullable|integer|min:0',
             'tax_id' => 'nullable|exists:taxes,id',
-            'tax_type' => 'nullable|in:percentage,nominal,fixed',
+            'tax_type' => 'nullable|in:percentage,fixed',
             'tax_value' => 'nullable|integer|min:0',
             'tax_amount' => 'nullable|integer|min:0',
             'tax_breakdown' => 'nullable|array',
@@ -1176,7 +1176,7 @@ class OrderController extends Controller
                 $newTaxAmount = 0;
                 if ($order->tax_id) {
                     $tax = \App\Models\Tax::find($order->tax_id);
-                    if ($tax) {
+                    if ($tax && $tax->active) {
                         if ($tax->type === 'percentage') {
                             $newTaxAmount = (int) round($amountAfterDiscount * ((float) $tax->rate / 100));
                         } else {
@@ -1376,9 +1376,7 @@ class OrderController extends Controller
                 ->where('active', true)
                 ->get()
                 ->first(function (Tax $tax) use ($payload) {
-                    $expectedValue = $tax->type === 'percentage'
-                        ? (int) round(((float) $tax->rate) * 100)
-                        : (int) round((float) $tax->rate);
+                    $expectedValue = (int) round((float) $tax->rate);
 
                     return $expectedValue === (int) $payload['tax_value'];
                 });

@@ -527,7 +527,7 @@ class OrderService
         if (isset($data['tax_id'])) {
             // Pastikan pajak ini memang milik outlet tempat order dibuat -
             // defense kedua setelah filter di endpoint publik /public/taxes.
-            $taxBelongsToOutlet = Tax::query()->whereKey($data['tax_id'])->where('outlet_id', $order->outlet_id)->exists();
+            $taxBelongsToOutlet = Tax::query()->whereKey($data['tax_id'])->where('active', true)->where('outlet_id', $order->outlet_id)->exists();
             if ($taxBelongsToOutlet) {
                 $updates['tax_id'] = $data['tax_id'];
             }
@@ -535,7 +535,7 @@ class OrderService
             $taxType = (string) $data['tax_type'];
             $taxValue = (int) $data['tax_value'];
             $matchedTax = Tax::query()->where('type', $taxType)->where('active', true)->where('outlet_id', $order->outlet_id)->get()->first(function (Tax $tax) use ($taxValue) {
-                $expectedValue = $tax->type === 'percentage' ? (int) round(((float) $tax->rate) * 100) : (int) round((float) $tax->rate);
+                $expectedValue = (int) round((float) $tax->rate);
                 return $expectedValue === $taxValue;
             });
             if ($matchedTax) $updates['tax_id'] = $matchedTax->id;
