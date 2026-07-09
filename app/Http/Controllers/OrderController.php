@@ -740,10 +740,6 @@ class OrderController extends Controller
                 $order = $result['order'];
                 $order = Order::with(['items.product', 'table', 'discount'])->findOrFail($order->id);
 
-                // RE-CALCULATE TOTALS AGAR DISKON DAN PAJAK TERSINKRONISASI KE KOLOM DATABASE
-                $order->recalculateTotals($validated);
-                $order->refresh();
-
                 $serverKey = $order->midtrans_server_key_used;
                 if (empty($serverKey) && $order->outlet_id) {
                     $ownerId = \App\Models\Outlet::whereKey($order->outlet_id)->value('owner_id');
@@ -1280,6 +1276,7 @@ class OrderController extends Controller
                 $item->update($updateData);
             }
 
+            $order->refresh();
             $this->recalculateOrderTotals($order);
             DB::commit();
 
@@ -1361,10 +1358,15 @@ class OrderController extends Controller
         }
 
         if (!isset($payload['tax_id']) && isset($payload['tax_type']) && isset($payload['tax_value'])) {
-            $tax = Tax::query()
+            $taxQuery = Tax::query()
                 ->where('type', $payload['tax_type'])
-                ->where('active', true)
-                ->get()
+                ->where('active', true);
+
+            if (!empty($payload['outlet_id'])) {
+                $taxQuery->where('outlet_id', $payload['outlet_id']);
+            }
+
+            $tax = $taxQuery->get()
                 ->first(function (Tax $tax) use ($payload) {
                     $expectedValue = (int) round((float) $tax->rate);
 

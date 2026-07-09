@@ -77,6 +77,10 @@ class Product extends Model
         }
 
         foreach ($this->_discountCache as $discount) {
+            if ($discount->max_usage > 0 && $discount->used_count >= $discount->max_usage) {
+                continue;
+            }
+
             if ($discount->scope === 'global') {
                 return $discount;
             }
@@ -146,5 +150,10 @@ class Product extends Model
     public function getPromoPriceAttribute(): int
     {
         return max(0, $this->_basePrice() - $this->getDiscountAmountPerItemAttribute());
+    }
+
+    public function getMatchingDiscount(): ?Discount
+    {
+        return $this->_getMatchingDiscount();
     }
 }

@@ -179,13 +179,27 @@ class Order extends Model
      */
     public function decrementDiscountUsage(): void
     {
-        if (!$this->discount_id) {
+        // Single discount path
+        if ($this->discount_id) {
+            $discount = Discount::find($this->discount_id);
+            if ($discount && $discount->used_count > 0) {
+                $discount->decrement('used_count');
+            }
             return;
         }
 
-        $discount = Discount::find($this->discount_id);
-        if ($discount && $discount->used_count > 0) {
-            $discount->decrement('used_count');
+        // Stacked discount path: read IDs from logs
+        $logs = $this->logs ?? [];
+        foreach ($logs as $log) {
+            if (isset($log['type']) && $log['type'] === 'stacked_discounts' && !empty($log['discount_ids'])) {
+                foreach ($log['discount_ids'] as $id) {
+                    $discount = Discount::find((int) $id);
+                    if ($discount && $discount->used_count > 0) {
+                        $discount->decrement('used_count');
+                    }
+                }
+                break;
+            }
         }
     }
     public function isPaid(): bool
@@ -244,11 +258,7 @@ class Order extends Model
             $discount = \App\Models\Discount::find($discountId);
 
             if ($discount) {
-                // Pastikan diskon ini memang milik owner outlet order ini -
-                // mencegah discount_id milik tenant lain diterapkan lewat
-                // SALAH SATU dari 9 titik yang memanggil recalculateTotals().
-                $orderOwnerId = \App\Models\Outlet::query()->whereKey($this->outlet_id)->value('owner_id');
-                if (!$orderOwnerId || (int) $discount->owner_id !== (int) $orderOwnerId) {
+                if (!$outletOwnerId || (int) $discount->owner_id !== (int) $outletOwnerId) {
                     $discount = null;
                 }
 
@@ -260,10 +270,6 @@ class Order extends Model
                     }
                 }
 
-                // Validasi max_usage (batas pemakaian)
-                if ($discount && $discount->max_usage > 0 && $discount->used_count >= $discount->max_usage) {
-                    $discount = null;
-                }
             }
         }
 

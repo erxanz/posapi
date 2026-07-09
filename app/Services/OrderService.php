@@ -421,6 +421,12 @@ class OrderService
                 Discount::whereIn('id', $stackedDiscountIds)->increment('used_count');
             }
 
+            // Simpan ID diskon bertumpuk ke logs untuk keperluan cancel/refund
+            $existingLogs = $order->logs ?? [];
+            $existingLogs = collect($existingLogs)->reject(fn($l) => isset($l['type']) && $l['type'] === 'stacked_discounts')->values()->all();
+            $existingLogs[] = ['type' => 'stacked_discounts', 'discount_ids' => $stackedDiscountIds];
+            $updates['logs'] = $existingLogs;
+
             $updates['discount_id'] = null;
             $updates['manual_discount_type'] = null;
             $updates['manual_discount_value'] = 0;
@@ -451,7 +457,6 @@ class OrderService
             // Pastikan diskon ini memang milik owner outlet tempat order dibuat.
             // Tanpa ini, discount_id milik tenant lain bisa diterapkan ke order
             // (defense kedua setelah filter di endpoint publik /public/discounts).
-            $orderOwnerId = Outlet::query()->whereKey($order->outlet_id)->value('owner_id');
             if (!$orderOwnerId || (int) $discount->owner_id !== (int) $orderOwnerId) {
                 throw new \Exception("Diskon tidak berlaku untuk outlet ini.");
             }
@@ -503,13 +508,28 @@ class OrderService
             // JALUR 3 (FALLBACK): Hanya jika TIDAK ada discount_id dan TIDAK ada manual_discount
             // Di sini sistem akan menghitung total akumulasi diskon produk bawaan item menu.
             $totalProductDiscount = 0;
+            $promoDiscountIds = [];
             foreach ($order->items as $item) {
                 if ($item->product && $item->product->is_promo) {
                     $totalProductDiscount += $item->product->discount_amount_per_item * $item->qty;
+                    $matched = $item->product->getMatchingDiscount();
+                    if ($matched) {
+                        $promoDiscountIds[$matched->id] = true;
+                    }
                 }
             }
 
             if ($totalProductDiscount > 0) {
+                $matchedIds = array_keys($promoDiscountIds);
+                if (!empty($matchedIds)) {
+                    Discount::whereIn('id', $matchedIds)->increment('used_count');
+
+                    $existingLogs = $order->logs ?? [];
+                    $existingLogs = collect($existingLogs)->reject(fn($l) => isset($l['type']) && $l['type'] === 'stacked_discounts')->values()->all();
+                    $existingLogs[] = ['type' => 'stacked_discounts', 'discount_ids' => $matchedIds];
+                    $updates['logs'] = $existingLogs;
+                }
+
                 $updates['manual_discount_type'] = 'nominal';
                 $updates['manual_discount_value'] = $totalProductDiscount;
                 $totalDiscountAmount = $totalProductDiscount;
