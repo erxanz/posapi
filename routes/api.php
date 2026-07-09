@@ -277,7 +277,7 @@ Route::prefix('v1')->group(function () {
         */
 
         Route::apiResource('history-transactions', HistoryTransactionController::class)
-            ->only(['index', 'show', 'update', 'destroy']);
+            ->only(['index', 'show', 'update']);
 
         /*
         |--------------------------------------------------------------------------

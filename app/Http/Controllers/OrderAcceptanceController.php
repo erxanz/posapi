@@ -52,10 +52,8 @@ class OrderAcceptanceController extends Controller
                 ], 422);
             }
 
-            // ATAU jika metodenya bukan cash (online/QRIS) meskipun statusnya masih PENDING di sistem.
             if ($order->status !== Order::STATUS_PAID && $order->payment_method !== 'cash') {
-                // Kita izinkan masuk jika dia non-cash dan statusnya pending
-                if ($order->status !== 'pending') { 
+                if ($order->status !== Order::STATUS_PENDING) {
                     return response()->json(['message' => 'Order tidak valid untuk diterima.'], 422);
                 }
             } elseif ($order->status !== Order::STATUS_PAID && $order->payment_method === 'cash') {
@@ -64,19 +62,14 @@ class OrderAcceptanceController extends Controller
             }
 
             // Pastikan history_transactions ikut tercatat saat tombol accept/terima
-            $this->orderService->syncHistoryTransaction($order->fresh());
-
-            $history = \App\Models\HistoryTransaction::where('order_id', $order->id)->first();
-            if ($history && is_null($history->cashier_id)) {
-                $history->update([
-                    'cashier_id' => $user->id // Mengisi ID Kasir yang nge-accept pesanan posqr ini
-                ]);
-            }
+            // Mengirim overrideCashierId agar langsung terisi tanpa query terpisah
+            $this->orderService->syncHistoryTransaction($order->fresh(), $user->id);
 
             /** @var OrderAcceptance $acceptance */
             $acceptance = OrderAcceptance::query()
                 ->where('order_id', $order->id)
                 ->where('scope', $scope)
+                ->lockForUpdate()
                 ->first();
 
             if (!$acceptance) {
@@ -95,15 +88,14 @@ class OrderAcceptanceController extends Controller
                 ]);
             }
 
-            // Reload order dengan relasi yang dibutuhkan printer Flutter
-            $broadcastOrder = $order->fresh()->load('items.product', 'table', 'payment', 'latestAcceptance');
+            // OrderAccepted event akan memuat relasi yang diperlukan via loadMissing
+            $order->refresh();
 
-            // Trigger event agar mobile langsung print saat tombol acc/terima ditekan
-            event(new OrderAccepted($broadcastOrder, $scope, $user->id));
+            event(new OrderAccepted($order, $scope, $user->id));
 
             return response()->json([
                 'message' => 'Order accepted',
-                'order' => $broadcastOrder,
+                'order' => $order->load('items.product', 'table', 'payment', 'latestAcceptance'),
                 'acceptance' => [
                     'order_id' => $acceptance->order_id,
                     'scope' => $acceptance->scope,

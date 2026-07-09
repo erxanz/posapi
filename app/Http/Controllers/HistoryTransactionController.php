@@ -100,13 +100,6 @@ class HistoryTransactionController extends Controller
         return response()->json($paginator);
     }
 
-    public function store(Request $request): JsonResponse
-    {
-        return response()->json([
-            'message' => 'History transaction dibuat otomatis saat order lunas',
-        ], 405);
-    }
-
     public function show(HistoryTransaction $historyTransaction): JsonResponse
     {
         $forbiddenResponse = $this->authorizeHistoryTransactionAccess($historyTransaction);

@@ -316,9 +316,9 @@ class OrderService
         }
     }
 
-    public function syncHistoryTransaction(Order $order): void
+    public function syncHistoryTransaction(Order $order, ?int $overrideCashierId = null): void
     {
-        $this->storeHistoryTransaction($order);
+        $this->storeHistoryTransaction($order, $overrideCashierId);
     }
 
     private function createOrderItems(Order $order, array $items, Outlet $outlet, bool $checkStock = true): void
@@ -679,7 +679,7 @@ class OrderService
         ]);
     }
 
-    private function storeHistoryTransaction(Order $order): void
+    private function storeHistoryTransaction(Order $order, ?int $overrideCashierId = null): void
     {
         $order->load(['payments', 'items.product']);
         $lastPayment = $order->payments->sortByDesc('id')->first();
@@ -721,7 +721,7 @@ class OrderService
                 'change_amount' => $changeAmount,
                 'payment_method' => $paymentMethod,
                 'paid_at' => $lastPayment?->paid_at ?? $order->updated_at ?? now(),
-                'cashier_id' => $lastPayment?->paid_by ?? $order->user_id,
+                'cashier_id' => $overrideCashierId ?? $lastPayment?->paid_by ?? $order->user_id,
                 'status' => Order::STATUS_PAID,
                 'metadata' => [
                     'payments_count' => $order->payments->count(),

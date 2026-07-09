@@ -1301,7 +1301,14 @@ class OrderController extends Controller
     private function authorizeOutletAccess(Order $order): void
     {
         $user = auth()->user();
-        if ($user->role !== 'developer' && $user->outlet_id !== $order->outlet_id) {
+        if ($user->role === 'developer') return;
+        if ($user->role === 'manager') {
+            if (!\App\Models\Outlet::where('id', $order->outlet_id)->where('owner_id', $user->id)->exists()) {
+                abort(403);
+            }
+            return;
+        }
+        if ((int) $user->outlet_id !== (int) $order->outlet_id) {
             abort(403);
         }
     }
