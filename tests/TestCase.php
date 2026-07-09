@@ -11,8 +11,6 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
-        // Pastikan driver broadcast dan session di-set untuk testing
-        // karena phpunit.xml env vars tidak selalu terbaca di environment ini.
         Config::set('broadcasting.default', 'null');
         Config::set('session.driver', 'array');
     }

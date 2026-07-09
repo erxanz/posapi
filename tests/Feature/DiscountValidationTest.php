@@ -13,8 +13,7 @@ use App\Models\Category;
 use App\Models\Discount;
 use App\Models\Tax;
 use App\Models\Table;
-use App\Services\OrderService;
-use Carbon\Carbon;
+use App\Services\OrderService;use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class DiscountValidationTest extends TestCase
