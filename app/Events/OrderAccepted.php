@@ -35,7 +35,7 @@ class OrderAccepted implements ShouldBroadcastNow
 
     public function broadcastAs(): string
     {
-        return 'OrderAccepted';
+        return 'order.accepted';
     }
 
     public function broadcastWith(): array

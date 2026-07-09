@@ -225,6 +225,8 @@ class OrderController extends Controller
 
             DB::commit();
 
+            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
+
             return response()->json($order->load('items.product'), 200);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -304,6 +306,9 @@ class OrderController extends Controller
             $order->recalculateTotals();
 
             DB::commit();
+
+            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
+
             return response()->json($order->load('items.product'), 200);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -383,6 +388,8 @@ class OrderController extends Controller
 
             DB::commit();
 
+            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
+
             return response()->json([
                 'message' => 'Item cancelled',
                 'order' => $order->fresh()->load('items.product', 'table'),
@@ -458,7 +465,7 @@ class OrderController extends Controller
                 $oldOrder->decrementDiscountUsage();
                 $oldOrder->update(['status' => 'cancelled']);
 
-                broadcast(new \App\Events\OrderUpdated($oldOrder))->toOthers();
+                event(new \App\Events\OrderUpdated($oldOrder));
             }
         }
 
@@ -518,6 +525,7 @@ class OrderController extends Controller
                     }
 
                     $order->update(['status' => Order::STATUS_CANCELLED]);
+                    event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
                     return response()->json([
                         'message' => 'Outlet ini belum mengaktifkan pembayaran online. Silakan hubungi pengelola outlet atau gunakan metode pembayaran cash.'
                     ], 422);
@@ -760,6 +768,7 @@ class OrderController extends Controller
                     }
 
                     $order->update(['status' => Order::STATUS_CANCELLED]);
+                    event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
                     return response()->json([
                         'message' => 'Outlet ini belum mengaktifkan pembayaran online. Silakan hubungi pengelola outlet atau gunakan metode pembayaran cash.'
                     ], 422);
@@ -1008,6 +1017,8 @@ class OrderController extends Controller
         $order->update($validated);
         $order->recalculateTotals($validated);
 
+        event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
+
         return response()->json([
             'message' => 'Adjustments updated',
             'order' => $order->fresh()->load('items.product', 'table'),
@@ -1176,6 +1187,8 @@ class OrderController extends Controller
 
             DB::commit();
 
+            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table', 'user')));
+
             return response()->json([
                 // Kembalikan custom warning jika ada, jika aman tampilkan default message
                 'message' => $warningMessage ?? 'Void processed',
@@ -1265,6 +1278,8 @@ class OrderController extends Controller
             $order->refresh();
             $this->recalculateOrderTotals($order);
             DB::commit();
+
+            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
 
             return response()->json([
                 'message' => 'Order items updated',
@@ -1495,6 +1510,8 @@ class OrderController extends Controller
                         }
                     }
                 }
+
+                event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
             }
 
             DB::commit();

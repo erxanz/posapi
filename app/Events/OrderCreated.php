@@ -49,17 +49,38 @@ class OrderCreated implements ShouldBroadcastNow
      */
     public function broadcastWith(): array
     {
+        $order = $this->order->loadMissing(['items.product', 'table', 'discount']);
+
         return [
             'order' => [
                 'id'            => $this->order->id,
                 'invoice_number' => $this->order->invoice_number,
                 'customer_name' => $this->order->customer_name,
-                'total_price'   => $this->order->total_price,
-                'status'        => $this->order->status,
-                'payment_method' => $this->order->payment_method,
-                'created_at'    => $this->order->created_at,
-
-            ]
+                'table_id'      => $this->order->table_id,
+                'table'         => $order->table ? [
+                    'id'     => $order->table->id,
+                    'name'   => $order->table->name ?? null,
+                    'number' => $order->table->number ?? null,
+                ] : null,
+                'subtotal_price'  => $this->order->subtotal_price,
+                'discount_amount' => $this->order->discount_amount,
+                'tax_amount'      => $this->order->tax_amount,
+                'total_price'     => $this->order->total_price,
+                'status'          => $this->order->status,
+                'payment_method'  => $this->order->payment_method,
+                'created_at'      => $this->order->created_at,
+                'items' => $order->items->map(function ($item) {
+                    return [
+                        'id'           => $item->id,
+                        'product_id'   => $item->product_id,
+                        'product_name' => $item->product?->name,
+                        'qty'          => (int) $item->qty,
+                        'price'        => (int) $item->price,
+                        'total_price'  => (int) $item->total_price,
+                        'notes'        => $item->notes,
+                    ];
+                })->values(),
+            ],
         ];
     }
 }

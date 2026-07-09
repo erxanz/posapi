@@ -77,10 +77,9 @@ class OrderService
 
             DB::commit();
 
-            $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
-            if (is_null($order->user_id) && $order->payment_method !== 'qris') {
-                broadcast(new OrderCreated($broadcastOrder))->toOthers();
-            }
+            $broadcastOrder = $order->fresh()->load('items.product', 'table', 'payments', 'discount');
+            event(new OrderCreated($broadcastOrder));
+            event(new \App\Events\PaymentPaid($broadcastOrder));
 
             return [
                 'success' => true,
@@ -151,9 +150,7 @@ class OrderService
             DB::commit();
 
             $broadcastOrder = $order->fresh()->load('items.product', 'table', 'discount');
-            if (is_null($order->user_id) && $order->payment_method !== 'qris') {
-              broadcast(new OrderCreated($broadcastOrder))->toOthers();
-            }
+            event(new OrderCreated($broadcastOrder));
             return [
                 'success' => true,
                 'message' => 'Order dibuat, silakan lanjut ke pembayaran Midtrans',
@@ -224,9 +221,7 @@ class OrderService
             DB::commit();
 
             $broadcastOrder = $order->fresh()->load('items.product', 'table');
-            if ($order->payment_method !== 'qris') {
-              broadcast(new OrderCreated($broadcastOrder))->toOthers();
-            }
+            event(new OrderCreated($broadcastOrder));
 
             return [
                 'message' => 'Public order berhasil',
@@ -299,9 +294,9 @@ class OrderService
             DB::commit();
 
             if ($isFullyPaid) {
-                $broadcastOrder = $order->fresh()->load('items.product', 'table');
+                $broadcastOrder = $order->fresh()->load('items.product', 'table', 'payments');
                 event(new \App\Events\PaymentPaid($broadcastOrder));
-                broadcast(new OrderUpdated($broadcastOrder))->toOthers();
+                event(new OrderUpdated($broadcastOrder));
             }
 
             return [

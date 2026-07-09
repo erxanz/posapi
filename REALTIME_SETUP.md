@@ -45,13 +45,6 @@ Terminal 2 - Start Laravel + Vite:
 npm run dev
 ```
 
-Terminal 3 - Test broadcast (optional):
-```bash
-php artisan tinker
->>> broadcast(new App\Events\TestRealtime('Hello realtime!'));
->>> exit
-```
-
 ### **2. Browser Test**
 
 1. Buka: `http://localhost:8000`
@@ -66,10 +59,19 @@ php artisan tinker
    ```
 5. Listen ke events:
    ```javascript
-   window.onRealtimeEvent('order-created', (data) => {
-     console.log('🎉 Order Created:', data)
-   })
-   ```
+    window.onRealtimeEvent('order.created', (data) => {
+      console.log('🎉 Order Created:', data)
+    })
+    window.onRealtimeEvent('order.updated', (data) => {
+      console.log('📝 Order Updated:', data)
+    })
+    window.onRealtimeEvent('order.paid', (data) => {
+      console.log('💰 Order Paid:', data)
+    })
+    window.onRealtimeEvent('order.accepted', (data) => {
+      console.log('✅ Order Accepted:', data)
+    })
+    ```
 6. Trigger event (dari tinker / endpoint):
    ```bash
    curl http://localhost/test-realtime
@@ -142,16 +144,18 @@ curl -i https://posapi.tunnel.example.com
 ## 📝 Backend Event Broadcasting
 
 Events sudah tersedia di:
-- `app/Events/OrderCreated.php` → broadcasts ke `orders.outlet.{outletId}`
-- `app/Events/OrderUpdated.php` → broadcasts ke `orders.outlet.{outletId}`
-- `app/Events/OrderAccepted.php` → broadcasts ke `orders.outlet.{outletId}`
-- `app/Events/PaymentPaid.php` → broadcasts ke `orders.outlet.{outletId}`
+- `app/Events/OrderCreated.php` → broadcasts ke `orders.outlet.{outletId}` + `customer-order.{orderId}`
+- `app/Events/OrderUpdated.php` → broadcasts ke `orders.outlet.{outletId}` + `customer-order.{orderId}`
+- `app/Events/OrderAccepted.php` → broadcasts ke `orders.outlet.{outletId}` + `customer-order.{orderId}`
+- `app/Events/PaymentPaid.php` → broadcasts ke `orders.outlet.{outletId}` + `customer-order.{orderId}`
 
 Trigger manual:
 ```php
 // routes/web.php atau controller
-broadcast(new OrderCreated($order))->toOthers();
+event(new OrderCreated($order));
+event(new OrderUpdated($order));
 event(new PaymentPaid($order));
+event(new OrderAccepted($order));
 ```
 
 ---
