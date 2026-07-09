@@ -270,6 +270,13 @@ class Order extends Model
                     }
                 }
 
+                // Validasi batas pemakaian (max_usage)
+                if ($discount) {
+                    if ($discount->max_usage > 0 && $discount->used_count >= $discount->max_usage) {
+                        $discount = null;
+                    }
+                }
+
             }
         }
 
