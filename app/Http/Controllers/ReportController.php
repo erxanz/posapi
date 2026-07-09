@@ -17,6 +17,9 @@ class ReportController extends Controller
 {
     /**
      * Get database-agnostic SQL expression for DATE(timestamp).
+     *
+     * - MySQL / MariaDB / SQLite: DATE(column)
+     * - PostgreSQL: column::date
      */
     private function dateExpr(string $column): string
     {
@@ -26,11 +29,16 @@ class ReportController extends Controller
             return "{$column}::date";
         }
 
+        // MySQL, MariaDB, and SQLite all support DATE(column)
         return "DATE({$column})";
     }
 
     /**
      * Get database-agnostic SQL expression for HOUR(timestamp).
+     *
+     * - MySQL / MariaDB: HOUR(column)
+     * - PostgreSQL: EXTRACT(HOUR FROM column)
+     * - SQLite: CAST(strftime('%H', column) AS INTEGER)
      */
     private function hourExpr(string $column): string
     {
@@ -40,6 +48,11 @@ class ReportController extends Controller
             return "EXTRACT(HOUR FROM {$column})";
         }
 
+        if ($driver === 'sqlite') {
+            return "CAST(strftime('%H', {$column}) AS INTEGER)";
+        }
+
+        // MySQL / MariaDB
         return "HOUR({$column})";
     }
 
