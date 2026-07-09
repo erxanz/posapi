@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use App\Http\Requests\CancelOrderItemRequest;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use Midtrans\Config;
 use Midtrans\Snap;
 
@@ -646,7 +647,6 @@ class OrderController extends Controller
                 }
 
                 if (in_array($methodStr, ['card', 'credit_card', 'midtrans'])) {
-                    // sisanya pakai Snap seperti sebelumnya (card butuh Snap/Midtrans.js karena perlu card token)
                     if ($methodStr === 'card' || $methodStr === 'credit_card') {
                         $params['enabled_payments'] = ['credit_card'];
                     }
@@ -663,13 +663,8 @@ class OrderController extends Controller
                 }
 
                 return response()->json([
-                    'success' => true,
-                    'message' => 'Order berhasil dibuat',
-                    'data' => [
-                        'order' => $order->load('items.product', 'table'),
-                        'redirect_url' => $paymentUrl
-                    ]
-                ], 201);
+                    'message' => 'Metode pembayaran tidak dikenali'
+                ], 400);
             }
 
             $tableId = $order->table_id ?? null;
@@ -912,13 +907,8 @@ class OrderController extends Controller
                 }
 
                 return response()->json([
-                    'success' => true,
-                    'message' => 'Order berhasil dibuat',
-                    'data' => [
-                        'order' => $order->load('items.product', 'table'),
-                        'redirect_url' => $paymentUrl
-                    ]
-                ], 201);
+                    'message' => 'Metode pembayaran tidak dikenali'
+                ], 400);
             }
 
             // CASH FLOW
@@ -1457,6 +1447,24 @@ class OrderController extends Controller
                 }
 
                 $order->save();
+
+                $midtransPaymentType = $request->payment_type ?? 'qris';
+                if (in_array(strtolower($midtransPaymentType), ['credit_card', 'card'])) {
+                    $paymentMethod = 'card';
+                } else {
+                    $paymentMethod = 'qris';
+                }
+
+                Payment::create([
+                    'order_id' => $order->id,
+                    'amount_paid' => (int) $request->gross_amount,
+                    'change_amount' => 0,
+                    'method' => $paymentMethod,
+                    'reference_no' => $request->transaction_id ?? ('MIDTRANS-' . $order->invoice_number),
+                    'paid_at' => now(),
+                    'paid_by' => $order->user_id,
+                ]);
+
                 $this->orderService->syncHistoryTransaction($order->fresh());
 
                 $broadcastOrder = $order->fresh()->load(['items.product', 'table', 'payments', 'discount']);
@@ -1466,6 +1474,10 @@ class OrderController extends Controller
             } elseif (in_array($request->transaction_status, ['cancel', 'deny', 'expire'], true)) {
                 $order->decrementDiscountUsage();
                 $order->update(['status' => Order::STATUS_CANCELLED]);
+
+                if ($order->table_id) {
+                    $order->table->update(['status' => 'available', 'reserved_until' => null]);
+                }
 
                 $outlet = \App\Models\Outlet::find($order->outlet_id);
                 if ($outlet) {
