@@ -35,7 +35,9 @@ class TableControllerTest extends TestCase
     #[Test]
     public function manager_can_list_tables()
     {
-        Table::factory()->count(3)->create(['outlet_id' => $this->outlet->id]);
+        foreach (['Meja 1', 'Meja 2', 'Meja 3'] as $name) {
+            Table::factory()->create(['outlet_id' => $this->outlet->id, 'name' => $name]);
+        }
 
         $this->actingAs($this->owner);
         $response = $this->getJson('/api/v1/tables');

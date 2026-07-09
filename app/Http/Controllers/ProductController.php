@@ -20,7 +20,7 @@ class ProductController extends Controller
     public function publicMenu($token)
     {
         $table = Table::query()
-            ->select(['id', 'name', 'outlet_id', 'is_active'])
+            ->select(['id', 'name', 'outlet_id', 'is_active', 'status', 'reserved_until'])
             ->where('qr_token', $token)
             ->where('is_active', true)
             ->first();
