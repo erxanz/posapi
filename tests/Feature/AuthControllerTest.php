@@ -5,12 +5,9 @@ namespace Tests\Feature;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\Outlet;
-use App\Models\Shift;
-use App\Models\Schedule;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use PHPUnit\Framework\Attributes\Test;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -301,9 +298,6 @@ class AuthControllerTest extends TestCase
     #[Test]
     public function forgot_password_sends_email_for_valid_user()
     {
-        Mail::fake();
-        Event::fake([\App\Events\OrderCreated::class]); // fake events irrelevant
-
         $user = User::factory()->create([
             'email' => 'manager@example.com',
             'role' => 'manager',
@@ -316,8 +310,10 @@ class AuthControllerTest extends TestCase
         $response->assertStatus(200)
             ->assertJsonPath('message', 'Link reset password sudah dikirim ke email');
 
-        // Mail::html() membuat anonymous mailable; assertSent dengan class generik
-        $this->assertTrue(true, 'Email telah dikirim (verified via Mail::fake)');
+        // Pastikan token reset password tersimpan di database
+        $this->assertDatabaseHas('password_reset_tokens', [
+            'email' => 'manager@example.com',
+        ]);
     }
 
     #[Test]

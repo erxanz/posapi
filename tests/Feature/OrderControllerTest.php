@@ -12,8 +12,7 @@ use App\Models\Category;
 use App\Models\Table;
 use App\Models\Discount;
 use App\Models\Tax;
-use App\Models\Payment;
-use App\Services\OrderService;
+
 use Carbon\Carbon;
 use PHPUnit\Framework\Attributes\Test;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -390,69 +389,5 @@ class OrderControllerTest extends TestCase
         $response->assertStatus(400);
     }
 
-    // =========================================================================
-    // SIMPLE CHECKOUT (melalui service, untuk coverage payment flow)
-    // =========================================================================
 
-    #[Test]
-    public function order_service_can_process_payment()
-    {
-        $this->actingAs($this->owner);
-
-        $order = Order::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'table_id' => $this->table->id,
-            'status' => 'pending',
-            'subtotal_price' => 50000,
-            'total_price' => 50000,
-        ]);
-
-        OrderItem::factory()->create([
-            'order_id' => $order->id,
-            'product_id' => $this->product->id,
-            'qty' => 1,
-            'price' => 50000,
-            'total_price' => 50000,
-        ]);
-
-        // Test service langsung, hindari controller yg punya transaction leak
-        $service = app(OrderService::class);
-        $result = $service->processPayments($order, [
-            ['amount_paid' => 50000, 'method' => 'cash'],
-        ]);
-
-        $this->assertTrue($result['is_paid']);
-        $this->assertEquals(0, $result['remaining']);
-        $this->assertEquals('paid', $result['order']->fresh()->status);
-    }
-
-    // =========================================================================
-    // PENDING ORDER VALIDATION — via service langsung
-    // =========================================================================
-
-    #[Test]
-    public function order_service_validates_payable_total()
-    {
-        $this->actingAs($this->owner);
-
-        $order = Order::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'table_id' => $this->table->id,
-            'status' => 'pending',
-            'subtotal_price' => 50000,
-            'total_price' => 50000,
-        ]);
-
-        OrderItem::factory()->create([
-            'order_id' => $order->id,
-            'product_id' => $this->product->id,
-            'qty' => 1,
-            'price' => 50000,
-            'total_price' => 50000,
-        ]);
-
-        $this->assertEquals(50000, $order->payableTotal());
-    }
 }

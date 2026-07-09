@@ -343,6 +343,7 @@ class OrderController extends Controller
             $remaining = max(0, $locked->qty - $locked->cancelled_qty);
 
             if ($cancelQty > $remaining) {
+                DB::rollBack();
                 return response()->json(['message' => 'cancel_qty exceeds remaining quantity'], 400);
             }
 

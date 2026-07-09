@@ -12,7 +12,6 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\Table;
 use App\Models\HistoryTransaction;
-use App\Models\Payment;
 use App\Services\OrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
