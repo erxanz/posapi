@@ -226,14 +226,25 @@ class Order extends Model
         if ($discountId) {
             $discount = \App\Models\Discount::find($discountId);
 
-            // Pastikan diskon ini memang milik owner outlet order ini -
-            // mencegah discount_id milik tenant lain diterapkan lewat
-            // SALAH SATU dari 9 titik yang memanggil recalculateTotals().
-            // Validasi ini sengaja diletakkan di level model (bukan hanya
-            // di OrderService) supaya berlaku ke semua jalur pemanggilan.
             if ($discount) {
+                // Pastikan diskon ini memang milik owner outlet order ini -
+                // mencegah discount_id milik tenant lain diterapkan lewat
+                // SALAH SATU dari 9 titik yang memanggil recalculateTotals().
                 $orderOwnerId = \App\Models\Outlet::query()->whereKey($this->outlet_id)->value('owner_id');
                 if (!$orderOwnerId || (int) $discount->owner_id !== (int) $orderOwnerId) {
+                    $discount = null;
+                }
+
+                // Validasi periode aktif diskon (start_date / end_date)
+                if ($discount) {
+                    $today = now()->format('Y-m-d');
+                    if ($discount->start_date > $today || $discount->end_date < $today) {
+                        $discount = null;
+                    }
+                }
+
+                // Validasi max_usage (batas pemakaian)
+                if ($discount && $discount->max_usage > 0 && $discount->used_count >= $discount->max_usage) {
                     $discount = null;
                 }
             }
@@ -405,14 +416,28 @@ class Order extends Model
 
         /*
         |--------------------------------------------------------------------------
-        | 7. Hasil Akhir (Grand Total)
+        | 7. Increment used_count hanya SAAT PERTAMA KALI diskon diterapkan
+        |    (bukan setiap kali recalculateTotals dipanggil — method ini bisa
+        |     dipanggil 10+ kali untuk order yang sama via addItem, removeItem,
+        |     voidItems, cancelItem, updateItems, dll. Tanpa guard !$this->
+        |     discount_amount, used_count akan ke-increment berulang kali dan
+        |     max_usage cepat habis untuk satu order saja).
+        |--------------------------------------------------------------------------
+        */
+        if ($discount && $discountAmount > 0 && !$this->discount_amount) {
+            $discount->increment('used_count');
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | 8. Hasil Akhir (Grand Total)
         |--------------------------------------------------------------------------
         */
         $grandTotal = max(0, $afterDiscount + $taxAmount);
 
         /*
         |--------------------------------------------------------------------------
-        | 8. Eksekusi Update Tunggal Database
+        | 9. Eksekusi Update Tunggal Database
         |--------------------------------------------------------------------------
         */
         $updates = [

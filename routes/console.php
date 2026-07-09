@@ -50,10 +50,12 @@ Artisan::command('app:daily-routine', function () {
 
         /*
         |--------------------------------------------------------------------------
-        | 2. Hapus Promo Expired
+        | 2. Nonaktifkan Promo Expired (jangan hapus — data historis tetap ada)
         |--------------------------------------------------------------------------
         */
-        Discount::whereDate('end_date', '<', $today)->delete();
+        Discount::whereDate('end_date', '<', $today)
+            ->where('is_active', true)
+            ->update(['is_active' => false]);
 
         /*
         |--------------------------------------------------------------------------

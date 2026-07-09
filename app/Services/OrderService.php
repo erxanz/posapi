@@ -427,6 +427,22 @@ class OrderService
                 throw new \Exception("Diskon dengan ID {$discountId} tidak ditemukan di database.");
             }
 
+            // Validasi diskon masih aktif
+            if (!$discount->is_active) {
+                throw new \Exception("Diskon {$discount->name} sudah tidak aktif.");
+            }
+
+            // Validasi periode aktif diskon
+            $today = now()->format('Y-m-d');
+            if ($discount->start_date > $today || $discount->end_date < $today) {
+                throw new \Exception("Diskon {$discount->name} tidak sedang dalam periode aktif.");
+            }
+
+            // Validasi max_usage (batas pemakaian)
+            if ($discount->max_usage > 0 && $discount->used_count >= $discount->max_usage) {
+                throw new \Exception("Diskon {$discount->name} sudah mencapai batas pemakaian.");
+            }
+
             // Pastikan diskon ini memang milik owner outlet tempat order dibuat.
             // Tanpa ini, discount_id milik tenant lain bisa diterapkan ke order
             // (defense kedua setelah filter di endpoint publik /public/discounts).
@@ -539,12 +555,20 @@ class OrderService
      */
     private function computeStackedDiscount(Order $order, array $discountIds, int $subtotal, $ownerId): int
     {
-        $discounts = Discount::whereIn('id', $discountIds)->get()
+        $today = now()->format('Y-m-d');
+
+        $discounts = Discount::whereIn('id', $discountIds)
+            ->where('is_active', true)
+            ->get()
             ->filter(fn($d) => $ownerId && (int) $d->owner_id === (int) $ownerId)
             ->filter(function ($d) use ($subtotal) {
                 $min = (int) ($d->min_purchase ?? 0);
                 return $min === 0 || $subtotal >= $min;
             })
+            // Filter hanya diskon yang sedang dalam periode aktif
+            ->filter(fn($d) => $d->start_date <= $today && $d->end_date >= $today)
+            // Filter hanya diskon yang belum habis kuota pemakaian
+            ->filter(fn($d) => $d->max_usage <= 0 || $d->used_count < $d->max_usage)
             ->filter(fn($d) => in_array(strtolower(trim($d->scope ?? '')), ['products', 'categories']))
             ->values();
 

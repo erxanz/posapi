@@ -19,6 +19,8 @@ class Discount extends Model
         'value',
         'max_discount',
         'min_purchase',
+        'max_usage',
+        'used_count',
         'start_date',
         'end_date',
         'is_active'
@@ -29,6 +31,8 @@ class Discount extends Model
         'value' => 'integer',
         'min_purchase' => 'integer',
         'max_discount' => 'integer',
+        'max_usage' => 'integer',
+        'used_count' => 'integer',
         'product_ids' => 'array',
         'category_ids' => 'array',
     ];

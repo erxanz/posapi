@@ -66,13 +66,21 @@ class Product extends Model
     private function _getMatchingDiscount(): ?Discount
     {
         if ($this->_discountCache === null) {
+            $today = now()->format('Y-m-d');
+
             $this->_discountCache = Discount::where('is_active', true)
                 ->where('owner_id', $this->owner_id)
-                ->whereIn('scope', ['products', 'categories'])
+                ->whereDate('start_date', '<=', $today)
+                ->whereDate('end_date', '>=', $today)
+                ->whereIn('scope', ['global', 'products', 'categories'])
                 ->get();
         }
 
         foreach ($this->_discountCache as $discount) {
+            if ($discount->scope === 'global') {
+                return $discount;
+            }
+
             if ($discount->scope === 'products') {
                 $productIds = is_string($discount->product_ids)
                     ? json_decode($discount->product_ids, true)
