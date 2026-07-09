@@ -15,6 +15,34 @@ use App\Exports\ReportExport;
 
 class ReportController extends Controller
 {
+    /**
+     * Get database-agnostic SQL expression for DATE(timestamp).
+     */
+    private function dateExpr(string $column): string
+    {
+        $driver = DB::connection()->getDriverName();
+
+        if ($driver === 'pgsql') {
+            return "{$column}::date";
+        }
+
+        return "DATE({$column})";
+    }
+
+    /**
+     * Get database-agnostic SQL expression for HOUR(timestamp).
+     */
+    private function hourExpr(string $column): string
+    {
+        $driver = DB::connection()->getDriverName();
+
+        if ($driver === 'pgsql') {
+            return "EXTRACT(HOUR FROM {$column})";
+        }
+
+        return "HOUR({$column})";
+    }
+
     public function index(Request $request): JsonResponse
     {
         $user = auth()->user();
@@ -83,17 +111,16 @@ class ReportController extends Controller
             ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
             ->sum('order_items.qty');
 
+        $dateExprGross = $this->dateExpr('history_transactions.paid_at');
+
         // Data Gross (Kotor) dari harga per item
         $grossData = DB::table('order_items')
             ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
             ->where('history_transactions.status', 'paid')
             ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
             ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
-            ->selectRaw('
-                DATE(history_transactions.paid_at) as date_val,
-                SUM(order_items.total_price) as gross
-            ')
-            ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
+            ->selectRaw($dateExprGross . ' as date_val, SUM(order_items.total_price) as gross')
+            ->groupBy(DB::raw($dateExprGross))
             ->get()
             ->mapWithKeys(function ($item) {
                 return [Carbon::parse($item->date_val)->format('Y-m-d') => $item->gross];
@@ -101,15 +128,17 @@ class ReportController extends Controller
 
         // --- B. REVENUE CHART & SALES REPORT ---
         // PERBAIKAN: SUM langsung diskon dan pajak per tanggal
+        $dateExprSales = $this->dateExpr('history_transactions.paid_at');
+
         $salesDaily = (clone $trxQuery)
-            ->selectRaw('
-                DATE(history_transactions.paid_at) as date_val,
+            ->selectRaw(
+                $dateExprSales . ' as date_val,
                 COUNT(history_transactions.id) as transactions,
                 SUM(history_transactions.total_price) as net,
                 SUM(history_transactions.discount_amount) as discount,
-                SUM(history_transactions.tax_amount) as tax
-            ')
-            ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
+                SUM(history_transactions.tax_amount) as tax'
+            )
+            ->groupBy(DB::raw($dateExprSales))
             ->orderByDesc('date_val')
             ->get();
 
@@ -226,13 +255,15 @@ class ReportController extends Controller
             ]);
 
         // --- G. HOURLY SALES ---
+        $hourExpr = $this->hourExpr('history_transactions.paid_at');
+
         $hourlySales = (clone $trxQuery)
-            ->selectRaw('
-                HOUR(history_transactions.paid_at) as hour,
+            ->selectRaw(
+                $hourExpr . ' as hour,
                 COUNT(history_transactions.id) as transactions,
-                SUM(history_transactions.total_price) as revenue
-            ')
-            ->groupBy(DB::raw('HOUR(history_transactions.paid_at)'))
+                SUM(history_transactions.total_price) as revenue'
+            )
+            ->groupBy(DB::raw($hourExpr))
             ->orderBy('hour')
             ->get()
             ->map(fn($item) => [
@@ -313,11 +344,11 @@ class ReportController extends Controller
         // --- K. CUSTOMER METRICS ---
         $customerMetrics = (clone $trxQuery)
             ->leftJoin('orders', 'history_transactions.order_id', '=', 'orders.id')
-            ->selectRaw('
-                COUNT(DISTINCT NULLIF(TRIM(orders.customer_name), "")) as unique_customers,
+            ->selectRaw("
+                COUNT(DISTINCT NULLIF(TRIM(orders.customer_name), '')) as unique_customers,
                 AVG(history_transactions.total_price) as avg_check,
-                SUM(CASE WHEN NULLIF(TRIM(orders.customer_name), "") IS NOT NULL THEN 1 ELSE 0 END) as named_customers
-            ')
+                SUM(CASE WHEN NULLIF(TRIM(orders.customer_name), '') IS NOT NULL THEN 1 ELSE 0 END) as named_customers
+            ")
             ->first();
 
         return response()->json([
@@ -398,18 +429,29 @@ class ReportController extends Controller
 
         // Ambil Data Sesuai Tab
         if ($reportType === 'summary' || $reportType === 'sales') {
+            $dateExprExport = $this->dateExpr('history_transactions.paid_at');
+
             $grossData = DB::table('order_items')
                 ->join('history_transactions', 'order_items.order_id', '=', 'history_transactions.order_id')
                 ->where('history_transactions.status', 'paid')
                 ->whereIn('history_transactions.outlet_id', $allowedOutletIds)
                 ->whereBetween('history_transactions.paid_at', [$startDate, $endDate])
-                ->selectRaw('DATE(history_transactions.paid_at) as date_val, SUM(order_items.total_price) as gross')
-                ->groupBy(DB::raw('DATE(history_transactions.paid_at)'))
+                ->selectRaw($dateExprExport . ' as date_val, SUM(order_items.total_price) as gross')
+                ->groupBy(DB::raw($dateExprExport))
                 ->get()->mapWithKeys(fn ($item) => [Carbon::parse($item->date_val)->format('Y-m-d') => $item->gross]);
 
+            $dateExprPaidAt = $this->dateExpr('paid_at');
+
             $salesDaily = (clone $trxQuery)
-                ->selectRaw('DATE(paid_at) as date_val, COUNT(id) as transactions, SUM(total_price) as net, SUM(discount_amount) as discount, SUM(tax_amount) as tax')
-                ->groupBy(DB::raw('DATE(paid_at)'))->orderBy('date_val')->get();
+                ->selectRaw(
+                    $dateExprPaidAt . ' as date_val,
+                    COUNT(id) as transactions,
+                    SUM(total_price) as net,
+                    SUM(discount_amount) as discount,
+                    SUM(tax_amount) as tax'
+                )
+                ->groupBy(DB::raw($dateExprPaidAt))
+                ->orderBy('date_val')->get();
 
             foreach ($salesDaily as $day) {
                 $dateKey = Carbon::parse($day->date_val)->format('Y-m-d');
