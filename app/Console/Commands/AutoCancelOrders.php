@@ -47,6 +47,9 @@ class AutoCancelOrders extends Command
         foreach ($expiredOrders as $order) {
             DB::beginTransaction();
             try {
+                // Kembalikan kuota pemakaian diskon
+                $order->decrementDiscountUsage();
+
                 $order->update(['status' => 'cancelled']);
 
                 if ($order->table_id) {

@@ -171,6 +171,23 @@ class Order extends Model
     | Helpers
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * Decrement used_count pada discount yang terpasang di order ini.
+     * Dipanggil saat order dibatalkan (cancel/expire) agar kuota pemakaian
+     * dikembalikan.
+     */
+    public function decrementDiscountUsage(): void
+    {
+        if (!$this->discount_id) {
+            return;
+        }
+
+        $discount = Discount::find($this->discount_id);
+        if ($discount && $discount->used_count > 0) {
+            $discount->decrement('used_count');
+        }
+    }
     public function isPaid(): bool
     {
         return $this->status === self::STATUS_PAID;
@@ -304,6 +321,10 @@ class Order extends Model
             }
         } elseif (array_key_exists('discount_amount', $overrides)) {
             $discountAmount = max(0, (int) $overrides['discount_amount']);
+        } elseif ($this->discount_id && !$discount) {
+            // Diskon ada di order tapi di-nullify oleh validasi (expired/max_usage habis) -
+            // jangan fallback ke old discount_amount dari DB.
+            $discountAmount = 0;
         } else {
             $discountAmount = (int) $this->discount_amount;
         }
@@ -412,20 +433,6 @@ class Order extends Model
                     $taxAmount = (int) round($afterDiscount * $rate);
                 }
             }
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | 7. Increment used_count hanya SAAT PERTAMA KALI diskon diterapkan
-        |    (bukan setiap kali recalculateTotals dipanggil — method ini bisa
-        |     dipanggil 10+ kali untuk order yang sama via addItem, removeItem,
-        |     voidItems, cancelItem, updateItems, dll. Tanpa guard !$this->
-        |     discount_amount, used_count akan ke-increment berulang kali dan
-        |     max_usage cepat habis untuk satu order saja).
-        |--------------------------------------------------------------------------
-        */
-        if ($discount && $discountAmount > 0 && !$this->discount_amount) {
-            $discount->increment('used_count');
         }
 
         /*

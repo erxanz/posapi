@@ -468,6 +468,7 @@ class OrderController extends Controller
                     }
                 }
 
+                $oldOrder->decrementDiscountUsage();
                 $oldOrder->update(['status' => 'cancelled']);
 
                 broadcast(new \App\Events\OrderUpdated($oldOrder))->toOthers();
@@ -1465,6 +1466,7 @@ class OrderController extends Controller
                 event(new \App\Events\PaymentPaid($broadcastOrder));
                 event(new \App\Events\OrderUpdated($broadcastOrder));
             } elseif (in_array($request->transaction_status, ['cancel', 'deny', 'expire'], true)) {
+                $order->decrementDiscountUsage();
                 $order->update(['status' => Order::STATUS_CANCELLED]);
 
                 $outlet = \App\Models\Outlet::find($order->outlet_id);

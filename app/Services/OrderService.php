@@ -416,6 +416,11 @@ class OrderService
         if (count($stackedDiscountIds) > 1) {
             $totalDiscountAmount = $this->computeStackedDiscount($order, $stackedDiscountIds, (int) $subtotal, $orderOwnerId);
 
+            // Increment used_count untuk semua diskon yang digunakan (stacked)
+            if ($totalDiscountAmount > 0) {
+                Discount::whereIn('id', $stackedDiscountIds)->increment('used_count');
+            }
+
             $updates['discount_id'] = null;
             $updates['manual_discount_type'] = null;
             $updates['manual_discount_value'] = 0;
@@ -476,6 +481,9 @@ class OrderService
                 // Untuk scope products/categories, nilai presisi akan dihitung tuntas di Order::recalculateTotals()
                 $totalDiscountAmount = 0;
             }
+
+            // Increment used_count untuk single discount path
+            $discount->increment('used_count');
 
             $updates['discount_id'] = $discount->id;
             $updates['manual_discount_type'] = null;
