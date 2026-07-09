@@ -398,6 +398,11 @@ class Order extends Model
                     'amount' => $ppnAmount
                 ]
             ];
+        } elseif ($this->tax_id && !$tax) {
+            // Pajak ada di order tapi di-nullify oleh validasi (active=false / cross-tenant) -
+            // jangan fallback ke old tax_amount dari DB, konsisten dengan pola diskon.
+            $taxAmount = 0;
+            $newTaxBreakdown = null;
         } elseif (array_key_exists('tax_amount', $overrides)) {
             $taxAmount = max(0, (int) $overrides['tax_amount']);
             if (array_key_exists('tax_breakdown', $overrides)) {
