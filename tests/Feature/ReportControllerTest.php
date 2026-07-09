@@ -12,6 +12,7 @@ use App\Models\HistoryTransaction;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\Table;
+use App\Models\Station;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -35,7 +36,7 @@ class ReportControllerTest extends TestCase
 
         $this->owner = User::factory()->create(['role' => 'manager']);
         $this->outlet = Outlet::factory()->create(['owner_id' => $this->owner->id]);
-        $this->category = Category::factory()->create(['owner_id' => $this->owner->id]);
+        $this->category = Category::factory()->create(['owner_id' => $this->owner->id, 'name' => 'Default Category']);
 
         $this->product1 = Product::factory()->create(['category_id' => $this->category->id, 'owner_id' => $this->owner->id, 'name' => 'Product A']);
         $this->product2 = Product::factory()->create(['category_id' => $this->category->id, 'owner_id' => $this->owner->id, 'name' => 'Product B']);
@@ -58,15 +59,17 @@ class ReportControllerTest extends TestCase
         ]);
     }
 
-    private function createPaidOrder(array $items, ?Carbon $paidAt = null, string $paymentMethod = 'cash'): void
+    private function createPaidOrder(array $items, ?Carbon $paidAt = null, string $paymentMethod = 'cash', ?int $cashierId = null, ?int $tableId = null): void
     {
         $paidAt ??= Carbon::now()->subDays(1);
+        $cashierId ??= $this->owner->id;
+        $tableId ??= $this->table->id;
 
         $invoiceNum = 'INV-' . now()->format('Ymd') . '-' . str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
 
         $order = Order::factory()->create([
             'outlet_id' => $this->outlet->id,
-            'table_id' => $this->table->id,
+            'table_id' => $tableId,
             'user_id' => $this->owner->id,
             'status' => 'paid',
             'invoice_number' => $invoiceNum,
@@ -78,13 +81,15 @@ class ReportControllerTest extends TestCase
         ]);
 
         foreach ($items as $itemData) {
-            OrderItem::factory()->create([
+            $orderItemData = [
                 'order_id' => $order->id,
                 'product_id' => $itemData['product_id'],
                 'qty' => $itemData['qty'],
                 'price' => $itemData['price'] ?? 25000,
                 'total_price' => ($itemData['price'] ?? 25000) * $itemData['qty'],
-            ]);
+                'station_id' => $itemData['station_id'] ?? null,
+            ];
+            OrderItem::factory()->create($orderItemData);
         }
 
         $payment = Payment::factory()->create([
@@ -93,7 +98,7 @@ class ReportControllerTest extends TestCase
             'change_amount' => 0,
             'method' => $paymentMethod,
             'paid_at' => $paidAt,
-            'paid_by' => $this->owner->id,
+            'paid_by' => $cashierId,
         ]);
 
         HistoryTransaction::factory()->create([
@@ -107,6 +112,7 @@ class ReportControllerTest extends TestCase
             'paid_amount' => $order->total_price,
             'payment_method' => $paymentMethod,
             'paid_at' => $paidAt,
+            'cashier_id' => $cashierId,
         ]);
     }
 
@@ -1047,5 +1053,755 @@ class ReportControllerTest extends TestCase
         $this->assertEquals(50000, $payMethods[0]['total']);
         $this->assertEquals(1, $payMethods[0]['count']);
         $this->assertEquals(100.0, $payMethods[0]['percentage']);
+    }
+
+    // =========================================================================
+    // HOURLY SALES (report index)
+    // =========================================================================
+
+    /**
+     * Hourly sales always returns 24 entries (hours 0-23).
+     */
+    public function test_hourly_sales_always_returns_24_hours(): void
+    {
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $hourlySales = $response->json('hourly_sales');
+
+        $this->assertCount(24, $hourlySales);
+        // Verify all hours 0-23 are present
+        $hours = collect($hourlySales)->pluck('hour')->toArray();
+        $this->assertEquals(range(0, 23), $hours);
+    }
+
+    /**
+     * Hourly sales has transactions and revenue at the specific hour.
+     */
+    public function test_hourly_sales_counts_transactions_at_correct_hour(): void
+    {
+        $baseDate = Carbon::now()->subDays(1);
+        $hour10 = (clone $baseDate)->setTime(10, 0, 0);
+
+        $this->createPaidOrder(
+            [['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]],
+            $hour10
+        );
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $hourlySales = $response->json('hourly_sales');
+
+        $hour10Data = collect($hourlySales)->firstWhere('hour', 10);
+        $this->assertNotNull($hour10Data);
+        $this->assertEquals(1, $hour10Data['transactions']);
+        $this->assertEquals(50000, $hour10Data['revenue']);
+    }
+
+    /**
+     * Multiple transactions at the same hour are aggregated.
+     */
+    public function test_hourly_sales_aggregates_multiple_orders_in_same_hour(): void
+    {
+        $baseDate = Carbon::now()->subDays(1);
+        $hour15 = (clone $baseDate)->setTime(15, 10, 0);
+        $hour15b = (clone $baseDate)->setTime(15, 45, 0);
+
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]], $hour15);
+        $this->createPaidOrder([['product_id' => $this->product2->id, 'qty' => 3, 'price' => 10000]], $hour15b);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $hourlySales = $response->json('hourly_sales');
+
+        $hour15Data = collect($hourlySales)->firstWhere('hour', 15);
+        $this->assertNotNull($hour15Data);
+        $this->assertEquals(2, $hour15Data['transactions']);
+        $this->assertEquals(80000, $hour15Data['revenue']);  // 50000 + 30000
+    }
+
+    /**
+     * Hours without any transactions show 0 transactions and 0 revenue.
+     */
+    public function test_hourly_sales_empty_hours_show_zero(): void
+    {
+        $baseDate = Carbon::now()->subDays(1);
+        $hour8 = (clone $baseDate)->setTime(8, 0, 0);
+
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1]], $hour8);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $hourlySales = $response->json('hourly_sales');
+
+        // Hour 7 should have no data
+        $hour7Data = collect($hourlySales)->firstWhere('hour', 7);
+        $this->assertEquals(0, $hour7Data['transactions']);
+        $this->assertEquals(0, $hour7Data['revenue']);
+
+        // Hour 8 should have data
+        $hour8Data = collect($hourlySales)->firstWhere('hour', 8);
+        $this->assertEquals(1, $hour8Data['transactions']);
+    }
+
+    /**
+     * Hourly sales response structure has correct keys.
+     */
+    public function test_hourly_sales_response_structure(): void
+    {
+        $baseDate = Carbon::now()->subDays(1);
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1]], $baseDate);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'hourly_sales' => [
+                '*' => [
+                    'hour',
+                    'transactions',
+                    'revenue',
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Hourly sales from different days but same hour are grouped together.
+     */
+    public function test_hourly_sales_groups_same_hour_across_days(): void
+    {
+        $today = Carbon::now();
+        $hour12_day1 = (clone $today)->subDays(2)->setTime(12, 0, 0);
+        $hour12_day2 = (clone $today)->subDays(1)->setTime(12, 30, 0);
+
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1, 'price' => 50000]], $hour12_day1);
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]], $hour12_day2);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $hourlySales = $response->json('hourly_sales');
+
+        $hour12Data = collect($hourlySales)->firstWhere('hour', 12);
+        $this->assertEquals(2, $hour12Data['transactions']);
+        $this->assertEquals(100000, $hour12Data['revenue']);  // 50000 + 50000
+    }
+
+    /**
+     * Hourly sales respects outlet isolation.
+     */
+    public function test_hourly_sales_respects_outlet_isolation(): void
+    {
+        $otherOwner = User::factory()->create(['role' => 'manager']);
+        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id]);
+
+        $paidAt = Carbon::now()->subDays(1)->setTime(14, 0, 0);
+        $order = Order::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 50000, 'total_price' => 50000,
+            'payment_method' => 'cash',
+            'created_at' => $paidAt, 'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $this->product1->id,
+            'qty' => 1, 'price' => 50000, 'total_price' => 50000,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 50000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $otherOwner->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 50000, 'total_price' => 50000, 'paid_amount' => 50000,
+            'payment_method' => 'cash', 'paid_at' => $paidAt,
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $hourlySales = $response->json('hourly_sales');
+
+        // All hours should be 0 since there's no data for this outlet
+        collect($hourlySales)->each(function ($hour) {
+            $this->assertEquals(0, $hour['transactions']);
+            $this->assertEquals(0, $hour['revenue']);
+        });
+    }
+
+    // =========================================================================
+    // CASHIER PERFORMANCE (report index)
+    // =========================================================================
+
+    /**
+     * Cashier performance groups by cashier and shows transactions, revenue, avg.
+     */
+    public function test_cashier_performance_returns_data_grouped_by_cashier(): void
+    {
+        $cashierA = User::factory()->create(['name' => 'Kasir A', 'role' => 'karyawan', 'outlet_id' => $this->outlet->id]);
+        $cashierB = User::factory()->create(['name' => 'Kasir B', 'role' => 'karyawan', 'outlet_id' => $this->outlet->id]);
+
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]], null, 'cash', $cashierA->id);
+        $this->createPaidOrder([['product_id' => $this->product2->id, 'qty' => 3, 'price' => 20000]], null, 'cash', $cashierB->id);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $cashierPerf = $response->json('cashier_performance');
+
+        $this->assertCount(2, $cashierPerf);
+
+        $kasirA = collect($cashierPerf)->firstWhere('name', 'Kasir A');
+        $this->assertNotNull($kasirA);
+        $this->assertEquals(1, $kasirA['transactions']);
+        $this->assertEquals(50000, $kasirA['revenue']);
+        $this->assertEquals(50000, $kasirA['avg_trx']);
+        $this->assertEquals($this->outlet->name, $kasirA['outlet_name']);
+
+        $kasirB = collect($cashierPerf)->firstWhere('name', 'Kasir B');
+        $this->assertNotNull($kasirB);
+        $this->assertEquals(1, $kasirB['transactions']);
+        $this->assertEquals(60000, $kasirB['revenue']);
+        $this->assertEquals(60000, $kasirB['avg_trx']);
+    }
+
+    /**
+     * Cashier performance is sorted by revenue descending.
+     */
+    public function test_cashier_performance_sorted_by_revenue_descending(): void
+    {
+        $cashierLow = User::factory()->create(['name' => 'Rendah', 'role' => 'karyawan', 'outlet_id' => $this->outlet->id]);
+        $cashierHigh = User::factory()->create(['name' => 'Tinggi', 'role' => 'karyawan', 'outlet_id' => $this->outlet->id]);
+
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1, 'price' => 5000]], null, 'cash', $cashierLow->id);
+        $this->createPaidOrder([['product_id' => $this->product2->id, 'qty' => 1, 'price' => 100000]], null, 'cash', $cashierHigh->id);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $cashierPerf = $response->json('cashier_performance');
+
+        $this->assertEquals('Tinggi', $cashierPerf[0]['name']);
+        $this->assertEquals('Rendah', $cashierPerf[1]['name']);
+    }
+
+    /**
+     * Cashier performance calculates avg_trx correctly for multiple transactions.
+     */
+    public function test_cashier_performance_avg_trx_is_calculated(): void
+    {
+        $cashier = User::factory()->create(['name' => 'Rajin', 'role' => 'karyawan', 'outlet_id' => $this->outlet->id]);
+
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1, 'price' => 10000]], null, 'cash', $cashier->id);
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1, 'price' => 20000]], null, 'cash', $cashier->id);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $cashierPerf = $response->json('cashier_performance');
+
+        $this->assertCount(1, $cashierPerf);
+        $this->assertEquals('Rajin', $cashierPerf[0]['name']);
+        $this->assertEquals(2, $cashierPerf[0]['transactions']);
+        $this->assertEquals(30000, $cashierPerf[0]['revenue']);
+        $this->assertEquals(15000, $cashierPerf[0]['avg_trx']);  // (10000 + 20000) / 2
+    }
+
+    /**
+     * Cashier performance returns empty array when no transactions.
+     */
+    public function test_cashier_performance_empty_when_no_transactions(): void
+    {
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $this->assertEquals([], $response->json('cashier_performance'));
+    }
+
+    /**
+     * Cashier performance response structure has correct keys.
+     */
+    public function test_cashier_performance_response_structure(): void
+    {
+        $cashier = User::factory()->create(['name' => 'Test Kasir', 'role' => 'karyawan', 'outlet_id' => $this->outlet->id]);
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1]], null, 'cash', $cashier->id);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'cashier_performance' => [
+                '*' => [
+                    'name',
+                    'outlet_name',
+                    'transactions',
+                    'revenue',
+                    'avg_trx',
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Cashier performance shows 'Kasir Terhapus' when cashier is deleted.
+     */
+    public function test_cashier_performance_shows_kasir_terhapus_when_cashier_deleted(): void
+    {
+        $cashier = User::factory()->create(['name' => 'Akan Dihapus', 'role' => 'karyawan', 'outlet_id' => $this->outlet->id]);
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1, 'price' => 25000]], null, 'cash', $cashier->id);
+
+        // Delete the cashier user but keep the history transaction
+        $cashier->delete();
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $cashierPerf = $response->json('cashier_performance');
+
+        $this->assertCount(1, $cashierPerf);
+        $this->assertEquals('Kasir Terhapus', $cashierPerf[0]['name']);
+        $this->assertEquals(25000, $cashierPerf[0]['revenue']);
+    }
+
+    /**
+     * Cashier performance respects outlet isolation.
+     */
+    public function test_cashier_performance_respects_outlet_isolation(): void
+    {
+        $otherOwner = User::factory()->create(['role' => 'manager']);
+        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
+        $otherCashier = User::factory()->create(['name' => 'Other Kasir', 'role' => 'karyawan', 'outlet_id' => $otherOutlet->id]);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id]);
+
+        $paidAt = Carbon::now()->subDays(1);
+        $order = Order::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 75000, 'total_price' => 75000,
+            'payment_method' => 'cash',
+            'created_at' => $paidAt, 'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $this->product1->id,
+            'qty' => 1, 'price' => 75000, 'total_price' => 75000,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 75000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $otherCashier->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 75000, 'total_price' => 75000, 'paid_amount' => 75000,
+            'payment_method' => 'cash', 'paid_at' => $paidAt,
+            'cashier_id' => $otherCashier->id,
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $this->assertEquals([], $response->json('cashier_performance'));
+    }
+
+    // =========================================================================
+    // TABLE PERFORMANCE (report index)
+    // =========================================================================
+
+    /**
+     * Table performance shows orders, revenue, and avg_check per table.
+     */
+    public function test_table_performance_returns_orders_revenue_and_avg_check(): void
+    {
+        $tableA = Table::factory()->create(['outlet_id' => $this->outlet->id, 'name' => 'Meja A']);
+        $tableB = Table::factory()->create(['outlet_id' => $this->outlet->id, 'name' => 'Meja B']);
+
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]], null, 'cash', null, $tableA->id);
+        $this->createPaidOrder([['product_id' => $this->product2->id, 'qty' => 3, 'price' => 15000]], null, 'cash', null, $tableB->id);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $tablePerf = $response->json('table_performance');
+
+        $this->assertCount(2, $tablePerf);
+
+        $mejaA = collect($tablePerf)->firstWhere('name', 'Meja A');
+        $this->assertNotNull($mejaA);
+        $this->assertEquals(1, $mejaA['orders']);
+        $this->assertEquals(50000, $mejaA['revenue']);
+        $this->assertEquals(50000, $mejaA['avg_check']);
+
+        $mejaB = collect($tablePerf)->firstWhere('name', 'Meja B');
+        $this->assertNotNull($mejaB);
+        $this->assertEquals(1, $mejaB['orders']);
+        $this->assertEquals(45000, $mejaB['revenue']);
+        $this->assertEquals(45000, $mejaB['avg_check']);
+    }
+
+    /**
+     * Table performance is sorted by revenue descending.
+     */
+    public function test_table_performance_sorted_by_revenue_descending(): void
+    {
+        $tableLow = Table::factory()->create(['outlet_id' => $this->outlet->id, 'name' => 'Meja Low']);
+        $tableHigh = Table::factory()->create(['outlet_id' => $this->outlet->id, 'name' => 'Meja High']);
+
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1, 'price' => 5000]], null, 'cash', null, $tableLow->id);
+        $this->createPaidOrder([['product_id' => $this->product2->id, 'qty' => 1, 'price' => 100000]], null, 'cash', null, $tableHigh->id);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $tablePerf = $response->json('table_performance');
+
+        $this->assertEquals('Meja High', $tablePerf[0]['name']);
+        $this->assertEquals('Meja Low', $tablePerf[1]['name']);
+    }
+
+    /**
+     * Table performance avg_check is calculated as revenue / orders_count.
+     */
+    public function test_table_performance_avg_check_is_calculated(): void
+    {
+        $table = Table::factory()->create(['outlet_id' => $this->outlet->id, 'name' => 'Meja Sering']);
+
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1, 'price' => 10000]], null, 'cash', null, $table->id);
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1, 'price' => 20000]], null, 'cash', null, $table->id);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $tablePerf = $response->json('table_performance');
+
+        $meja = collect($tablePerf)->firstWhere('name', 'Meja Sering');
+        $this->assertNotNull($meja);
+        $this->assertEquals(2, $meja['orders']);
+        $this->assertEquals(30000, $meja['revenue']);
+        $this->assertEquals(15000, $meja['avg_check']);  // 30000 / 2
+    }
+
+    /**
+     * Orders without a table show as 'Takeaway'.
+     */
+    public function test_table_performance_shows_takeaway_for_orders_without_table(): void
+    {
+        // Create order with null table_id via direct DB
+        $paidAt = Carbon::now()->subDays(1);
+        $invoiceNum = 'INV-TAKEAWAY-001';
+
+        $order = Order::factory()->create([
+            'outlet_id' => $this->outlet->id,
+            'table_id' => null,
+            'user_id' => $this->owner->id,
+            'status' => 'paid',
+            'invoice_number' => $invoiceNum,
+            'subtotal_price' => 50000,
+            'total_price' => 50000,
+            'payment_method' => 'cash',
+            'created_at' => $paidAt,
+            'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $this->product1->id,
+            'qty' => 2, 'price' => 25000, 'total_price' => 50000,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 50000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $this->owner->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $this->outlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => $invoiceNum,
+            'subtotal_price' => 50000, 'total_price' => 50000, 'paid_amount' => 50000,
+            'payment_method' => 'cash', 'paid_at' => $paidAt,
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $tablePerf = $response->json('table_performance');
+
+        $takeaway = collect($tablePerf)->firstWhere('name', 'Takeaway');
+        $this->assertNotNull($takeaway);
+        $this->assertEquals(1, $takeaway['orders']);
+        $this->assertEquals(50000, $takeaway['revenue']);
+    }
+
+    /**
+     * Table performance returns empty array when no transactions.
+     */
+    public function test_table_performance_empty_when_no_transactions(): void
+    {
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $this->assertEquals([], $response->json('table_performance'));
+    }
+
+    /**
+     * Table performance response structure has correct keys.
+     */
+    public function test_table_performance_response_structure(): void
+    {
+        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 1]]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'table_performance' => [
+                '*' => [
+                    'name',
+                    'orders',
+                    'revenue',
+                    'avg_check',
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Table performance respects outlet isolation.
+     */
+    public function test_table_performance_respects_outlet_isolation(): void
+    {
+        $otherOwner = User::factory()->create(['role' => 'manager']);
+        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id, 'name' => 'Other Table']);
+
+        $paidAt = Carbon::now()->subDays(1);
+        $order = Order::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 75000, 'total_price' => 75000,
+            'payment_method' => 'cash',
+            'created_at' => $paidAt, 'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $this->product1->id,
+            'qty' => 1, 'price' => 75000, 'total_price' => 75000,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 75000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $otherOwner->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 75000, 'total_price' => 75000, 'paid_amount' => 75000,
+            'payment_method' => 'cash', 'paid_at' => $paidAt,
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $this->assertEquals([], $response->json('table_performance'));
+    }
+
+    // =========================================================================
+    // STATION PERFORMANCE (report index)
+    // =========================================================================
+
+    /**
+     * Station performance returns items_prepared, orders, and revenue by station.
+     */
+    public function test_station_performance_returns_items_orders_and_revenue_by_station(): void
+    {
+        $dapur = Station::factory()->create(['owner_id' => $this->owner->id, 'name' => 'Dapur Utama']);
+        $bar = Station::factory()->create(['owner_id' => $this->owner->id, 'name' => 'Bar Minuman']);
+
+        $this->createPaidOrder([
+            ['product_id' => $this->product1->id, 'qty' => 3, 'price' => 25000, 'station_id' => $dapur->id],
+            ['product_id' => $this->product2->id, 'qty' => 2, 'price' => 15000, 'station_id' => $bar->id],
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $stationPerf = $response->json('station_performance');
+
+        $this->assertCount(2, $stationPerf);
+
+        $dapurData = collect($stationPerf)->firstWhere('name', 'Dapur Utama');
+        $this->assertNotNull($dapurData);
+        $this->assertEquals(3, $dapurData['items_prepared']);
+        $this->assertEquals(1, $dapurData['orders']);
+        $this->assertEquals(75000, $dapurData['revenue']);  // 3 × 25000
+
+        $barData = collect($stationPerf)->firstWhere('name', 'Bar Minuman');
+        $this->assertNotNull($barData);
+        $this->assertEquals(2, $barData['items_prepared']);
+        $this->assertEquals(1, $barData['orders']);
+        $this->assertEquals(30000, $barData['revenue']);  // 2 × 15000
+    }
+
+    /**
+     * Station performance is sorted by items_prepared descending.
+     */
+    public function test_station_performance_sorted_by_items_prepared_descending(): void
+    {
+        $dapur = Station::factory()->create(['owner_id' => $this->owner->id, 'name' => 'Dapur Utama']);
+        $bar = Station::factory()->create(['owner_id' => $this->owner->id, 'name' => 'Bar Minuman']);
+
+        $this->createPaidOrder([
+            ['product_id' => $this->product1->id, 'qty' => 10, 'price' => 10000, 'station_id' => $dapur->id],
+        ]);
+        $this->createPaidOrder([
+            ['product_id' => $this->product2->id, 'qty' => 3, 'price' => 10000, 'station_id' => $bar->id],
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $stationPerf = $response->json('station_performance');
+
+        $this->assertCount(2, $stationPerf);
+        $this->assertEquals('Dapur Utama', $stationPerf[0]['name']);
+        $this->assertEquals(10, $stationPerf[0]['items_prepared']);
+        $this->assertEquals('Bar Minuman', $stationPerf[1]['name']);
+        $this->assertEquals(3, $stationPerf[1]['items_prepared']);
+    }
+
+    /**
+     * Items without station show as 'Tanpa Station'.
+     */
+    public function test_station_performance_shows_tanpa_station_for_items_without_station(): void
+    {
+        $this->createPaidOrder([
+            ['product_id' => $this->product1->id, 'qty' => 5, 'price' => 25000],
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $stationPerf = $response->json('station_performance');
+
+        $this->assertCount(1, $stationPerf);
+        $this->assertEquals('Tanpa Station', $stationPerf[0]['name']);
+        $this->assertEquals(5, $stationPerf[0]['items_prepared']);
+        $this->assertEquals(1, $stationPerf[0]['orders']);
+        $this->assertEquals(125000, $stationPerf[0]['revenue']);
+    }
+
+    /**
+     * Station performance aggregates multiple orders for the same station.
+     */
+    public function test_station_performance_aggregates_multiple_orders_for_same_station(): void
+    {
+        $dapur = Station::factory()->create(['owner_id' => $this->owner->id, 'name' => 'Dapur Utama']);
+
+        // First order: 3 items for Dapur
+        $this->createPaidOrder([
+            ['product_id' => $this->product1->id, 'qty' => 3, 'price' => 20000, 'station_id' => $dapur->id],
+        ]);
+        // Second order: 2 items for Dapur
+        $this->createPaidOrder([
+            ['product_id' => $this->product2->id, 'qty' => 2, 'price' => 15000, 'station_id' => $dapur->id],
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $stationPerf = $response->json('station_performance');
+
+        $dapurData = collect($stationPerf)->firstWhere('name', 'Dapur Utama');
+        $this->assertNotNull($dapurData);
+        $this->assertEquals(5, $dapurData['items_prepared']);  // 3 + 2
+        $this->assertEquals(2, $dapurData['orders']);          // 2 distinct orders
+        $this->assertEquals(90000, $dapurData['revenue']);     // 60000 + 30000
+    }
+
+    /**
+     * Station performance returns empty array when no transactions.
+     */
+    public function test_station_performance_empty_when_no_transactions(): void
+    {
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $this->assertEquals([], $response->json('station_performance'));
+    }
+
+    /**
+     * Station performance response structure has correct keys.
+     */
+    public function test_station_performance_response_structure(): void
+    {
+        $dapur = Station::factory()->create(['owner_id' => $this->owner->id, 'name' => 'Dapur Utama']);
+        $this->createPaidOrder([
+            ['product_id' => $this->product1->id, 'qty' => 1, 'station_id' => $dapur->id],
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'station_performance' => [
+                '*' => [
+                    'name',
+                    'items_prepared',
+                    'orders',
+                    'revenue',
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Station performance respects outlet isolation.
+     */
+    public function test_station_performance_respects_outlet_isolation(): void
+    {
+        $otherOwner = User::factory()->create(['role' => 'manager']);
+        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
+        $otherStation = Station::factory()->create(['owner_id' => $otherOwner->id, 'name' => 'Other Station']);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id]);
+
+        $otherProduct = Product::factory()->create(['category_id' => $this->category->id, 'owner_id' => $otherOwner->id]);
+        $otherOutlet->products()->attach($otherProduct->id, ['price' => 50000, 'stock' => 10, 'is_active' => true]);
+
+        $paidAt = Carbon::now()->subDays(1);
+        $order = Order::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 50000, 'total_price' => 50000,
+            'payment_method' => 'cash',
+            'created_at' => $paidAt, 'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $otherProduct->id,
+            'qty' => 1, 'price' => 50000, 'total_price' => 50000,
+            'station_id' => $otherStation->id,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 50000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $otherOwner->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 50000, 'total_price' => 50000, 'paid_amount' => 50000,
+            'payment_method' => 'cash', 'paid_at' => $paidAt,
+        ]);
+
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
+        $response->assertStatus(200);
+        $this->assertEquals([], $response->json('station_performance'));
     }
 }
