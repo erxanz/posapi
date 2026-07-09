@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\Outlet;
@@ -85,7 +86,7 @@ class DiscountDecrementTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function decrement_usage_when_order_cancelled_via_auto_cancel()
     {
         $this->assertEquals(5, $this->discount->fresh()->used_count);
@@ -96,7 +97,7 @@ class DiscountDecrementTest extends TestCase
         $this->assertEquals(4, $this->discount->fresh()->used_count, 'used_count should decrement when order is cancelled');
     }
 
-    /** @test */
+    #[Test]
     public function decrement_usage_not_negative()
     {
         $discount = Discount::factory()->create([
@@ -125,7 +126,7 @@ class DiscountDecrementTest extends TestCase
         $this->assertEquals(0, $discount->fresh()->used_count, 'used_count should not go below 0');
     }
 
-    /** @test */
+    #[Test]
     public function decrement_usage_does_nothing_when_no_discount()
     {
         $orderWithoutDiscount = Order::factory()->create([
@@ -143,7 +144,7 @@ class DiscountDecrementTest extends TestCase
         $this->assertTrue(true, 'decrementDiscountUsage should not throw when no discount');
     }
 
-    /** @test */
+    #[Test]
     public function decrement_usage_when_discount_deleted_from_db()
     {
         // Because of nullOnDelete constraint, SQLite sets discount_id to null

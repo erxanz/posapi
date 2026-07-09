@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\Outlet;
@@ -53,7 +54,7 @@ class TaxValidationTest extends TestCase
     // ACTIVE = FALSE — Pajak nonaktif tidak boleh dipakai
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function inactive_tax_rejected_via_handle_adjustments_path1()
     {
         $tax = Tax::factory()->create([
@@ -92,7 +93,7 @@ class TaxValidationTest extends TestCase
         $this->assertEquals(0, $order->tax_amount, 'Tax amount should be 0 for inactive tax');
     }
 
-    /** @test */
+    #[Test]
     public function inactive_tax_nullified_in_recalculate_totals()
     {
         $tax = Tax::factory()->create([
@@ -129,7 +130,7 @@ class TaxValidationTest extends TestCase
         $this->assertEquals(0, $order->tax_amount, 'Tax amount should be 0 after nullification');
     }
 
-    /** @test */
+    #[Test]
     public function active_tax_still_applied_via_handle_adjustments_path1()
     {
         $tax = Tax::factory()->create([
@@ -171,7 +172,7 @@ class TaxValidationTest extends TestCase
     // TAX_TYPE + TAX_VALUE MATCHING (fix rate * 100)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function tax_type_value_matches_percentage_tax()
     {
         Tax::factory()->create([
@@ -214,7 +215,7 @@ class TaxValidationTest extends TestCase
         $this->assertNotNull($order->tax_id, 'Percentage tax should match via tax_type + tax_value');
     }
 
-    /** @test */
+    #[Test]
     public function tax_type_value_matches_multiple_percentage_rates()
     {
         Tax::factory()->create([
@@ -275,7 +276,7 @@ class TaxValidationTest extends TestCase
         $this->assertEquals(11.0, (float) $matchedTax->rate, 'Should match the exact 11% tax');
     }
 
-    /** @test */
+    #[Test]
     public function tax_type_value_matches_fixed_tax()
     {
         Tax::factory()->create([
@@ -320,7 +321,7 @@ class TaxValidationTest extends TestCase
     // VALIDATION — tax_type hanya menerima percentage/fixed (tidak nominal)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function tax_type_rejects_nominal_in_validation()
     {
         $validator = Validator::make(
@@ -332,7 +333,7 @@ class TaxValidationTest extends TestCase
         $this->assertArrayHasKey('tax_type', $validator->errors()->toArray());
     }
 
-    /** @test */
+    #[Test]
     public function tax_type_accepts_percentage()
     {
         $validator = Validator::make(
@@ -343,7 +344,7 @@ class TaxValidationTest extends TestCase
         $this->assertFalse($validator->fails(), 'percentage should pass validation');
     }
 
-    /** @test */
+    #[Test]
     public function tax_type_accepts_fixed()
     {
         $validator = Validator::make(
@@ -358,7 +359,7 @@ class TaxValidationTest extends TestCase
     // CROSS-TENANT — Pajak outlet lain tidak boleh dipakai
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function tax_from_other_outlet_not_applied()
     {
         $otherOwner = User::factory()->create(['role' => 'manager']);

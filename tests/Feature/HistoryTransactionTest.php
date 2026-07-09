@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\Outlet;
@@ -61,7 +62,7 @@ class HistoryTransactionTest extends TestCase
     // CREATION — HistoryTransaction dibuat saat order lunas
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function history_created_when_cash_order_paid()
     {
         $this->actingAs($this->owner);
@@ -93,7 +94,7 @@ class HistoryTransactionTest extends TestCase
         $this->assertEquals('paid', $history->status);
     }
 
-    /** @test */
+    #[Test]
     public function history_contains_correct_data_snapshot()
     {
         $this->actingAs($this->owner);
@@ -127,7 +128,7 @@ class HistoryTransactionTest extends TestCase
         $this->assertEquals($order->total_price, $history->total_price);
     }
 
-    /** @test */
+    #[Test]
     public function history_created_with_discount_and_tax_included()
     {
         $discount = \App\Models\Discount::factory()->create([
@@ -182,7 +183,7 @@ class HistoryTransactionTest extends TestCase
     // UPDATE — HistoryTransaction diupdate saat order di-void
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function history_updated_when_order_synced_again()
     {
         $this->actingAs($this->owner);
@@ -219,7 +220,7 @@ class HistoryTransactionTest extends TestCase
     // AUTHORIZATION — Akses ke HistoryTransaction
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function karyawan_can_view_own_outlet_history()
     {
         $this->actingAs($this->owner);
@@ -250,7 +251,7 @@ class HistoryTransactionTest extends TestCase
         $response->assertStatus(200);
     }
 
-    /** @test */
+    #[Test]
     public function karyawan_cannot_edit_history()
     {
         $this->actingAs($this->owner);
@@ -283,7 +284,7 @@ class HistoryTransactionTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function manager_can_edit_history()
     {
         $this->actingAs($this->owner);
@@ -322,7 +323,7 @@ class HistoryTransactionTest extends TestCase
     // HISTORY ACCESS CONTROL — Cross-tenant
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function karyawan_cannot_view_other_outlet_history()
     {
         // Create another outlet with different karyawan
@@ -371,7 +372,7 @@ class HistoryTransactionTest extends TestCase
         $response->assertStatus(403);
     }
 
-    /** @test */
+    #[Test]
     public function manager_cannot_edit_other_owner_history()
     {
         // Create another owner

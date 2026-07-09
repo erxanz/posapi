@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\Outlet;
@@ -54,7 +55,7 @@ class DiscountValidationTest extends TestCase
     // EXPIRED DISCOUNT (start_date / end_date)
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function expired_discount_not_visible_on_product_promo()
     {
         Discount::factory()->create([
@@ -74,7 +75,7 @@ class DiscountValidationTest extends TestCase
         $this->assertEquals(0, $product->discount_amount_per_item, 'Expired discount should return 0 discount');
     }
 
-    /** @test */
+    #[Test]
     public function future_discount_not_visible_on_product_promo()
     {
         Discount::factory()->create([
@@ -95,7 +96,7 @@ class DiscountValidationTest extends TestCase
         $this->assertEquals(0, $product->discount_amount_per_item);
     }
 
-    /** @test */
+    #[Test]
     public function active_discount_visible_on_product_promo()
     {
         Discount::factory()->create([
@@ -115,7 +116,7 @@ class DiscountValidationTest extends TestCase
         $this->assertEquals(10000, $product->discount_amount_per_item);
     }
 
-    /** @test */
+    #[Test]
     public function global_discount_makes_product_promo()
     {
         Discount::factory()->create([
@@ -134,7 +135,7 @@ class DiscountValidationTest extends TestCase
         $this->assertTrue($product->is_promo, 'Global discount should make product a promo');
     }
 
-    /** @test */
+    #[Test]
     public function expired_discount_nullified_in_recalculate_totals()
     {
         $discount = Discount::factory()->create([
@@ -176,7 +177,7 @@ class DiscountValidationTest extends TestCase
         $this->assertEquals(50000, $order->total_price, 'Total should equal subtotal (no discount)');
     }
 
-    /** @test */
+    #[Test]
     public function expired_discount_rejected_in_order_service()
     {
         $discount = Discount::factory()->create([
@@ -221,7 +222,7 @@ class DiscountValidationTest extends TestCase
     // MAX_USAGE EXHAUSTED
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function discount_with_max_usage_exhausted_nullified_in_recalculate_totals()
     {
         $discount = Discount::factory()->create([
@@ -264,7 +265,7 @@ class DiscountValidationTest extends TestCase
         $this->assertEquals(0, $order->discount_amount);
     }
 
-    /** @test */
+    #[Test]
     public function discount_with_max_usage_exhausted_rejected_in_order_service()
     {
         $discount = Discount::factory()->create([
@@ -307,7 +308,7 @@ class DiscountValidationTest extends TestCase
         $refMethod->invoke($service, $order, ['discount_id' => $discount->id]);
     }
 
-    /** @test */
+    #[Test]
     public function discount_with_available_max_usage_allowed()
     {
         $discount = Discount::factory()->create([
@@ -354,7 +355,7 @@ class DiscountValidationTest extends TestCase
     // USED_COUNT INCREMENT
     // =========================================================================
 
-    /** @test */
+    #[Test]
     public function used_count_increments_once_when_discount_first_applied_via_handle_adjustments()
     {
         $discount = Discount::factory()->create([
@@ -401,7 +402,7 @@ class DiscountValidationTest extends TestCase
         $this->assertEquals(2, $discount->fresh()->used_count, 'used_count increments each time handleAdjustments is called with same discount');
     }
 
-    /** @test */
+    #[Test]
     public function used_count_not_incremented_when_discount_not_applied()
     {
         $discount = Discount::factory()->create([
@@ -441,7 +442,7 @@ class DiscountValidationTest extends TestCase
         $this->assertEquals(0, $discount->fresh()->used_count, 'used_count should NOT increment when discount not applied');
     }
 
-    /** @test */
+    #[Test]
     public function used_count_increments_via_full_order_flow()
     {
         $discount = Discount::factory()->create([
