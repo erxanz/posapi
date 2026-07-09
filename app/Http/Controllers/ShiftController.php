@@ -55,6 +55,10 @@ class ShiftController extends Controller
 
         $user = auth()->user();
 
+        if ($user->role === 'karyawan') {
+            return response()->json(['message' => 'Karyawan tidak diizinkan mengelola shift.'], 403);
+        }
+
         if ($user->role === 'manager') {
             $isMine = Outlet::where('id', $validated['outlet_id'])
                 ->where('owner_id', $user->id)
@@ -96,7 +100,20 @@ class ShiftController extends Controller
             'color'      => 'nullable|string|max:7',
         ]);
 
+        $user = auth()->user();
+
+        if ($user->role === 'karyawan') {
+            return response()->json(['message' => 'Karyawan tidak diizinkan mengelola shift.'], 403);
+        }
+
         $shift = Shift::findOrFail($id);
+
+        if ($user->role === 'manager') {
+            $isMine = Outlet::where('id', $shift->outlet_id)->where('owner_id', $user->id)->exists();
+            if (!$isMine) {
+                return response()->json(['message' => 'Akses ditolak'], 403);
+            }
+        }
 
         DB::beginTransaction();
 
@@ -121,8 +138,23 @@ class ShiftController extends Controller
 
     public function destroy($id)
     {
+        $user = auth()->user();
+
+        if ($user->role === 'karyawan') {
+            return response()->json(['message' => 'Karyawan tidak diizinkan menghapus shift.'], 403);
+        }
+
+        $shift = Shift::findOrFail($id);
+
+        if ($user->role === 'manager') {
+            $isMine = Outlet::where('id', $shift->outlet_id)->where('owner_id', $user->id)->exists();
+            if (!$isMine) {
+                return response()->json(['message' => 'Akses ditolak'], 403);
+            }
+        }
+
         try {
-            Shift::findOrFail($id)->delete();
+            $shift->delete();
 
             return response()->json([
                 'message' => 'Shift berhasil dihapus'

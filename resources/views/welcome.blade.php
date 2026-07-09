@@ -154,6 +154,11 @@
                         <code class="api-path">/api/v1/public/discounts</code>
                         <span class="note">Public (Active Discounts)</span>
                     </div>
+                    <div class="endpoint-row">
+                        <span class="badge badge-get">GET</span>
+                        <code class="api-path">/api/v1/public/qr-image</code>
+                        <span class="note">Public (QR Image)</span>
+                    </div>
                 </div>
             </details>
         </div>
@@ -577,7 +582,7 @@
                     <div class="endpoint-row">
                         <span class="badge badge-resource">API RES (limited)</span>
                         <code class="api-path">/api/v1/history-transactions</code>
-                        <span class="api-method-list">GET, GET /{id}, PUT /{id}, DELETE /{id}</span>
+                        <span class="api-method-list">GET, GET /{id}, PUT /{id}</span>
                         <span class="note">Auth Required</span>
                     </div>
                 </div>

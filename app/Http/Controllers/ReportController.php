@@ -61,8 +61,12 @@ class ReportController extends Controller
         $user = auth()->user();
 
         // Filter Tanggal
-        $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : Carbon::today()->startOfMonth();
-        $endDate = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : Carbon::today()->endOfDay();
+        try {
+            $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : Carbon::today()->startOfMonth();
+            $endDate = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : Carbon::today()->endOfDay();
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Format tanggal tidak valid'], 400);
+        }
         $outletId = $request->outlet_id;
 
         $prevStartDate = Carbon::parse($startDate)->subDays($endDate->diffInDays($startDate) + 1)->startOfDay();
@@ -402,8 +406,12 @@ class ReportController extends Controller
 
     public function export(Request $request)
     {
-        $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : Carbon::today()->startOfMonth();
-        $endDate = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : Carbon::today()->endOfDay();
+        try {
+            $startDate = $request->start_date ? Carbon::parse($request->start_date)->startOfDay() : Carbon::today()->startOfMonth();
+            $endDate = $request->end_date ? Carbon::parse($request->end_date)->endOfDay() : Carbon::today()->endOfDay();
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Format tanggal tidak valid'], 400);
+        }
         $outletId = $request->outlet_id;
         $reportType = $request->report_type ?? 'summary';
         $format = $request->format ?? 'excel'; // pdf atau excel

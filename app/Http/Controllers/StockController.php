@@ -21,8 +21,15 @@ class StockController extends Controller
 
         $outlet = Outlet::findOrFail($validated['outlet_id']);
 
-        if (auth()->user()->role === 'karyawan' && auth()->user()->outlet_id !== $outlet->id) {
+        $user = auth()->user();
+        if ($user->role === 'karyawan' && $user->outlet_id !== $outlet->id) {
             return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($user->role === 'manager') {
+            $isMine = Outlet::where('id', $outlet->id)->where('owner_id', $user->id)->exists();
+            if (!$isMine) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
         }
 
         DB::beginTransaction();

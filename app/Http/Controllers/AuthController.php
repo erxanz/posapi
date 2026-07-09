@@ -141,7 +141,7 @@ class AuthController extends Controller
             'outlet_id' => 'required|exists:outlets,id'
         ]);
 
-        $user = User::where('pin', $request->pin)
+        $user = User::where('pin', (string) $request->pin)
             ->where('outlet_id', $request->outlet_id)
             ->where('role', 'karyawan')
             ->first();
@@ -225,8 +225,8 @@ class AuthController extends Controller
         }
         $user->phone_number = $request->phone_number;
 
-        if ($request->has('midtrans_server_key')) {
-        $user->midtrans_server_key = $request->midtrans_server_key;
+        if ($request->has('midtrans_server_key') || array_key_exists('midtrans_server_key', $request->all())) {
+            $user->midtrans_server_key = $request->input('midtrans_server_key');
         }
 
         if ($request->filled('password')) {
@@ -250,16 +250,11 @@ class AuthController extends Controller
 
         $user = User::where('email', strtolower($request->email))->first();
 
-        if (!$user) {
+        if (!$user || !in_array($user->role, ['manager', 'developer'])) {
+            // Jangan ungkap apakah email terdaftar atau tidak (user enumeration prevention)
             return response()->json([
-                'message' => 'Email tidak ditemukan'
-            ], 404);
-        }
-
-        if (!in_array($user->role, ['manager', 'developer'])) {
-            return response()->json([
-                'message' => 'Hanya untuk manager/developer'
-            ], 403);
+                'message' => 'Link reset password sudah dikirim ke email'
+            ]);
         }
 
         $token = Str::random(60);

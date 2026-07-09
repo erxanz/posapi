@@ -85,11 +85,6 @@ class ProductController extends Controller
             }
         }
 
-        // AUTO SET MEJA JADI OCCUPIED
-        if ($table->status === 'available') {
-            $table->update(['status' => 'occupied']);
-        }
-
         // Cek kesiapan pembayaran online: outlet baru bisa terima QRIS/card
         // kalau owner-nya sudah setup midtrans_server_key sendiri (SaaS
         // multi-tenant, tiap owner pakai akun Midtrans masing-masing).

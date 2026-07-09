@@ -86,7 +86,10 @@ class ScheduleController extends Controller
 
         $invalidUsers = User::whereIn('id', $validated['user_ids'])
             ->where(function ($q) use ($validated) {
-                $q->where('role', '!=', 'karyawan')->orWhere('outlet_id', '!=', $validated['outlet_id']);
+                $q->where('role', '!=', 'karyawan')
+                  ->orWhere(function ($q2) use ($validated) {
+                      $q2->where('outlet_id', '!=', $validated['outlet_id'])->orWhereNull('outlet_id');
+                  });
             })->exists();
 
         if ($invalidUsers) {
