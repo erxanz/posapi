@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\InvoiceCounter;
 use App\Events\OrderCreated;
 use App\Events\OrderUpdated;
+use App\Events\PaymentPaid;
 
 class OrderService
 {
@@ -819,5 +820,509 @@ class OrderService
             'status' => 'reserved',
             'reserved_until' => now()->addMinutes($minutes),
         ]);
+    }
+
+    // =========================================================================
+    // NEW METHODS — extracted from OrderController to remove DB::beginTransaction
+    // from controllers (avoids PDO savepoint conflicts with RefreshDatabase)
+    // =========================================================================
+
+    /**
+     * Add item to a pending order.
+     */
+    public function addItemToOrder(int $orderId, int $productId, int $qty, ?string $notes): Order
+    {
+        $user = $this->currentUser();
+
+        $order = Order::where('id', $orderId)
+            ->where('outlet_id', $user->outlet_id)
+            ->firstOrFail();
+
+        if ($order->status !== Order::STATUS_PENDING && $order->status !== 'pending') {
+            throw new \RuntimeException('Order sudah diproses/lunas dan tidak bisa diubah');
+        }
+
+        return DB::transaction(function () use ($order, $productId, $qty, $notes, $user) {
+            $product = Outlet::query()
+                ->findOrFail($order->outlet_id)
+                ->products()
+                ->where('products.id', $productId)
+                ->wherePivot('is_active', true)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $availableStock = (int) $product->pivot->stock;
+
+            if ($qty > $availableStock) {
+                throw new \RuntimeException(
+                    "Stok {$product->name} tidak cukup (maksimal {$availableStock})"
+                );
+            }
+
+            $price = (int) $product->pivot->price;
+            $item = $order->items()->where('product_id', $product->id)->first();
+
+            if ($item) {
+                $item->qty += $qty;
+                $item->total_price = $item->qty * $item->price;
+                if ($notes !== null) {
+                    $item->notes = $notes;
+                }
+                $item->save();
+            } else {
+                $stationId = $product->pivot->station_id ?? $product->station_id;
+                $order->items()->create([
+                    'product_id' => $product->id,
+                    'station_id' => $stationId,
+                    'qty' => $qty,
+                    'price' => $price,
+                    'total_price' => $price * $qty,
+                    'notes' => $notes ?? null,
+                ]);
+            }
+
+            $newStock = $availableStock - $qty;
+            Outlet::findOrFail($order->outlet_id)
+                ->products()
+                ->updateExistingPivot($product->id, ['stock' => $newStock]);
+
+            StockHistory::create([
+                'outlet_id' => $order->outlet_id,
+                'product_id' => $product->id,
+                'user_id' => $user->id,
+                'type' => 'sale',
+                'quantity' => -$qty,
+                'final_stock' => $newStock,
+                'reference' => 'Tambah Item Kasir: ' . $order->invoice_number,
+            ]);
+
+            $order->refresh();
+            $order->recalculateTotals();
+
+            return $order->fresh()->load('items.product', 'table');
+        });
+    }
+
+    /**
+     * Remove item from a pending order and restore stock.
+     */
+    public function removeItemFromOrder(int $orderId, int $itemId): Order
+    {
+        $user = $this->currentUser();
+
+        $order = Order::where('id', $orderId)
+            ->where('outlet_id', $user->outlet_id)
+            ->firstOrFail();
+
+        if ($order->status !== Order::STATUS_PENDING && $order->status !== 'pending') {
+            throw new \RuntimeException('Order sudah diproses/lunas dan tidak bisa diubah');
+        }
+
+        return DB::transaction(function () use ($order, $itemId, $user) {
+            $item = $order->items()->lockForUpdate()->findOrFail($itemId);
+            $outlet = Outlet::find($order->outlet_id);
+            $product = $outlet?->products()->where('products.id', $item->product_id)->lockForUpdate()->first();
+
+            if ($product) {
+                $newStock = $product->pivot->stock + $item->qty;
+                $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+                StockHistory::create([
+                    'outlet_id' => $order->outlet_id,
+                    'product_id' => $item->product_id,
+                    'user_id' => $user->id,
+                    'type' => 'restore',
+                    'quantity' => $item->qty,
+                    'final_stock' => $newStock,
+                    'reference' => 'Hapus Item Kasir: ' . $order->invoice_number,
+                ]);
+            }
+
+            $item->delete();
+
+            $order->refresh();
+            $order->recalculateTotals();
+
+            return $order->fresh()->load('items.product', 'table');
+        });
+    }
+
+    /**
+     * Cancel (partial void) a single order item.
+     */
+    public function cancelOrderItem(Order $order, OrderItem $item, int $cancelQty, ?string $reason): Order
+    {
+        $user = $this->currentUser();
+
+        return DB::transaction(function () use ($order, $item, $cancelQty, $reason, $user) {
+            $locked = OrderItem::where('id', $item->id)
+                ->where('order_id', $order->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $remaining = max(0, $locked->qty - $locked->cancelled_qty);
+
+            if ($cancelQty > $remaining) {
+                throw new \RuntimeException('cancel_qty exceeds remaining quantity');
+            }
+
+            $oldCancelled = $locked->cancelled_qty;
+            $locked->applyCancellation($cancelQty);
+            $diff = $locked->cancelled_qty - $oldCancelled;
+
+            $outlet = $order->outlet;
+            if ($outlet) {
+                $productPivot = $outlet->products()->where('products.id', $locked->product_id)->first();
+                $pivotStock = $productPivot?->pivot->stock ?? 0;
+                $newStock = $pivotStock + $diff;
+                if ($productPivot) {
+                    $outlet->products()->updateExistingPivot($locked->product_id, ['stock' => $newStock]);
+
+                    StockHistory::create([
+                        'outlet_id' => $order->outlet_id,
+                        'product_id' => $locked->product_id,
+                        'user_id' => $user->id,
+                        'type' => 'void',
+                        'quantity' => $diff,
+                        'final_stock' => $newStock,
+                        'reference' => 'Cancel Item: ' . $order->invoice_number,
+                    ]);
+                }
+            }
+
+            $logs = $order->logs ?? [];
+            array_unshift($logs, [
+                'date' => now()->format('d M Y H:i'),
+                'action' => "Cancel {$diff}x " . ($locked->product->name ?? 'item'),
+                'reason' => $reason,
+                'by' => $user->name ?? 'system',
+            ]);
+            $order->update(['logs' => $logs]);
+
+            $order->refresh();
+            $order->recalculateTotals();
+
+            if ($order->status === Order::STATUS_PAID) {
+                $this->syncHistoryTransaction($order->fresh());
+            }
+
+            return $order->fresh()->load('items.product', 'table');
+        });
+    }
+
+    /**
+     * Void items from an order with stock restoration and dynamic recalculation.
+     * Returns ['order' => Order, 'warning' => ?string].
+     */
+    public function voidOrderItems(Order $order, string $reason, array $items): array
+    {
+        $user = $this->currentUser();
+        $warningMessage = null;
+
+        return DB::transaction(function () use ($order, $reason, $items, $user, &$warningMessage) {
+            $actionDetails = [];
+            $outlet = $order->outlet;
+
+            foreach ($items as $inputItem) {
+                $item = $order->items()->find($inputItem['id']);
+                if (!$item) {
+                    continue;
+                }
+
+                $oldQty = $item->cancelled_qty;
+                $newQty = (int) $inputItem['cancelled_qty'];
+
+                if ($newQty > $item->qty) {
+                    throw new \RuntimeException(
+                        "Jumlah pembatalan untuk {$item->product->name} melebihi jumlah pesanan (maksimal {$item->qty})."
+                    );
+                }
+
+                $diff = $newQty - $oldQty;
+
+                if ($diff !== 0) {
+                    $action = $diff > 0 ? 'Void' : 'Restore';
+                    $actionDetails[] = "{$action} " . abs($diff) . "x {$item->product->name}";
+
+                    $item->update([
+                        'cancelled_qty' => $newQty,
+                        'total_price' => ($item->qty - $newQty) * $item->price,
+                    ]);
+
+                    $pivotStock = $outlet->products()->where('products.id', $item->product_id)->first()?->pivot->stock ?? 0;
+                    $newStock = $pivotStock + $diff;
+                    $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+                    StockHistory::create([
+                        'outlet_id' => $order->outlet_id,
+                        'product_id' => $item->product_id,
+                        'user_id' => $user->id,
+                        'type' => 'void',
+                        'quantity' => $diff,
+                        'final_stock' => $newStock,
+                        'reference' => 'Void: ' . $order->invoice_number,
+                    ]);
+                }
+            }
+
+            if ($actionDetails) {
+                $logs = $order->logs ?? [];
+                array_unshift($logs, [
+                    'date' => now()->format('d M Y H:i'),
+                    'action' => implode(', ', $actionDetails),
+                    'reason' => $reason,
+                    'by' => $user->name ?? 'system',
+                ]);
+                $order->update(['logs' => $logs]);
+
+                $order->refresh();
+                $newSubtotal = $order->items->sum('total_price');
+                $newDiscountAmount = 0;
+
+                if ($order->discount_id) {
+                    $discountModel = Discount::find($order->discount_id);
+                    if ($discountModel && $newSubtotal < $discountModel->min_purchase) {
+                        $warningMessage = 'Refund berhasil diproses. Peringatan: Diskon otomatis dibatalkan karena total belanja kini di bawah batas minimum (Rp ' . number_format($discountModel->min_purchase, 0, ',', '.') . ').';
+
+                        $order->update([
+                            'discount_id' => null,
+                            'manual_discount_type' => null,
+                            'manual_discount_value' => null,
+                            'discount_amount' => 0,
+                        ]);
+                        $order->refresh();
+                    } else {
+                        if ($order->manual_discount_type === 'percentage') {
+                            $calc = $newSubtotal * ($order->manual_discount_value / 100);
+                            if ($discountModel && $discountModel->max_discount && $calc > $discountModel->max_discount) {
+                                $calc = $discountModel->max_discount;
+                            }
+                            $newDiscountAmount = (int) $calc;
+                        } else {
+                            $newDiscountAmount = (int) min($order->discount_amount ?? 0, $newSubtotal);
+                        }
+                    }
+                } else {
+                    if ($order->manual_discount_type === 'percentage') {
+                        $calc = $newSubtotal * ($order->manual_discount_value / 100);
+                        $newDiscountAmount = (int) $calc;
+                    } else {
+                        $newDiscountAmount = (int) min($order->discount_amount ?? 0, $newSubtotal);
+                    }
+                }
+
+                $amountAfterDiscount = max(0, $newSubtotal - $newDiscountAmount);
+                $newTaxAmount = 0;
+
+                if ($order->tax_id) {
+                    $tax = Tax::find($order->tax_id);
+                    if ($tax && $tax->active) {
+                        if ($tax->type === 'percentage') {
+                            $newTaxAmount = (int) round($amountAfterDiscount * ((float) $tax->rate / 100));
+                        } else {
+                            $newTaxAmount = (int) $tax->rate;
+                        }
+                    }
+                } elseif ($order->tax_amount > 0 && $order->subtotal_price > 0) {
+                    $oldAmountAfterDiscount = max(0, $order->subtotal_price - $order->discount_amount);
+                    if ($oldAmountAfterDiscount > 0) {
+                        $rate = $order->tax_amount / $oldAmountAfterDiscount;
+                        $newTaxAmount = (int) round($amountAfterDiscount * $rate);
+                    }
+                }
+
+                $order->recalculateTotals([
+                    'discount_amount' => $newDiscountAmount,
+                    'tax_amount' => $newTaxAmount,
+                ]);
+
+                if ($order->status === Order::STATUS_PAID) {
+                    $this->syncHistoryTransaction($order->fresh());
+                }
+            }
+
+            return [
+                'order' => $order->fresh()->load('items.product', 'table', 'user'),
+                'warning' => $warningMessage,
+            ];
+        });
+    }
+
+    /**
+     * Update item quantities in a pending order.
+     */
+    public function updateOrderItems(Order $order, array $items): Order
+    {
+        $user = $this->currentUser();
+
+        return DB::transaction(function () use ($order, $items, $user) {
+            $outlet = $order->outlet;
+
+            foreach ($items as $itemData) {
+                $item = OrderItem::where('id', $itemData['id'])
+                    ->where('order_id', $order->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$item) {
+                    continue;
+                }
+
+                $oldQty = (int) $item->qty;
+                $newQty = (int) $itemData['qty'];
+                $diff = $newQty - $oldQty;
+
+                if ($diff !== 0 && $outlet) {
+                    $productPivot = $outlet->products()
+                        ->where('products.id', $item->product_id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($productPivot) {
+                        $currentStock = (int) $productPivot->pivot->stock;
+
+                        if ($diff > 0 && $currentStock < $diff) {
+                            throw new \RuntimeException("Stok {$productPivot->name} tidak cukup (Sisa: {$currentStock})");
+                        }
+
+                        $newStock = $currentStock - $diff;
+                        $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+                        StockHistory::create([
+                            'outlet_id' => $order->outlet_id,
+                            'product_id' => $item->product_id,
+                            'user_id' => $user->id,
+                            'type' => $diff > 0 ? 'sale' : 'restore',
+                            'quantity' => -$diff,
+                            'final_stock' => $newStock,
+                            'reference' => 'Update Item Kasir: ' . $order->invoice_number,
+                        ]);
+                    }
+                }
+
+                $updateData = [
+                    'qty' => $newQty,
+                    'total_price' => $newQty * (int) $item->price,
+                ];
+
+                if (array_key_exists('notes', $itemData)) {
+                    $updateData['notes'] = $itemData['notes'];
+                }
+
+                $item->update($updateData);
+            }
+
+            $order->refresh();
+            $order->recalculateTotals();
+
+            return $order->fresh()->load('items.product', 'table');
+        });
+    }
+
+    /**
+     * Handle Midtrans callback (settlement, capture, cancel, expire).
+     * Returns ['status' => int, 'message' => string].
+     */
+    public function handleMidtransCallback(array $data): array
+    {
+        $order = Order::with('items.product', 'table', 'payments')
+            ->where('invoice_number', $data['order_id'] ?? '')
+            ->first();
+
+        if (!$order) {
+            return ['status' => 404, 'message' => 'Order not found'];
+        }
+
+        $serverKey = $order->midtrans_server_key_used ?: env('MIDTRANS_SERVER_KEY');
+        $hashed = hash('sha512', ($data['order_id'] ?? '') . ($data['status_code'] ?? '') . ($data['gross_amount'] ?? '') . $serverKey);
+
+        if ($hashed !== ($data['signature_key'] ?? '')) {
+            return ['status' => 403, 'message' => 'Invalid signature'];
+        }
+
+        return DB::transaction(function () use ($order, $data) {
+            $lockedOrder = Order::where('id', $order->id)->lockForUpdate()->first();
+
+            if (in_array($lockedOrder->status, [Order::STATUS_PAID, Order::STATUS_CANCELLED], true)) {
+                return ['status' => 200, 'message' => 'Callback already processed'];
+            }
+
+            if (in_array($data['transaction_status'] ?? '', ['settlement', 'capture'], true)) {
+                $order->loadMissing('items');
+                $order->recalculateTotals();
+                $order->refresh();
+
+                if (in_array($order->payment_method, ['card', 'credit_card'], true)) {
+                    $order->payment_method = 'card';
+                } elseif (in_array($order->payment_method, ['cash', 'tunai'], true)) {
+                    $order->payment_method = 'cash';
+                } else {
+                    $order->payment_method = 'qris';
+                }
+
+                $order->update(['status' => Order::STATUS_PAID]);
+
+                if ($order->table_id) {
+                    $order->table->update([
+                        'status' => 'reserved',
+                        'reserved_until' => now()->addMinutes(20),
+                    ]);
+                }
+
+                $order->save();
+
+                $midtransPaymentType = $data['payment_type'] ?? 'qris';
+                $paymentMethod = in_array(strtolower($midtransPaymentType), ['credit_card', 'card']) ? 'card' : 'qris';
+
+                Payment::create([
+                    'order_id' => $order->id,
+                    'amount_paid' => (int) ($data['gross_amount'] ?? 0),
+                    'change_amount' => 0,
+                    'method' => $paymentMethod,
+                    'reference_no' => ($data['transaction_id'] ?? '') ?: ('MIDTRANS-' . $order->invoice_number),
+                    'paid_at' => now(),
+                    'paid_by' => $order->user_id,
+                ]);
+
+                $this->syncHistoryTransaction($order->fresh());
+
+                $broadcastOrder = $order->fresh()->load(['items.product', 'table', 'payments', 'discount']);
+                event(new PaymentPaid($broadcastOrder));
+                event(new OrderUpdated($broadcastOrder));
+            } elseif (in_array($data['transaction_status'] ?? '', ['cancel', 'deny', 'expire'], true)) {
+                $order->decrementDiscountUsage();
+                $order->update(['status' => Order::STATUS_CANCELLED]);
+
+                if ($order->table_id) {
+                    $order->table->update(['status' => 'available', 'reserved_until' => null]);
+                }
+
+                $outlet = Outlet::find($order->outlet_id);
+                if ($outlet) {
+                    foreach ($order->items as $item) {
+                        $product = $outlet->products()->where('products.id', $item->product_id)->first();
+
+                        if ($product) {
+                            $newStock = (int) $product->pivot->stock + (int) $item->qty;
+                            $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+
+                            StockHistory::create([
+                                'outlet_id' => $order->outlet_id,
+                                'product_id' => $item->product_id,
+                                'user_id' => null,
+                                'type' => 'restore',
+                                'quantity' => $item->qty,
+                                'final_stock' => $newStock,
+                                'reference' => 'Auto-Cancel Midtrans: ' . $order->invoice_number,
+                            ]);
+                        }
+                    }
+                }
+
+                event(new OrderUpdated($order->fresh()->load('items.product', 'table')));
+            }
+
+            return ['status' => 200, 'message' => 'Callback received'];
+        });
     }
 }

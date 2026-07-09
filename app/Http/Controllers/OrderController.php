@@ -7,7 +7,6 @@ use App\Models\Outlet;
 use App\Models\Tax;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use App\Http\Requests\CancelOrderItemRequest;
 use App\Models\OrderItem;
@@ -148,89 +147,20 @@ class OrderController extends Controller
             'notes' => 'nullable|string|max:500',
         ]);
 
-        // Ambil order berdasarkan outlet kasir yang sedang login
-        $order = Order::where('id', $orderId)
-            ->where('outlet_id', auth()->user()->outlet_id)
-            ->firstOrFail();
-
-        // Izinkan edit jika status masih pending (belum dibayar lunas)
-        if ($order->status !== Order::STATUS_PENDING && $order->status !== 'pending') {
-            return response()->json(['message' => 'Order sudah diproses/lunas dan tidak bisa diubah'], 400);
-        }
-
-        $requestQty = (int) $request->qty;
-
-        DB::beginTransaction();
         try {
-            // Kunci baris produk SEBELUM membaca stok, supaya 2 request
-            // bersamaan untuk produk yang sama tidak bisa lolos validasi
-            // stok berdasarkan nilai yang sama-sama sudah usang (overselling).
-            $product = Outlet::query()
-                ->findOrFail($order->outlet_id)
-                ->products()
-                ->where('products.id', $request->product_id)
-                ->wherePivot('is_active', true)
-                ->lockForUpdate()
-                ->firstOrFail();
+            $order = $this->orderService->addItemToOrder(
+                (int) $orderId,
+                (int) $request->product_id,
+                (int) $request->qty,
+                $request->notes
+            );
 
-            $availableStock = (int) $product->pivot->stock;
+            event(new \App\Events\OrderUpdated($order));
 
-            if ($requestQty > $availableStock) {
-                DB::rollBack();
-                return response()->json([
-                    'message' => "Stok {$product->name} tidak cukup (maksimal {$availableStock})"
-                ], 400);
-            }
-
-            $price = (int) $product->pivot->price;
-
-            $item = $order->items()->where('product_id', $product->id)->first();
-
-            if ($item) {
-                $item->qty += $requestQty;
-                $item->total_price = $item->qty * $item->price;
-                if ($request->has('notes')) {
-                    $item->notes = $request->notes;
-                }
-                $item->save();
-            } else {
-                $stationId = $product->pivot->station_id ?? $product->station_id;
-                $order->items()->create([
-                    'product_id' => $product->id,
-                    'station_id' => $stationId,
-                    'qty' => $requestQty,
-                    'price' => $price,
-                    'total_price' => $price * $requestQty,
-                    'notes' => $request->notes ?? null,
-                ]);
-            }
-
-            // Potong stok produk di outlet & catat riwayatnya
-            $newStock = $availableStock - $requestQty;
-            Outlet::findOrFail($order->outlet_id)->products()->updateExistingPivot($product->id, ['stock' => $newStock]);
-
-            \App\Models\StockHistory::create([
-                'outlet_id' => $order->outlet_id,
-                'product_id' => $product->id,
-                'user_id' => auth()->id(),
-                'type' => 'sale',
-                'quantity' => -$requestQty,
-                'final_stock' => $newStock,
-                'reference' => 'Tambah Item Kasir: ' . $order->invoice_number,
-            ]);
-
-            // Kalkulasi ulang total harga, diskon, dan pajak
-            $order->refresh();
-            $order->recalculateTotals();
-
-            DB::commit();
-
-            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
-
-            return response()->json($order->load('items.product'), 200);
+            return response()->json($order, 200);
         } catch (\Throwable $e) {
-            DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            $status = $e instanceof \RuntimeException ? 400 : 500;
+            return response()->json(['message' => $e->getMessage()], $status);
         }
     }
 
@@ -269,50 +199,15 @@ class OrderController extends Controller
      */
     public function removeItem($orderId, $itemId)
     {
-        $order = Order::where('id', $orderId)
-            ->where('outlet_id', auth()->user()->outlet_id)
-            ->firstOrFail();
-
-        if ($order->status !== Order::STATUS_PENDING && $order->status !== 'pending') {
-            return response()->json(['message' => 'Order sudah diproses/lunas dan tidak bisa diubah'], 400);
-        }
-
-        DB::beginTransaction();
         try {
-            $item = $order->items()->lockForUpdate()->findOrFail($itemId);
-            $outlet = \App\Models\Outlet::find($order->outlet_id);
-            $product = $outlet->products()->where('products.id', $item->product_id)->lockForUpdate()->first();
+            $order = $this->orderService->removeItemFromOrder((int) $orderId, (int) $itemId);
 
-            // Kembalikan stok ke outlet karena item dibatalkan/dihapus
-            if ($product) {
-                $newStock = $product->pivot->stock + $item->qty;
-                $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
+            event(new \App\Events\OrderUpdated($order));
 
-                \App\Models\StockHistory::create([
-                    'outlet_id' => $order->outlet_id,
-                    'product_id' => $item->product_id,
-                    'user_id' => auth()->id(),
-                    'type' => 'restore',
-                    'quantity' => $item->qty,
-                    'final_stock' => $newStock,
-                    'reference' => 'Hapus Item Kasir: ' . $order->invoice_number,
-                ]);
-            }
-
-            $item->delete();
-
-            // Kalkulasi ulang total, diskon, dan pajak setelah item dihapus
-            $order->refresh();
-            $order->recalculateTotals();
-
-            DB::commit();
-
-            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
-
-            return response()->json($order->load('items.product'), 200);
+            return response()->json($order, 200);
         } catch (\Throwable $e) {
-            DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            $status = $e instanceof \RuntimeException ? 400 : 500;
+            return response()->json(['message' => $e->getMessage()], $status);
         }
     }
 
@@ -331,73 +226,23 @@ class OrderController extends Controller
             return response()->json(['message' => 'Item does not belong to this order'], 404);
         }
 
-        $cancelQty = (int) $request->input('cancel_qty');
-
-        DB::beginTransaction();
         try {
-            $locked = OrderItem::where('id', $item->id)
-                ->where('order_id', $order->id)
-                ->lockForUpdate()
-                ->firstOrFail();
+            $updatedOrder = $this->orderService->cancelOrderItem(
+                $order,
+                $item,
+                (int) $request->input('cancel_qty'),
+                $request->input('reason')
+            );
 
-            $remaining = max(0, $locked->qty - $locked->cancelled_qty);
-
-            if ($cancelQty > $remaining) {
-                DB::rollBack();
-                return response()->json(['message' => 'cancel_qty exceeds remaining quantity'], 400);
-            }
-
-            $oldCancelled = $locked->cancelled_qty;
-            $locked->applyCancellation($cancelQty);
-            $diff = $locked->cancelled_qty - $oldCancelled;
-
-            $outlet = $order->outlet;
-            if ($outlet) {
-                $productPivot = $outlet->products()->where('products.id', $locked->product_id)->first();
-                $pivotStock = $productPivot?->pivot->stock ?? 0;
-                $newStock = $pivotStock + $diff;
-                if ($productPivot) {
-                    $outlet->products()->updateExistingPivot($locked->product_id, ['stock' => $newStock]);
-
-                    \App\Models\StockHistory::create([
-                        'outlet_id' => $order->outlet_id,
-                        'product_id' => $locked->product_id,
-                        'user_id' => auth()->id(),
-                        'type' => 'void',
-                        'quantity' => $diff,
-                        'final_stock' => $newStock,
-                        'reference' => 'Cancel Item: ' . $order->invoice_number,
-                    ]);
-                }
-            }
-
-            $logs = $order->logs ?? [];
-            array_unshift($logs, [
-                'date' => now()->format('d M Y H:i'),
-                'action' => "Cancel {$diff}x " . ($locked->product->name ?? 'item'),
-                'reason' => $request->input('reason') ?? null,
-                'by' => auth()->user()->name ?? 'system',
-            ]);
-            $order->update(['logs' => $logs]);
-
-            $order->refresh();
-            $order->recalculateTotals();
-
-            if ($order->status === Order::STATUS_PAID) {
-                $this->orderService->syncHistoryTransaction($order->fresh());
-            }
-
-            DB::commit();
-
-            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
+            event(new \App\Events\OrderUpdated($updatedOrder));
 
             return response()->json([
                 'message' => 'Item cancelled',
-                'order' => $order->fresh()->load('items.product', 'table'),
+                'order' => $updatedOrder,
             ]);
         } catch (\Throwable $e) {
-            DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            $status = $e instanceof \RuntimeException ? 400 : 500;
+            return response()->json(['message' => $e->getMessage()], $status);
         }
     }
 
@@ -1037,167 +882,25 @@ class OrderController extends Controller
             return response()->json(['message' => 'Order cancelled'], 400);
         }
 
-                $validated = $request->validate([
+        $validated = $request->validate([
             'reason' => 'required|string|max:255',
             'items' => 'required|array',
             'items.*.id' => 'required|exists:order_items,id',
-            // Batas atas per item divalidasi di dalam loop terhadap qty asli item
-            // (lihat di bawah), bukan angka magic seperti 100 - supaya tidak bisa
-            // membatalkan lebih banyak dari yang dipesan (total negatif / over-restock).
             'items.*.cancelled_qty' => 'required|integer|min:0',
         ]);
 
-        DB::beginTransaction();
         try {
-            $actionDetails = [];
-            $outlet = $order->outlet;
-            $warningMessage = null; // Menyiapkan custom message jika diskon jebol minimum
+            $result = $this->orderService->voidOrderItems($order, $validated['reason'], $validated['items']);
 
-            foreach ($validated['items'] as $inputItem) {
-                $item = $order->items()->find($inputItem['id']);
-                if (!$item) continue;
-
-                $oldQty = $item->cancelled_qty;
-                $newQty = (int) $inputItem['cancelled_qty'];
-
-                // Jumlah dibatalkan tidak boleh melebihi qty item yang dipesan.
-                // Tanpa guard ini, total_price item bisa jadi negatif dan stok
-                // dikembalikan lebih banyak dari yang pernah dipotong.
-                if ($newQty > $item->qty) {
-                    DB::rollBack();
-                    return response()->json([
-                        'message' => "Jumlah pembatalan untuk {$item->product->name} melebihi jumlah pesanan (maksimal {$item->qty}).",
-                    ], 422);
-                }
-
-                $diff = $newQty - $oldQty;
-
-                if ($diff !== 0) {
-                    $action = $diff > 0 ? 'Void' : 'Restore';
-                    $actionDetails[] = "{$action} " . abs($diff) . "x {$item->product->name}";
-
-                    $item->update([
-                        'cancelled_qty' => $newQty,
-                        'total_price' => ($item->qty - $newQty) * $item->price,
-                    ]);
-
-                    // Stock adjust...
-                    $pivotStock = $outlet->products()->where('products.id', $item->product_id)->first()?->pivot->stock ?? 0;
-                    $newStock = $pivotStock + $diff;
-                    $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
-
-                    \App\Models\StockHistory::create([
-                        'outlet_id' => $order->outlet_id,
-                        'product_id' => $item->product_id,
-                        'user_id' => auth()->id(),
-                        'type' => 'void',
-                        'quantity' => $diff,
-                        'final_stock' => $newStock,
-                        'reference' => 'Void: ' . $order->invoice_number,
-                    ]);
-                }
-            }
-
-            if ($actionDetails) {
-                $logs = $order->logs ?? [];
-                array_unshift($logs, [
-                    'date' => now()->format('d M Y H:i'),
-                    'action' => implode(', ', $actionDetails),
-                    'reason' => $validated['reason'],
-                    'by' => auth()->user()->name ?? 'system',
-                ]);
-                $order->update(['logs' => $logs]);
-
-                // --- PERBAIKAN: Hitung ulang Subtotal, Diskon & Pajak secara Dinamis ---
-                $order->refresh();
-                $newSubtotal = $order->items->sum('total_price');
-
-                $newDiscountAmount = 0;
-
-                if ($order->discount_id) {
-                    $discountModel = \App\Models\Discount::find($order->discount_id);
-                    // VALIDASI THE RULE: Jika subtotal baru kurang dari minimum purchase master diskon
-                    if ($discountModel && $newSubtotal < $discountModel->min_purchase) {
-
-                        $warningMessage = 'Refund berhasil diproses. Peringatan: Diskon otomatis dibatalkan karena total belanja kini di bawah batas minimum (Rp ' . number_format($discountModel->min_purchase, 0, ',', '.') . ').';
-
-                        // Cabut atribut diskon paksa
-                        $order->update([
-                            'discount_id' => null,
-                            'manual_discount_type' => null,
-                            'manual_discount_value' => null,
-                            'discount_amount' => 0,
-                        ]);
-                        // Refresh agar variabel order state mengikut updatetan hapus diskon
-                        $order->refresh();
-
-                    } else {
-                        // Jika masih memenuhi syarat, hitung ulang (misal kalau bentuknya persen %)
-                        if ($order->manual_discount_type === 'percentage') {
-                            $calc = $newSubtotal * ($order->manual_discount_value / 100);
-                            if ($discountModel && $discountModel->max_discount && $calc > $discountModel->max_discount) {
-                                $calc = $discountModel->max_discount;
-                            }
-                            $newDiscountAmount = (int) $calc;
-                        } else {
-                            $oldDiscount = $order->discount_amount ?? 0;
-                            $newDiscountAmount = (int) min($oldDiscount, $newSubtotal);
-                        }
-                    }
-                } else {
-                    // Jika manual diskon tanpa mengikat master (tidak ada minimal)
-                    if ($order->manual_discount_type === 'percentage') {
-                        $calc = $newSubtotal * ($order->manual_discount_value / 100);
-                        $newDiscountAmount = (int) $calc;
-                    } else {
-                        $oldDiscount = $order->discount_amount ?? 0;
-                        $newDiscountAmount = (int) min($oldDiscount, $newSubtotal);
-                    }
-                }
-
-                $amountAfterDiscount = max(0, $newSubtotal - $newDiscountAmount);
-
-                $newTaxAmount = 0;
-                if ($order->tax_id) {
-                    $tax = \App\Models\Tax::find($order->tax_id);
-                    if ($tax && $tax->active) {
-                        if ($tax->type === 'percentage') {
-                            $newTaxAmount = (int) round($amountAfterDiscount * ((float) $tax->rate / 100));
-                        } else {
-                            $newTaxAmount = (int) $tax->rate;
-                        }
-                    }
-                } elseif ($order->tax_amount > 0 && $order->subtotal_price > 0) {
-                    $oldAmountAfterDiscount = max(0, $order->subtotal_price - $order->discount_amount);
-                    if ($oldAmountAfterDiscount > 0) {
-                        $rate = $order->tax_amount / $oldAmountAfterDiscount;
-                        $newTaxAmount = (int) round($amountAfterDiscount * $rate);
-                    }
-                }
-
-                $order->recalculateTotals([
-                    'discount_amount' => $newDiscountAmount,
-                    'tax_amount' => $newTaxAmount
-                ]);
-                // --- END PERBAIKAN ---
-
-                if ($order->status === Order::STATUS_PAID) {
-                    $this->orderService->syncHistoryTransaction($order->fresh());
-                }
-            }
-
-            DB::commit();
-
-            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table', 'user')));
+            event(new \App\Events\OrderUpdated($result['order']));
 
             return response()->json([
-                // Kembalikan custom warning jika ada, jika aman tampilkan default message
-                'message' => $warningMessage ?? 'Void processed',
-                'order' => $order->fresh()->load('items.product', 'table', 'user'),
+                'message' => $result['warning'] ?? 'Void processed',
+                'order' => $result['order'],
             ]);
         } catch (\Throwable $e) {
-            DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            $status = $e instanceof \RuntimeException ? 422 : 500;
+            return response()->json(['message' => $e->getMessage()], $status);
         }
     }
 
@@ -1216,79 +919,18 @@ class OrderController extends Controller
             'items.*.notes' => 'nullable|string|max:500',
         ]);
 
-        DB::beginTransaction();
         try {
-            $outlet = $order->outlet;
+            $order = $this->orderService->updateOrderItems($order, $validated['items']);
 
-            foreach ($validated['items'] as $itemData) {
-                $item = \App\Models\OrderItem::where('id', $itemData['id'])
-                    ->where('order_id', $order->id)
-                    ->lockForUpdate()
-                    ->first();
-
-                if (!$item) continue;
-
-                $oldQty = (int) $item->qty;
-                $newQty = (int) $itemData['qty'];
-                $diff = $newQty - $oldQty; // positif = nambah, negatif = kurangi
-
-                // Sesuaikan stok produk sesuai selisih qty, konsisten dengan
-                // addItem/removeItem/voidItems/cancelItem yang selalu menjaga
-                // stok pivot outlet tetap sinkron dengan qty order.
-                if ($diff !== 0 && $outlet) {
-                    $productPivot = $outlet->products()
-                        ->where('products.id', $item->product_id)
-                        ->lockForUpdate()
-                        ->first();
-
-                    if ($productPivot) {
-                        $currentStock = (int) $productPivot->pivot->stock;
-
-                        // diff > 0 (nambah qty) butuh stok dipotong sejumlah diff
-                        if ($diff > 0 && $currentStock < $diff) {
-                            throw new \Exception("Stok {$productPivot->name} tidak cukup (Sisa: {$currentStock})");
-                        }
-
-                        $newStock = $currentStock - $diff;
-                        $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
-
-                        \App\Models\StockHistory::create([
-                            'outlet_id' => $order->outlet_id,
-                            'product_id' => $item->product_id,
-                            'user_id' => auth()->id(),
-                            'type' => $diff > 0 ? 'sale' : 'restore',
-                            'quantity' => -$diff,
-                            'final_stock' => $newStock,
-                            'reference' => 'Update Item Kasir: ' . $order->invoice_number,
-                        ]);
-                    }
-                }
-
-                $updateData = [
-                    'qty' => $newQty,
-                    'total_price' => $newQty * (int) $item->price,
-                ];
-
-                if (array_key_exists('notes', $itemData)) {
-                    $updateData['notes'] = $itemData['notes'];
-                }
-
-                $item->update($updateData);
-            }
-
-            $order->refresh();
-            $this->recalculateOrderTotals($order);
-            DB::commit();
-
-            event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
+            event(new \App\Events\OrderUpdated($order));
 
             return response()->json([
                 'message' => 'Order items updated',
-                'order' => $order->fresh()->load('items.product'),
+                'order' => $order,
             ]);
         } catch (\Throwable $e) {
-            DB::rollBack();
-            return response()->json(['message' => $e->getMessage()], 500);
+            $status = $e instanceof \RuntimeException ? 400 : 500;
+            return response()->json(['message' => $e->getMessage()], $status);
         }
     }
 
@@ -1395,131 +1037,19 @@ class OrderController extends Controller
      */
     public function midtransCallback(Request $request)
     {
-        $order = Order::with('items.product', 'table', 'payments')->where('invoice_number', $request->order_id)->first();
-
-        if (!$order) {
-            return response()->json(['message' => 'Order not found'], 404);
-        }
-
-        // Catatan: fallback ke env() di sini sengaja dipertahankan sebagai
-        // jaring pengaman untuk order LAMA yang mungkin sudah terlanjur dibuat
-        // dengan midtrans_server_key_used kosong sebelum proteksi di
-        // publicOrder()/checkoutOrder() ditambahkan (lihat catatan di sana).
-        // Order BARU dengan server key kosong sekarang langsung ditolak
-        // sebelum sempat mengirim transaksi ke Midtrans, sehingga tidak akan
-        // pernah memicu webhook nyata dari Midtrans untuk kasus ini lagi.
-        $serverKey = $order->midtrans_server_key_used ?: env('MIDTRANS_SERVER_KEY');
-        $hashed = hash('sha512', $request->order_id . $request->status_code . $request->gross_amount . $serverKey);
-
-        if ($hashed !== $request->signature_key) {
-            return response()->json(['message' => 'Invalid signature'], 403);
-        }
-
-        DB::beginTransaction();
-
         try {
-            // Kunci baris order ini untuk mencegah race condition jika Midtrans
-            // mengirim webhook yang sama lebih dari sekali secara bersamaan
-            // (retry mechanism Midtrans memang umum terjadi).
-            $lockedOrder = Order::where('id', $order->id)->lockForUpdate()->first();
+            $result = $this->orderService->handleMidtransCallback($request->all());
 
-            // Idempotency guard: order yang statusnya sudah final (paid/cancelled)
-            // tidak boleh diproses ulang. Tanpa ini, webhook duplikat akan
-            // mengembalikan stok dua kali untuk status cancel/expire, atau
-            // membroadcast event PaymentPaid/OrderUpdated berkali-kali.
-            if (in_array($lockedOrder->status, [Order::STATUS_PAID, Order::STATUS_CANCELLED], true)) {
-                DB::commit();
-                return response()->json(['message' => 'Callback already processed']);
+            if ($result['status'] === 404) {
+                return response()->json(['message' => $result['message']], 404);
             }
 
-            if (in_array($request->transaction_status, ['settlement', 'capture'], true)) {
-                // Pastikan perhitungan diskon & pajak tersinkron sebelum status paid & history dibuat.
-                // Ini mencegah kasus diskon "hilang" ketika callback datang.
-                $order->loadMissing('items');
-                $order->recalculateTotals();
-                $order->refresh();
-
-                if (in_array($order->payment_method, ['card', 'credit_card'], true)) {
-                    $order->payment_method = 'card';
-
-                } elseif (in_array($order->payment_method, ['cash', 'tunai'], true)) {
-                    $order->payment_method = 'cash';
-                } else {
-                    $order->payment_method = 'qris';
-                }
-
-                $order->update(['status' => Order::STATUS_PAID]);
-
-                if ($order->table_id) {
-                    $order->table->update([
-                        'status' => 'reserved',
-                        'reserved_until' => now()->addMinutes(20),
-                    ]);
-                }
-
-                $order->save();
-
-                $midtransPaymentType = $request->payment_type ?? 'qris';
-                if (in_array(strtolower($midtransPaymentType), ['credit_card', 'card'])) {
-                    $paymentMethod = 'card';
-                } else {
-                    $paymentMethod = 'qris';
-                }
-
-                Payment::create([
-                    'order_id' => $order->id,
-                    'amount_paid' => (int) $request->gross_amount,
-                    'change_amount' => 0,
-                    'method' => $paymentMethod,
-                    'reference_no' => $request->transaction_id ?? ('MIDTRANS-' . $order->invoice_number),
-                    'paid_at' => now(),
-                    'paid_by' => $order->user_id,
-                ]);
-
-                $this->orderService->syncHistoryTransaction($order->fresh());
-
-                $broadcastOrder = $order->fresh()->load(['items.product', 'table', 'payments', 'discount']);
-                // broadcast(new \App\Events\OrderCreated($broadcastOrder));
-                event(new \App\Events\PaymentPaid($broadcastOrder));
-                event(new \App\Events\OrderUpdated($broadcastOrder));
-            } elseif (in_array($request->transaction_status, ['cancel', 'deny', 'expire'], true)) {
-                $order->decrementDiscountUsage();
-                $order->update(['status' => Order::STATUS_CANCELLED]);
-
-                if ($order->table_id) {
-                    $order->table->update(['status' => 'available', 'reserved_until' => null]);
-                }
-
-                $outlet = \App\Models\Outlet::find($order->outlet_id);
-                if ($outlet) {
-                    foreach ($order->items as $item) {
-                        $product = $outlet->products()->where('products.id', $item->product_id)->first();
-
-                        if ($product) {
-                            $newStock = $product->pivot->stock + $item->qty;
-                            $outlet->products()->updateExistingPivot($item->product_id, ['stock' => $newStock]);
-
-                            \App\Models\StockHistory::create([
-                                'outlet_id' => $order->outlet_id,
-                                'product_id' => $item->product_id,
-                                'user_id' => null,
-                                'type' => 'restore',
-                                'quantity' => $item->qty,
-                                'final_stock' => $newStock,
-                                'reference' => 'Auto-Cancel Midtrans: ' . $order->invoice_number,
-                            ]);
-                        }
-                    }
-                }
-
-                event(new \App\Events\OrderUpdated($order->fresh()->load('items.product', 'table')));
+            if ($result['status'] === 403) {
+                return response()->json(['message' => $result['message']], 403);
             }
 
-            DB::commit();
-
-            return response()->json(['message' => 'Callback received']);
+            return response()->json(['message' => $result['message']], $result['status']);
         } catch (\Throwable $e) {
-            DB::rollBack();
             \Log::error('Midtrans callback error: ' . $e->getMessage());
             return response()->json(['message' => 'Internal error'], 500);
         }
