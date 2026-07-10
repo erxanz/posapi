@@ -77,9 +77,36 @@ return new class extends Migration
             "INSERT INTO orders__tmp ($colList) SELECT $colList FROM orders;"
         );
 
-        // 3) Swap tables.
+        // 3) Drop FK constraints referencing orders before dropping the table.
+        // Only needed for PostgreSQL/MySQL; SQLite's disableForeignKeyConstraints is sufficient.
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            Schema::table('order_items', function (Blueprint $table) {
+                $table->dropForeign(['order_id']);
+            });
+            Schema::table('payments', function (Blueprint $table) {
+                $table->dropForeign(['order_id']);
+            });
+            Schema::table('history_transactions', function (Blueprint $table) {
+                $table->dropForeign(['order_id']);
+            });
+        }
+
+        // 4) Swap tables.
         Schema::drop('orders');
         Schema::rename('orders__tmp', 'orders');
+
+        // 5) Re-add FK constraints.
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            Schema::table('order_items', function (Blueprint $table) {
+                $table->foreign('order_id')->references('id')->on('orders')->cascadeOnDelete();
+            });
+            Schema::table('payments', function (Blueprint $table) {
+                $table->foreign('order_id')->references('id')->on('orders')->cascadeOnDelete();
+            });
+            Schema::table('history_transactions', function (Blueprint $table) {
+                $table->foreign('order_id')->references('id')->on('orders')->cascadeOnDelete();
+            });
+        }
 
         Schema::enableForeignKeyConstraints();
 
@@ -147,8 +174,32 @@ return new class extends Migration
             "INSERT INTO orders__tmp ($colList) SELECT $colList FROM orders;"
         );
 
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            Schema::table('order_items', function (Blueprint $table) {
+                $table->dropForeign(['order_id']);
+            });
+            Schema::table('payments', function (Blueprint $table) {
+                $table->dropForeign(['order_id']);
+            });
+            Schema::table('history_transactions', function (Blueprint $table) {
+                $table->dropForeign(['order_id']);
+            });
+        }
+
         Schema::drop('orders');
         Schema::rename('orders__tmp', 'orders');
+
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            Schema::table('order_items', function (Blueprint $table) {
+                $table->foreign('order_id')->references('id')->on('orders')->cascadeOnDelete();
+            });
+            Schema::table('payments', function (Blueprint $table) {
+                $table->foreign('order_id')->references('id')->on('orders')->cascadeOnDelete();
+            });
+            Schema::table('history_transactions', function (Blueprint $table) {
+                $table->foreign('order_id')->references('id')->on('orders')->cascadeOnDelete();
+            });
+        }
 
         Schema::enableForeignKeyConstraints();
     }
