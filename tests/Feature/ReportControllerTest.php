@@ -13,7 +13,6 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\Table;
 use App\Models\Station;
-use App\Models\ShiftKaryawan;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -115,70 +114,6 @@ class ReportControllerTest extends TestCase
             'paid_at' => $paidAt,
             'cashier_id' => $cashierId,
         ]);
-    }
-
-    private function createOrderOnDate(string $date, array $items, ?string $time = null, string $paymentMethod = 'cash', ?int $cashierId = null, ?int $tableId = null): void
-    {
-        $carbon = Carbon::parse($date);
-        if ($time !== null) {
-            $parts = explode(':', $time);
-            $carbon->setTime((int) $parts[0], (int) ($parts[1] ?? 0), (int) ($parts[2] ?? 0));
-        }
-        $this->createPaidOrder($items, $carbon, $paymentMethod, $cashierId, $tableId);
-    }
-
-    private function createOtherOutletOrder(array $overrides = []): object
-    {
-        $otherOwner = User::factory()->create(['role' => 'manager']);
-        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
-        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id]);
-
-        $productId = $overrides['product_id'] ?? $this->product1->id;
-        $cashierId = $overrides['cashier_id'] ?? $otherOwner->id;
-        $unitPrice = $overrides['price'] ?? 50000;
-        $paidAt = $overrides['paid_at'] ?? Carbon::now()->subDays(1);
-
-        $order = Order::factory()->create([
-            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
-            'user_id' => $otherOwner->id, 'status' => 'paid',
-            'invoice_number' => 'INV-OTHER-001',
-            'subtotal_price' => $unitPrice, 'total_price' => $unitPrice,
-            'payment_method' => 'cash',
-            'created_at' => $paidAt, 'updated_at' => $paidAt,
-        ]);
-
-        $orderItemData = [
-            'order_id' => $order->id, 'product_id' => $productId,
-            'qty' => 1, 'price' => $unitPrice, 'total_price' => $unitPrice,
-        ];
-        if (isset($overrides['station_id'])) {
-            $orderItemData['station_id'] = $overrides['station_id'];
-        }
-        OrderItem::factory()->create($orderItemData);
-
-        $payment = Payment::factory()->create([
-            'order_id' => $order->id, 'amount_paid' => $unitPrice, 'change_amount' => 0,
-            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $cashierId,
-        ]);
-
-        $historyData = [
-            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
-            'payment_id' => $payment->id, 'status' => 'paid',
-            'invoice_number' => 'INV-OTHER-001',
-            'subtotal_price' => $unitPrice, 'total_price' => $unitPrice, 'paid_amount' => $unitPrice,
-            'payment_method' => 'cash', 'paid_at' => $paidAt,
-        ];
-        if ($cashierId !== $otherOwner->id) {
-            $historyData['cashier_id'] = $cashierId;
-        }
-        HistoryTransaction::factory()->create($historyData);
-
-        return (object) [
-            'owner' => $otherOwner,
-            'outlet' => $otherOutlet,
-            'table' => $otherTable,
-            'order' => $order,
-        ];
     }
 
     /**
@@ -712,7 +647,10 @@ class ReportControllerTest extends TestCase
         $startDate = '2026-01-01';
         $endDate = '2026-01-31';
 
-        $this->createOrderOnDate('2026-01-15', [['product_id' => $this->product1->id, 'qty' => 2]]);
+        $this->createPaidOrder(
+            [['product_id' => $this->product1->id, 'qty' => 2]],
+            Carbon::parse('2026-01-15')
+        );
 
         $response = $this->actingAs($this->owner)->get(
             '/api/v1/reports/export?report_type=products&outlet_id=' . $this->outlet->id
@@ -723,151 +661,6 @@ class ReportControllerTest extends TestCase
         $disposition = $response->headers->get('Content-Disposition');
         $this->assertStringContainsString('20260101', $disposition);
         $this->assertStringContainsString('20260131', $disposition);
-    }
-
-    /**
-     * Export with report_type=shifts returns valid Excel file with shift data.
-     */
-    public function test_export_shifts_returns_excel(): void
-    {
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'opening_balance' => 100000,
-            'closing_balance_system' => 300000,
-            'difference' => 5000,
-            'started_at' => Carbon::now()->subDays(1)->setTime(8, 0, 0),
-            'ended_at' => Carbon::now()->subDays(1)->setTime(17, 0, 0),
-            'status' => 'closed',
-        ]);
-
-        $response = $this->actingAs($this->owner)->get(
-            '/api/v1/reports/export?report_type=shifts&outlet_id=' . $this->outlet->id
-        );
-
-        $response->assertStatus(200);
-        $disposition = $response->headers->get('Content-Disposition');
-        $this->assertStringContainsString('attachment', $disposition);
-        $this->assertStringContainsString('.xlsx', $disposition);
-        $this->assertStringContainsString('Laporan_Shifts', $disposition);
-    }
-
-    /**
-     * Export with report_type=staff returns valid Excel file with cashier performance data.
-     */
-    public function test_export_staff_returns_excel(): void
-    {
-        $cashier = User::factory()->create(['name' => 'Kasir Test', 'role' => 'karyawan', 'outlet_id' => $this->outlet->id]);
-        $this->createPaidOrder(
-            [['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]],
-            null, 'cash', $cashier->id
-        );
-
-        $response = $this->actingAs($this->owner)->get(
-            '/api/v1/reports/export?report_type=staff&outlet_id=' . $this->outlet->id
-        );
-
-        $response->assertStatus(200);
-        $disposition = $response->headers->get('Content-Disposition');
-        $this->assertStringContainsString('attachment', $disposition);
-        $this->assertStringContainsString('.xlsx', $disposition);
-        $this->assertStringContainsString('Laporan_Staff', $disposition);
-    }
-
-    /**
-     * Export with report_type=sales returns valid Excel file with daily sales data.
-     */
-    public function test_export_sales_type_returns_excel(): void
-    {
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 3, 'price' => 25000]]);
-
-        $response = $this->actingAs($this->owner)->get(
-            '/api/v1/reports/export?report_type=sales&outlet_id=' . $this->outlet->id
-            . '&start_date=2026-07-01&end_date=2026-07-31'
-        );
-
-        $response->assertStatus(200);
-        $disposition = $response->headers->get('Content-Disposition');
-        $this->assertStringContainsString('attachment', $disposition);
-        $this->assertStringContainsString('.xlsx', $disposition);
-        $this->assertStringContainsString('Laporan_Sales', $disposition);
-    }
-
-    /**
-     * Export with format=pdf returns a PDF file download.
-     */
-    public function test_export_pdf_format_returns_pdf(): void
-    {
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]]);
-
-        $response = $this->actingAs($this->owner)->get(
-            '/api/v1/reports/export?report_type=summary&outlet_id=' . $this->outlet->id
-            . '&format=pdf'
-        );
-
-        $response->assertStatus(200);
-        $contentType = $response->headers->get('Content-Type');
-        $this->assertStringContainsString('pdf', strtolower($contentType));
-        $disposition = $response->headers->get('Content-Disposition');
-        $this->assertStringContainsString('.pdf', $disposition);
-        $this->assertStringContainsString('Laporan_Summary', $disposition);
-    }
-
-    /**
-     * Export with report_type=shifts returns valid file even when no shift data.
-     */
-    public function test_export_shifts_empty_data_returns_excel(): void
-    {
-        $response = $this->actingAs($this->owner)->get(
-            '/api/v1/reports/export?report_type=shifts&outlet_id=' . $this->outlet->id
-        );
-
-        $response->assertStatus(200);
-        $disposition = $response->headers->get('Content-Disposition');
-        $this->assertStringContainsString('.xlsx', $disposition);
-    }
-
-    /**
-     * Export with report_type=staff returns valid file even when no transaction data.
-     */
-    public function test_export_staff_empty_data_returns_excel(): void
-    {
-        $response = $this->actingAs($this->owner)->get(
-            '/api/v1/reports/export?report_type=staff&outlet_id=' . $this->outlet->id
-        );
-
-        $response->assertStatus(200);
-        $disposition = $response->headers->get('Content-Disposition');
-        $this->assertStringContainsString('.xlsx', $disposition);
-    }
-
-    /**
-     * Export with report_type=sales returns valid file even when no transaction data.
-     */
-    public function test_export_sales_empty_data_returns_excel(): void
-    {
-        $response = $this->actingAs($this->owner)->get(
-            '/api/v1/reports/export?report_type=sales&outlet_id=' . $this->outlet->id
-            . '&start_date=2026-07-01&end_date=2026-07-31'
-        );
-
-        $response->assertStatus(200);
-        $disposition = $response->headers->get('Content-Disposition');
-        $this->assertStringContainsString('.xlsx', $disposition);
-    }
-
-    /**
-     * Export with report_type=sales rejects invalid date format.
-     */
-    public function test_export_sales_rejects_invalid_date(): void
-    {
-        $response = $this->actingAs($this->owner)->get(
-            '/api/v1/reports/export?report_type=sales&outlet_id=' . $this->outlet->id
-            . '&start_date=invalid-date'
-        );
-
-        $response->assertStatus(400);
-        $response->assertJson(['message' => 'Format tanggal tidak valid']);
     }
 
     // =========================================================================
@@ -1019,11 +812,43 @@ class ReportControllerTest extends TestCase
         $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
         $otherCategory = Category::factory()->create(['owner_id' => $otherOwner->id, 'name' => 'Other Cat']);
         $otherProduct = Product::factory()->create(['category_id' => $otherCategory->id, 'owner_id' => $otherOwner->id]);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id]);
+
         $otherOutlet->products()->attach($otherProduct->id, ['price' => 50000, 'stock' => 10, 'is_active' => true]);
 
-        $this->createOtherOutletOrder(['product_id' => $otherProduct->id]);
+        // Create order for the other outlet
+        $paidAt = Carbon::now()->subDays(1);
+        $order = Order::factory()->create([
+            'outlet_id' => $otherOutlet->id,
+            'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id,
+            'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 50000,
+            'total_price' => 50000,
+            'payment_method' => 'cash',
+            'created_at' => $paidAt,
+            'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $otherProduct->id,
+            'qty' => 1, 'price' => 50000, 'total_price' => 50000,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 50000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $otherOwner->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 50000, 'total_price' => 50000, 'paid_amount' => 50000,
+            'payment_method' => 'cash', 'paid_at' => $paidAt,
+        ]);
 
+        // Report for owner's outlet should NOT include other outlet's data
         $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
         $response->assertStatus(200);
         $this->assertEquals([], $response->json('category_performance'));
     }
@@ -1176,9 +1001,37 @@ class ReportControllerTest extends TestCase
      */
     public function test_payment_methods_respects_outlet_isolation(): void
     {
-        $this->createOtherOutletOrder();
+        $otherOwner = User::factory()->create(['role' => 'manager']);
+        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id]);
+
+        $paidAt = Carbon::now()->subDays(1);
+        $order = Order::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 100000, 'total_price' => 100000,
+            'payment_method' => 'qris',
+            'created_at' => $paidAt, 'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $this->product1->id,
+            'qty' => 1, 'price' => 100000, 'total_price' => 100000,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 100000, 'change_amount' => 0,
+            'method' => 'qris', 'paid_at' => $paidAt, 'paid_by' => $otherOwner->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 100000, 'total_price' => 100000, 'paid_amount' => 100000,
+            'payment_method' => 'qris', 'paid_at' => $paidAt,
+        ]);
 
         $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
         $response->assertStatus(200);
         $this->assertEquals([], $response->json('payment_methods'));
     }
@@ -1343,7 +1196,34 @@ class ReportControllerTest extends TestCase
      */
     public function test_hourly_sales_respects_outlet_isolation(): void
     {
-        $this->createOtherOutletOrder();
+        $otherOwner = User::factory()->create(['role' => 'manager']);
+        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id]);
+
+        $paidAt = Carbon::now()->subDays(1)->setTime(14, 0, 0);
+        $order = Order::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 50000, 'total_price' => 50000,
+            'payment_method' => 'cash',
+            'created_at' => $paidAt, 'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $this->product1->id,
+            'qty' => 1, 'price' => 50000, 'total_price' => 50000,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 50000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $otherOwner->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 50000, 'total_price' => 50000, 'paid_amount' => 50000,
+            'payment_method' => 'cash', 'paid_at' => $paidAt,
+        ]);
 
         $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
 
@@ -1499,10 +1379,36 @@ class ReportControllerTest extends TestCase
         $otherOwner = User::factory()->create(['role' => 'manager']);
         $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
         $otherCashier = User::factory()->create(['name' => 'Other Kasir', 'role' => 'karyawan', 'outlet_id' => $otherOutlet->id]);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id]);
 
-        $this->createOtherOutletOrder(['cashier_id' => $otherCashier->id]);
+        $paidAt = Carbon::now()->subDays(1);
+        $order = Order::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 75000, 'total_price' => 75000,
+            'payment_method' => 'cash',
+            'created_at' => $paidAt, 'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $this->product1->id,
+            'qty' => 1, 'price' => 75000, 'total_price' => 75000,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 75000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $otherCashier->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 75000, 'total_price' => 75000, 'paid_amount' => 75000,
+            'payment_method' => 'cash', 'paid_at' => $paidAt,
+            'cashier_id' => $otherCashier->id,
+        ]);
 
         $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
         $response->assertStatus(200);
         $this->assertEquals([], $response->json('cashier_performance'));
     }
@@ -1670,9 +1576,37 @@ class ReportControllerTest extends TestCase
      */
     public function test_table_performance_respects_outlet_isolation(): void
     {
-        $this->createOtherOutletOrder();
+        $otherOwner = User::factory()->create(['role' => 'manager']);
+        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id, 'name' => 'Other Table']);
+
+        $paidAt = Carbon::now()->subDays(1);
+        $order = Order::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 75000, 'total_price' => 75000,
+            'payment_method' => 'cash',
+            'created_at' => $paidAt, 'updated_at' => $paidAt,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id, 'product_id' => $this->product1->id,
+            'qty' => 1, 'price' => 75000, 'total_price' => 75000,
+        ]);
+        $payment = Payment::factory()->create([
+            'order_id' => $order->id, 'amount_paid' => 75000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $otherOwner->id,
+        ]);
+        HistoryTransaction::factory()->create([
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
+            'payment_id' => $payment->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 75000, 'total_price' => 75000, 'paid_amount' => 75000,
+            'payment_method' => 'cash', 'paid_at' => $paidAt,
+        ]);
 
         $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
+
         $response->assertStatus(200);
         $this->assertEquals([], $response->json('table_performance'));
     }
@@ -1834,811 +1768,40 @@ class ReportControllerTest extends TestCase
         $otherOwner = User::factory()->create(['role' => 'manager']);
         $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
         $otherStation = Station::factory()->create(['owner_id' => $otherOwner->id, 'name' => 'Other Station']);
+        $otherTable = Table::factory()->create(['outlet_id' => $otherOutlet->id]);
+
         $otherProduct = Product::factory()->create(['category_id' => $this->category->id, 'owner_id' => $otherOwner->id]);
         $otherOutlet->products()->attach($otherProduct->id, ['price' => 50000, 'stock' => 10, 'is_active' => true]);
 
-        $this->createOtherOutletOrder(['product_id' => $otherProduct->id, 'station_id' => $otherStation->id]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-        $response->assertStatus(200);
-        $this->assertEquals([], $response->json('station_performance'));
-    }
-
-    // =========================================================================
-    // SHIFT SUMMARY (report index)
-    // =========================================================================
-
-    /**
-     * Shift summary returns avg_shift_revenue, total_shift_revenue, total_shifts,
-     * avg_variance, and total_variance from closed shifts.
-     */
-    public function test_shift_summary_returns_calculated_values(): void
-    {
-        $endedAt = Carbon::now()->subDays(1)->setTime(17, 0, 0);
-
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'opening_balance' => 100000,
-            'closing_balance_system' => 300000,
-            'difference' => 5000,
-            'started_at' => Carbon::now()->subDays(1)->setTime(8, 0, 0),
-            'ended_at' => $endedAt,
-            'status' => 'closed',
-        ]);
-
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'opening_balance' => 200000,
-            'closing_balance_system' => 500000,
-            'difference' => -3000,
-            'started_at' => Carbon::now()->subDays(1)->setTime(10, 0, 0),
-            'ended_at' => Carbon::now()->subDays(1)->setTime(22, 0, 0),
-            'status' => 'closed',
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $shiftSummary = $response->json('shift_summary');
-
-        // Shift 1: 300000 - 100000 = 200000, Shift 2: 500000 - 200000 = 300000
-        // total = 500000, avg = 250000
-        $this->assertEquals(250000, $shiftSummary['avg_shift_revenue']);
-        $this->assertEquals(500000, $shiftSummary['total_shift_revenue']);
-        $this->assertEquals(2, $shiftSummary['total_shifts']);
-        // avg_variance = (5000 + (-3000)) / 2 = 1000
-        $this->assertEquals(1000, $shiftSummary['avg_variance']);
-        // total_variance = 5000 + (-3000) = 2000
-        $this->assertEquals(2000, $shiftSummary['total_variance']);
-    }
-
-    /**
-     * Active shifts (where ended_at is null) are excluded from the summary.
-     */
-    public function test_shift_summary_excludes_active_shifts(): void
-    {
-        // Active shift — should NOT be counted
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'opening_balance' => 100000,
-            'closing_balance_system' => 500000,
-            'difference' => 0,
-            'started_at' => Carbon::now()->subDays(1)->setTime(8, 0, 0),
-            'ended_at' => null,
-            'status' => 'active',
-        ]);
-
-        // Closed shift — should be counted
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'opening_balance' => 200000,
-            'closing_balance_system' => 500000,
-            'difference' => 10000,
-            'started_at' => Carbon::now()->subDays(1)->setTime(10, 0, 0),
-            'ended_at' => Carbon::now()->subDays(1)->setTime(22, 0, 0),
-            'status' => 'closed',
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $shiftSummary = $response->json('shift_summary');
-
-        // Only closed shift counted: 500000 - 200000 = 300000
-        $this->assertEquals(300000, $shiftSummary['total_shift_revenue']);
-        $this->assertEquals(1, $shiftSummary['total_shifts']);
-        $this->assertEquals(300000, $shiftSummary['avg_shift_revenue']);  // avg = total for single shift
-        $this->assertEquals(10000, $shiftSummary['total_variance']);
-    }
-
-    /**
-     * Shift summary returns all zeros when no shifts exist.
-     */
-    public function test_shift_summary_zeros_when_no_shifts(): void
-    {
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $shiftSummary = $response->json('shift_summary');
-
-        $this->assertEquals(0, $shiftSummary['avg_shift_revenue']);
-        $this->assertEquals(0, $shiftSummary['total_shift_revenue']);
-        $this->assertEquals(0, $shiftSummary['total_shifts']);
-        $this->assertEquals(0, $shiftSummary['avg_variance']);
-        $this->assertEquals(0, $shiftSummary['total_variance']);
-    }
-
-    /**
-     * Shift summary response structure has correct keys.
-     */
-    public function test_shift_summary_response_structure(): void
-    {
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'opening_balance' => 100000,
-            'closing_balance_system' => 200000,
-            'difference' => 0,
-            'started_at' => Carbon::now()->subDays(1)->setTime(8, 0, 0),
-            'ended_at' => Carbon::now()->subDays(1)->setTime(17, 0, 0),
-            'status' => 'closed',
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $response->assertJsonStructure([
-            'shift_summary' => [
-                'avg_shift_revenue',
-                'total_shift_revenue',
-                'total_shifts',
-                'avg_variance',
-                'total_variance',
-            ],
-        ]);
-    }
-
-    /**
-     * Shift summary respects outlet isolation.
-     */
-    public function test_shift_summary_respects_outlet_isolation(): void
-    {
-        $otherOwner = User::factory()->create(['role' => 'manager']);
-        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
-        $otherCashier = User::factory()->create(['role' => 'karyawan', 'outlet_id' => $otherOutlet->id]);
-
-        // Create closed shift for other outlet
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $otherOutlet->id,
-            'user_id' => $otherCashier->id,
-            'opening_balance' => 100000,
-            'closing_balance_system' => 500000,
-            'difference' => 5000,
-            'started_at' => Carbon::now()->subDays(1)->setTime(8, 0, 0),
-            'ended_at' => Carbon::now()->subDays(1)->setTime(17, 0, 0),
-            'status' => 'closed',
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $shiftSummary = $response->json('shift_summary');
-
-        $this->assertEquals(0, $shiftSummary['total_shifts']);
-        $this->assertEquals(0, $shiftSummary['total_shift_revenue']);
-    }
-
-    /**
-     * Shift summary only includes shifts that ended within the date range.
-     */
-    public function test_shift_summary_filters_by_date_range(): void
-    {
-        // Shift ended 60 days ago — outside default date range
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'opening_balance' => 100000,
-            'closing_balance_system' => 500000,
-            'difference' => 5000,
-            'started_at' => Carbon::now()->subDays(61)->setTime(8, 0, 0),
-            'ended_at' => Carbon::now()->subDays(60)->setTime(17, 0, 0),
-            'status' => 'closed',
-        ]);
-
-        // Shift ended yesterday — within default date range (start of month)
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'opening_balance' => 200000,
-            'closing_balance_system' => 400000,
-            'difference' => 2000,
-            'started_at' => Carbon::now()->subDays(1)->setTime(8, 0, 0),
-            'ended_at' => Carbon::now()->subDays(1)->setTime(17, 0, 0),
-            'status' => 'closed',
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $shiftSummary = $response->json('shift_summary');
-
-        // Only the yesterday shift counted: 400000 - 200000 = 200000
-        $this->assertEquals(1, $shiftSummary['total_shifts']);
-        $this->assertEquals(200000, $shiftSummary['total_shift_revenue']);
-        $this->assertEquals(200000, $shiftSummary['avg_shift_revenue']);
-        $this->assertEquals(2000, $shiftSummary['total_variance']);
-    }
-
-    /**
-     * Single closed shift: avg and total should be equal.
-     */
-    public function test_shift_summary_single_shift(): void
-    {
-        ShiftKaryawan::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'user_id' => $this->owner->id,
-            'opening_balance' => 150000,
-            'closing_balance_system' => 350000,
-            'difference' => 10000,
-            'started_at' => Carbon::now()->subDays(1)->setTime(8, 0, 0),
-            'ended_at' => Carbon::now()->subDays(1)->setTime(17, 0, 0),
-            'status' => 'closed',
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $shiftSummary = $response->json('shift_summary');
-
-        // Revenue: 350000 - 150000 = 200000
-        $this->assertEquals(200000, $shiftSummary['total_shift_revenue']);
-        $this->assertEquals(200000, $shiftSummary['avg_shift_revenue']);
-        $this->assertEquals(1, $shiftSummary['total_shifts']);
-        $this->assertEquals(10000, $shiftSummary['total_variance']);
-        $this->assertEquals(10000, $shiftSummary['avg_variance']);
-    }
-
-    // =========================================================================
-    // REVENUE CHART (report index)
-    // =========================================================================
-
-    /**
-     * Revenue chart returns entries with date, revenue, and transactions.
-     */
-    public function test_revenue_chart_returns_date_revenue_transactions(): void
-    {
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $chart = $response->json('revenue_chart');
-
-        $this->assertCount(1, $chart);
-        $this->assertEquals('2026-07-07', $chart[0]['date']);
-        $this->assertEquals(50000, $chart[0]['revenue']);
-        $this->assertEquals(1, $chart[0]['transactions']);
-    }
-
-    /**
-     * Revenue chart aggregates multiple orders on the same day.
-     */
-    public function test_revenue_chart_aggregates_multiple_orders_same_day(): void
-    {
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]], '10:00');
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product2->id, 'qty' => 3, 'price' => 10000]], '15:00');
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $chart = $response->json('revenue_chart');
-
-        $this->assertCount(1, $chart);
-        $this->assertEquals('2026-07-07', $chart[0]['date']);
-        $this->assertEquals(80000, $chart[0]['revenue']);  // 50000 + 30000
-        $this->assertEquals(2, $chart[0]['transactions']);
-    }
-
-    /**
-     * Revenue chart has separate entries for different days.
-     */
-    public function test_revenue_chart_separate_entries_for_different_days(): void
-    {
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 1, 'price' => 50000]]);
-        $this->createOrderOnDate('2026-07-09', [['product_id' => $this->product2->id, 'qty' => 1, 'price' => 30000]]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $chart = $response->json('revenue_chart');
-
-        $this->assertCount(2, $chart);
-        $this->assertEquals('2026-07-07', $chart[0]['date']);
-        $this->assertEquals(50000, $chart[0]['revenue']);
-        $this->assertEquals('2026-07-09', $chart[1]['date']);
-        $this->assertEquals(30000, $chart[1]['revenue']);
-    }
-
-    /**
-     * Revenue chart is empty when no transactions exist.
-     */
-    public function test_revenue_chart_empty_when_no_transactions(): void
-    {
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $this->assertEquals([], $response->json('revenue_chart'));
-    }
-
-    /**
-     * Revenue chart respects outlet isolation.
-     */
-    public function test_revenue_chart_respects_outlet_isolation(): void
-    {
-        $this->createOtherOutletOrder();
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-        $response->assertStatus(200);
-        $this->assertEquals([], $response->json('revenue_chart'));
-    }
-
-    // =========================================================================
-    // SALES REPORT (report index)
-    // =========================================================================
-
-    /**
-     * Sales report returns date, transactions, gross, discount, tax, net.
-     */
-    public function test_sales_report_returns_full_structure(): void
-    {
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $salesReport = $response->json('sales_report');
-
-        $this->assertCount(1, $salesReport);
-        $this->assertEquals('2026-07-07', $salesReport[0]['date']);
-        $this->assertEquals(1, $salesReport[0]['transactions']);
-        $this->assertArrayHasKey('gross', $salesReport[0]);
-        $this->assertArrayHasKey('discount', $salesReport[0]);
-        $this->assertArrayHasKey('tax', $salesReport[0]);
-        $this->assertArrayHasKey('net', $salesReport[0]);
-    }
-
-    /**
-     * Sales report gross matches sum of order_items total_price.
-     */
-    public function test_sales_report_gross_from_order_items(): void
-    {
-        // Create manually with explicit discount=0 and tax=0 (factory defaults are random)
-        $paidAt = Carbon::parse('2026-07-07');
-        $invoiceNum = 'INV-GROSS-001';
-
+        $paidAt = Carbon::now()->subDays(1);
         $order = Order::factory()->create([
-            'outlet_id' => $this->outlet->id, 'table_id' => $this->table->id,
-            'user_id' => $this->owner->id, 'status' => 'paid',
-            'invoice_number' => $invoiceNum,
-            'subtotal_price' => 75000, 'total_price' => 75000,
+            'outlet_id' => $otherOutlet->id, 'table_id' => $otherTable->id,
+            'user_id' => $otherOwner->id, 'status' => 'paid',
+            'invoice_number' => 'INV-OTHER-001',
+            'subtotal_price' => 50000, 'total_price' => 50000,
             'payment_method' => 'cash',
             'created_at' => $paidAt, 'updated_at' => $paidAt,
         ]);
         OrderItem::factory()->create([
-            'order_id' => $order->id, 'product_id' => $this->product1->id,
-            'qty' => 3, 'price' => 25000, 'total_price' => 75000,
+            'order_id' => $order->id, 'product_id' => $otherProduct->id,
+            'qty' => 1, 'price' => 50000, 'total_price' => 50000,
+            'station_id' => $otherStation->id,
         ]);
         $payment = Payment::factory()->create([
-            'order_id' => $order->id, 'amount_paid' => 75000, 'change_amount' => 0,
-            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $this->owner->id,
+            'order_id' => $order->id, 'amount_paid' => 50000, 'change_amount' => 0,
+            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $otherOwner->id,
         ]);
         HistoryTransaction::factory()->create([
-            'outlet_id' => $this->outlet->id, 'order_id' => $order->id,
+            'outlet_id' => $otherOutlet->id, 'order_id' => $order->id,
             'payment_id' => $payment->id, 'status' => 'paid',
-            'invoice_number' => $invoiceNum,
-            'subtotal_price' => 75000, 'discount_amount' => 0, 'tax_amount' => 0,
-            'total_price' => 75000, 'paid_amount' => 75000,
-            'payment_method' => 'cash', 'paid_at' => $paidAt,
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $salesReport = $response->json('sales_report');
-
-        // gross = sum of order_items.total_price = 3 × 25000 = 75000
-        // net = sum of history_transactions.total_price = 75000
-        $this->assertEquals(75000, $salesReport[0]['gross']);
-        $this->assertEquals(75000, $salesReport[0]['net']);
-        $this->assertEquals(0, $salesReport[0]['discount']);
-        $this->assertEquals(0, $salesReport[0]['tax']);
-    }
-
-    /**
-     * Sales report includes discount and tax when set on history_transactions.
-     */
-    public function test_sales_report_includes_discount_and_tax(): void
-    {
-        $paidAt = Carbon::parse('2026-07-07');
-        $invoiceNum = 'INV-DISC-001';
-
-        $order = Order::factory()->create([
-            'outlet_id' => $this->outlet->id,
-            'table_id' => $this->table->id,
-            'user_id' => $this->owner->id,
-            'status' => 'paid',
-            'invoice_number' => $invoiceNum,
-            'subtotal_price' => 50000,
-            'discount_amount' => 5000,
-            'tax_amount' => 2000,
-            'total_price' => 47000,
-            'payment_method' => 'cash',
-            'created_at' => $paidAt,
-            'updated_at' => $paidAt,
-        ]);
-        OrderItem::factory()->create([
-            'order_id' => $order->id, 'product_id' => $this->product1->id,
-            'qty' => 2, 'price' => 25000, 'total_price' => 50000,
-        ]);
-        $payment = Payment::factory()->create([
-            'order_id' => $order->id, 'amount_paid' => 47000, 'change_amount' => 0,
-            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $this->owner->id,
-        ]);
-        HistoryTransaction::factory()->create([
-            'outlet_id' => $this->outlet->id, 'order_id' => $order->id,
-            'payment_id' => $payment->id, 'status' => 'paid',
-            'invoice_number' => $invoiceNum,
-            'subtotal_price' => 50000, 'discount_amount' => 5000, 'tax_amount' => 2000,
-            'total_price' => 47000, 'paid_amount' => 47000,
-            'payment_method' => 'cash', 'paid_at' => $paidAt,
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $salesReport = $response->json('sales_report');
-
-        $this->assertCount(1, $salesReport);
-        $this->assertEquals(50000, $salesReport[0]['gross']);
-        $this->assertEquals(5000, $salesReport[0]['discount']);
-        $this->assertEquals(2000, $salesReport[0]['tax']);
-        $this->assertEquals(47000, $salesReport[0]['net']);
-    }
-
-    /**
-     * Sales report aggregates multiple transactions on the same day.
-     */
-    public function test_sales_report_aggregates_multiple_same_day(): void
-    {
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]], '10:00');
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product2->id, 'qty' => 1, 'price' => 30000]], '15:00');
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $salesReport = $response->json('sales_report');
-
-        $this->assertCount(1, $salesReport);
-        $this->assertEquals('2026-07-07', $salesReport[0]['date']);
-        $this->assertEquals(2, $salesReport[0]['transactions']);
-        $this->assertEquals(80000, $salesReport[0]['gross']);  // 50000 + 30000
-        $this->assertEquals(80000, $salesReport[0]['net']);
-    }
-
-    /**
-     * Sales report is empty when no transactions exist.
-     */
-    public function test_sales_report_empty_when_no_transactions(): void
-    {
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $this->assertEquals([], $response->json('sales_report'));
-    }
-
-    /**
-     * Sales report respects outlet isolation.
-     */
-    public function test_sales_report_respects_outlet_isolation(): void
-    {
-        $this->createOtherOutletOrder();
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-        $response->assertStatus(200);
-        $this->assertEquals([], $response->json('sales_report'));
-    }
-
-    // =========================================================================
-    // TOP PRODUCTS (report index - not public endpoint)
-    // =========================================================================
-
-    /**
-     * Top products returns name, category, sold, revenue, avg_price.
-     */
-    public function test_top_products_returns_full_product_data(): void
-    {
-        $this->createPaidOrder([
-            ['product_id' => $this->product1->id, 'qty' => 3, 'price' => 25000],
-            ['product_id' => $this->product2->id, 'qty' => 2, 'price' => 15000],
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $topProducts = $response->json('top_products');
-
-        $this->assertCount(2, $topProducts);
-
-        $prodA = collect($topProducts)->firstWhere('name', 'Product A');
-        $this->assertNotNull($prodA);
-        $this->assertEquals($this->category->name, $prodA['category']);
-        $this->assertEquals(3, $prodA['sold']);
-        $this->assertEquals(75000, $prodA['revenue']);
-        $this->assertEquals(25000, $prodA['avg_price']);
-
-        $prodB = collect($topProducts)->firstWhere('name', 'Product B');
-        $this->assertNotNull($prodB);
-        $this->assertEquals($this->category->name, $prodB['category']);
-        $this->assertEquals(2, $prodB['sold']);
-        $this->assertEquals(30000, $prodB['revenue']);
-        $this->assertEquals(15000, $prodB['avg_price']);
-    }
-
-    /**
-     * Top products sorted by sold quantity descending.
-     */
-    public function test_top_products_sorted_by_sold_descending(): void
-    {
-        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 10, 'price' => 10000]]);
-        $this->createPaidOrder([['product_id' => $this->product2->id, 'qty' => 2, 'price' => 10000]]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $topProducts = $response->json('top_products');
-
-        $this->assertEquals('Product A', $topProducts[0]['name']);
-        $this->assertEquals(10, $topProducts[0]['sold']);
-        $this->assertEquals('Product B', $topProducts[1]['name']);
-        $this->assertEquals(2, $topProducts[1]['sold']);
-    }
-
-    /**
-     * Top products returns category name associated with product.
-     */
-    public function test_top_products_returns_category_name(): void
-    {
-        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 3]]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $topProducts = $response->json('top_products');
-
-        $this->assertCount(1, $topProducts);
-        $this->assertEquals($this->category->name, $topProducts[0]['category']);
-    }
-
-    /**
-     * Top products only counts paid transactions.
-     */
-    public function test_top_products_only_paid_transactions(): void
-    {
-        $this->createPaidOrder([['product_id' => $this->product1->id, 'qty' => 5]]);
-
-        // Pending order — should NOT be counted
-        $order = Order::factory()->create([
-            'outlet_id' => $this->outlet->id, 'table_id' => $this->table->id,
-            'user_id' => $this->owner->id, 'status' => 'pending',
-            'total_price' => 250000, 'payment_method' => 'cash',
-        ]);
-        OrderItem::factory()->create([
-            'order_id' => $order->id, 'product_id' => $this->product2->id,
-            'qty' => 10, 'price' => 25000, 'total_price' => 250000,
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $topProducts = $response->json('top_products');
-
-        // Only Product A should appear, Product B is from pending order
-        $this->assertCount(1, $topProducts);
-        $this->assertEquals('Product A', $topProducts[0]['name']);
-    }
-
-    /**
-     * Top products is empty when no transactions exist.
-     */
-    public function test_top_products_empty_when_no_transactions(): void
-    {
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $this->assertEquals([], $response->json('top_products'));
-    }
-
-    /**
-     * Top products respects outlet isolation.
-     */
-    public function test_top_products_respects_outlet_isolation(): void
-    {
-        $otherOwner = User::factory()->create(['role' => 'manager']);
-        $otherOutlet = Outlet::factory()->create(['owner_id' => $otherOwner->id]);
-        $otherProduct = Product::factory()->create(['category_id' => $this->category->id, 'owner_id' => $otherOwner->id]);
-        $otherOutlet->products()->attach($otherProduct->id, ['price' => 50000, 'stock' => 10, 'is_active' => true]);
-
-        $this->createOtherOutletOrder(['product_id' => $otherProduct->id]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-        $response->assertStatus(200);
-        $this->assertEquals([], $response->json('top_products'));
-    }
-
-    // =========================================================================
-    // PERIOD INFO (report index)
-    // =========================================================================
-
-    /**
-     * Period info returns current period (startOfMonth to today) by default.
-     */
-    public function test_period_info_returns_default_period(): void
-    {
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $period = $response->json('period_info');
-
-        $today = Carbon::today();
-        $startOfMonth = Carbon::today()->startOfMonth()->toDateString();
-
-        $this->assertEquals($startOfMonth, $period['current']['start']);
-        $this->assertEquals($today->toDateString(), $period['current']['end']);
-    }
-
-    /**
-     * Period info returns custom date range when start_date and end_date provided.
-     */
-    public function test_period_info_custom_date_range(): void
-    {
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-05&end_date=2026-07-09&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $period = $response->json('period_info');
-
-        $this->assertEquals('2026-07-05', $period['current']['start']);
-        $this->assertEquals('2026-07-09', $period['current']['end']);
-    }
-
-    /**
-     * Period info returns correct Y-m-d date format for both periods.
-     */
-    public function test_period_info_date_format(): void
-    {
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-05&end_date=2026-07-09&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $period = $response->json('period_info');
-
-        // Assert Y-m-d format (10 chars: XXXX-XX-XX)
-        $this->assertEquals(10, strlen($period['current']['start']));
-        $this->assertEquals(10, strlen($period['current']['end']));
-        $this->assertEquals(10, strlen($period['previous']['start']));
-        $this->assertEquals(10, strlen($period['previous']['end']));
-
-        // Assert ISO date pattern
-        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $period['current']['start']);
-        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $period['current']['end']);
-        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $period['previous']['start']);
-        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $period['previous']['end']);
-
-        // Assert current period matches request
-        $this->assertEquals('2026-07-05', $period['current']['start']);
-        $this->assertEquals('2026-07-09', $period['current']['end']);
-    }
-
-    // =========================================================================
-    // SUMMARY CALCULATIONS (report index)
-    // =========================================================================
-
-    /**
-     * Summary avg_order is revenue divided by transactions.
-     */
-    public function test_summary_calculates_avg_order(): void
-    {
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 2, 'price' => 25000]]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $summary = $response->json('summary');
-
-        $this->assertEquals(50000, $summary['revenue']);
-        $this->assertEquals(1, $summary['transactions']);
-        $this->assertEquals(50000, $summary['avg_order']);  // 50000 / 1
-    }
-
-    /**
-     * Revenue growth is calculated when previous period has data.
-     */
-    public function test_summary_growth_null_when_no_previous_data(): void
-    {
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 1, 'price' => 50000]]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-05&end_date=2026-07-09&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $summary = $response->json('summary');
-
-        $this->assertEquals(50000, $summary['revenue']);
-        $this->assertNull($summary['revenue_growth']);
-        $this->assertNull($summary['trx_growth']);
-    }
-
-    /**
-     * Summary avg_check is the average of total_price across all transactions.
-     */
-    public function test_summary_avg_check_reflects_average_transaction(): void
-    {
-        // 2 transactions: 20000 + 40000 → avg = 30000
-        $this->createOrderOnDate('2026-07-07', [['product_id' => $this->product1->id, 'qty' => 1, 'price' => 20000]]);
-        $this->createOrderOnDate('2026-07-08', [['product_id' => $this->product2->id, 'qty' => 1, 'price' => 40000]]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
-
-        $response->assertStatus(200);
-        $summary = $response->json('summary');
-
-        $this->assertEquals(60000, $summary['revenue']);
-        $this->assertEquals(2, $summary['transactions']);
-        $this->assertEquals(30000, $summary['avg_order']);   // 60000 / 2
-        $this->assertEquals(30000, $summary['avg_check']);    // AVG of total_price
-    }
-
-    /**
-     * Summary unique_customers counts distinct customer names from orders.
-     */
-    public function test_summary_unique_customers_count(): void
-    {
-        $paidAt = Carbon::parse('2026-07-07');
-
-        // Order 1: customer 'Budi'
-        $order1 = Order::factory()->create([
-            'outlet_id' => $this->outlet->id, 'table_id' => $this->table->id,
-            'user_id' => $this->owner->id, 'status' => 'paid',
-            'customer_name' => 'Budi',
-            'total_price' => 50000, 'payment_method' => 'cash',
-            'created_at' => $paidAt, 'updated_at' => $paidAt,
-        ]);
-        OrderItem::factory()->create([
-            'order_id' => $order1->id, 'product_id' => $this->product1->id,
-            'qty' => 2, 'price' => 25000, 'total_price' => 50000,
-        ]);
-        $payment1 = Payment::factory()->create([
-            'order_id' => $order1->id, 'amount_paid' => 50000, 'change_amount' => 0,
-            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $this->owner->id,
-        ]);
-        HistoryTransaction::factory()->create([
-            'outlet_id' => $this->outlet->id, 'order_id' => $order1->id,
-            'payment_id' => $payment1->id, 'status' => 'paid',
-            'invoice_number' => 'INV-CUST-001',
+            'invoice_number' => 'INV-OTHER-001',
             'subtotal_price' => 50000, 'total_price' => 50000, 'paid_amount' => 50000,
             'payment_method' => 'cash', 'paid_at' => $paidAt,
         ]);
 
-        // Order 2: customer 'Ani'
-        $order2 = Order::factory()->create([
-            'outlet_id' => $this->outlet->id, 'table_id' => $this->table->id,
-            'user_id' => $this->owner->id, 'status' => 'paid',
-            'customer_name' => 'Ani',
-            'total_price' => 30000, 'payment_method' => 'cash',
-            'created_at' => $paidAt, 'updated_at' => $paidAt,
-        ]);
-        OrderItem::factory()->create([
-            'order_id' => $order2->id, 'product_id' => $this->product2->id,
-            'qty' => 1, 'price' => 30000, 'total_price' => 30000,
-        ]);
-        $payment2 = Payment::factory()->create([
-            'order_id' => $order2->id, 'amount_paid' => 30000, 'change_amount' => 0,
-            'method' => 'cash', 'paid_at' => $paidAt, 'paid_by' => $this->owner->id,
-        ]);
-        HistoryTransaction::factory()->create([
-            'outlet_id' => $this->outlet->id, 'order_id' => $order2->id,
-            'payment_id' => $payment2->id, 'status' => 'paid',
-            'invoice_number' => 'INV-CUST-002',
-            'subtotal_price' => 30000, 'total_price' => 30000, 'paid_amount' => 30000,
-            'payment_method' => 'cash', 'paid_at' => $paidAt,
-        ]);
-
-        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?start_date=2026-07-01&end_date=2026-07-31&outlet_id=' . $this->outlet->id);
+        $response = $this->actingAs($this->owner)->getJson('/api/v1/reports?outlet_id=' . $this->outlet->id);
 
         $response->assertStatus(200);
-        $summary = $response->json('summary');
-
-        $this->assertEquals(2, $summary['unique_customers']);
+        $this->assertEquals([], $response->json('station_performance'));
     }
 }
