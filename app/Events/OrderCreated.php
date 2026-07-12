@@ -49,7 +49,7 @@ class OrderCreated implements ShouldBroadcastNow
      */
     public function broadcastWith(): array
     {
-        $order = $this->order->loadMissing(['items.product', 'table', 'discount']);
+        $order = $this->order->loadMissing(['items.product', 'table', 'discount', 'user']);
 
         return [
             'order' => [
@@ -57,6 +57,7 @@ class OrderCreated implements ShouldBroadcastNow
                 'invoice_number' => $this->order->invoice_number,
                 'customer_name' => $this->order->customer_name,
                 'table_id'      => $this->order->table_id,
+                'cashier_name'  => $order->user ? $order->user->name : null,
                 'table'         => $order->table ? [
                     'id'     => $order->table->id,
                     'name'   => $order->table->name ?? null,
