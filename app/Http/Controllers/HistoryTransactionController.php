@@ -114,6 +114,7 @@ class HistoryTransactionController extends Controller
                 'order.items.product',
                 'order.table',
                 'order.latestAcceptance',
+                'order.discount',
                 'payment',
                 'cashier',
                 'outlet'
