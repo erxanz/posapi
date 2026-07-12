@@ -887,10 +887,21 @@ class OrderController extends Controller
             'items' => 'required|array',
             'items.*.id' => 'required|exists:order_items,id',
             'items.*.cancelled_qty' => 'required|integer|min:0',
+            'tax_amount' => 'nullable|numeric',
+            'total_price' => 'nullable|numeric',
+            'discount_amount' => 'nullable|numeric',
+            'subtotal_price' => 'nullable|numeric',
         ]);
 
+        $overrideTotals = [
+            'tax_amount' => $validated['tax_amount'] ?? null,
+            'total_price' => $validated['total_price'] ?? null,
+            'discount_amount' => $validated['discount_amount'] ?? null,
+            'subtotal_price' => $validated['subtotal_price'] ?? null,
+        ];
+
         try {
-            $result = $this->orderService->voidOrderItems($order, $validated['reason'], $validated['items']);
+            $result = $this->orderService->voidOrderItems($order, $validated['reason'], $validated['items'], $overrideTotals);
 
             event(new \App\Events\OrderUpdated($result['order']));
 

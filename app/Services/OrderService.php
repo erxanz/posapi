@@ -1014,12 +1014,12 @@ class OrderService
      * Void items from an order with stock restoration and dynamic recalculation.
      * Returns ['order' => Order, 'warning' => ?string].
      */
-    public function voidOrderItems(Order $order, string $reason, array $items): array
+    public function voidOrderItems(Order $order, string $reason, array $items, array $overrideTotals = []): array
     {
         $user = $this->currentUser();
         $warningMessage = null;
 
-        return DB::transaction(function () use ($order, $reason, $items, $user, &$warningMessage) {
+        return DB::transaction(function () use ($order, $reason, $items, $user, &$warningMessage, $overrideTotals) {
             $actionDetails = [];
             $outlet = $order->outlet;
 
@@ -1124,10 +1124,14 @@ class OrderService
                         }
                     }
                 } elseif ($order->tax_amount > 0 && $order->subtotal_price > 0) {
-                    $oldAmountAfterDiscount = max(0, $order->subtotal_price - $order->discount_amount);
-                    if ($oldAmountAfterDiscount > 0) {
-                        $rate = $order->tax_amount / $oldAmountAfterDiscount;
-                        $newTaxAmount = (int) round($amountAfterDiscount * $rate);
+                    if (isset($overrideTotals['tax_amount'])) {
+                        $newTaxAmount = (int) $overrideTotals['tax_amount'];
+                    } else {
+                        $oldAmountAfterDiscount = max(0, $order->subtotal_price - $order->discount_amount);
+                        if ($oldAmountAfterDiscount > 0) {
+                            $rate = $order->tax_amount / $oldAmountAfterDiscount;
+                            $newTaxAmount = (int) round($amountAfterDiscount * $rate);
+                        }
                     }
                 }
 
@@ -1135,6 +1139,13 @@ class OrderService
                     'discount_amount' => $newDiscountAmount,
                     'tax_amount' => $newTaxAmount,
                 ]);
+
+                if (!$order->tax_id && !empty($overrideTotals['subtotal_price']) && !empty($overrideTotals['total_price'])) {
+                    $order->update([
+                        'subtotal_price' => (int) $overrideTotals['subtotal_price'],
+                        'total_price' => (int) $overrideTotals['total_price'],
+                    ]);
+                }
 
                 if ($order->status === Order::STATUS_PAID) {
                     $this->syncHistoryTransaction($order->fresh());
