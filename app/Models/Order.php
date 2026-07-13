@@ -303,7 +303,7 @@ class Order extends Model
             }
 
             // FILTER SYARAT UTAMA: Jika subtotal keranjang belum lolos min_purchase, diskon batal (0)
-            if ($discount->min_purchase > 0 && $eligibletotal < $discount->min_purchase) {
+            if ($discount->min_purchase > 0 && $subtotal < $discount->min_purchase) {
                 $discountAmount = 0;
             } else {
                 // Lolos syarat, eksekusi pemotongan harga coret
